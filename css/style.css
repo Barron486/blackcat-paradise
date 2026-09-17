@@ -1014,10 +1014,12 @@
 #tab-automation.hidden { display: none; }
 
 /* ===== 🎨 v3.0.40 1.8 風格物品清單（裝備／武器／防具／道具·移植自參考版 idle-lineage-class-main-test） ===== */
-.classic-inventory-tab { padding:0 !important; overflow:hidden !important; min-height:0; background:#0b0d12; }
+.classic-inventory-tab { padding:0 !important; overflow-y:auto !important; overflow-x:hidden !important; min-height:0; background:#0b0d12; }
 .classic-inventory-tab:not(.hidden) { display:flex !important; flex-direction:column; align-items:center; }
 .classic-list-toolbar { flex:0 0 auto; margin:0 !important; padding:6px 8px !important; top:0 !important; background:#111827 !important; border-bottom:1px solid #6b5426; z-index:20; }
 .classic-list-toolbar { width:100%; }
+.classic-inventory-fit { flex:0 0 auto; width:100%; display:grid; place-items:start center; }
+.classic-inventory-fit > .classic-inventory-shell { width:100%; }
 .classic-inventory-shell { position:relative; flex:0 0 auto; width:100%; max-width:100%; aspect-ratio:193/282; overflow:hidden; background:url('../assets/ui/武器防具道具欄位.png') center/100% 100% no-repeat; }
 .classic-inventory-viewport { position:absolute; z-index:2; left:13.99%; top:10.64%; width:72.02%; height:70.21%; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); grid-auto-rows:16.666667%; align-content:start; overflow-y:auto; overflow-x:hidden; box-sizing:border-box; background:#07080a; scrollbar-width:none; overscroll-behavior:contain; }
 .classic-inventory-viewport::-webkit-scrollbar { width:0; height:0; }
@@ -1182,6 +1184,14 @@ button.classic-skill-cell { cursor:pointer; }
     max-height:none; overflow:hidden; padding:0; border:0; border-radius:0; background:#050505; box-shadow:0 0 45px #000;
 }
 #creation-bg-image { position:absolute; inset:0; z-index:1; width:100%; height:100%; object-fit:contain; pointer-events:none; user-select:none; }
+#creation-name-field { position:absolute; z-index:8; left:7.4%; top:71%; width:34.2%; color:#efe1bd; font-family:'Microsoft JhengHei','PingFang TC',sans-serif; }
+#creation-name-field label { display:block; margin-bottom:6px; font-size:16px; font-weight:700; }
+#creation-name { display:block; box-sizing:border-box; width:100%; min-height:44px; padding:9px 12px; border:1px solid #ad8950; border-radius:6px; background:#11151eef; color:#fff3cf; font-size:16px; line-height:1.4; cursor:text; user-select:text; -webkit-user-select:text; touch-action:manipulation; }
+#creation-name:focus { outline:2px solid #f0c878; outline-offset:2px; }
+#creation-name::placeholder { color:#a89d88; }
+#creation-name-hint { display:block; margin-top:5px; color:#c0b39a; font-size:12px; }
+#creation-name-error { margin:4px 0 0; color:#ffb5a9; font-size:13px; line-height:1.4; }
+#creation-name-error:empty { display:none; }
 /* 🖋️ v3.2.5 創角職業介紹排版重整（用戶要求）：①上下左右內距加大 ②行高 1.1 → 1.5、字距 +0.03em ③中文字體改正黑體系
    （原 Georgia serif → CJK fallback 細明體難讀）。
    ⚠️幾何陷阱：本框 position:absolute → padding/margin 的 % 相對「#creation-panel 寬 1440」而非框自身寬（492）——原 4.6% 就已是 66px。
@@ -1805,20 +1815,30 @@ button.classic-skill-cell { cursor:pointer; }
 }
 #load-action-panel button {
     height:clamp(24px,4.1vw,46px);
-    border:1px solid rgba(198,156,74,.68);
-    background:linear-gradient(180deg, rgba(28,23,15,.9), rgba(7,5,3,.95));
-    color:#d8bf79;
+    padding:0 3px;
+    border:1px solid transparent;
+    background:transparent;
+    color:#eee0b6;
     font-family:Georgia, "Times New Roman", "Microsoft JhengHei", serif;
     font-size:clamp(10px,1.35vw,18px);
     font-weight:700;
-    text-shadow:0 1px 2px #000, 0 0 8px rgba(228,187,87,.38);
-    box-shadow:inset 0 1px 0 rgba(255,232,167,.16), 0 0 12px rgba(0,0,0,.55);
+    font-style:italic;
+    line-height:1.2;
+    white-space:nowrap;
+    text-shadow:0 1px 2px #171008, 0 0 4px rgba(255,239,184,.65), 0 0 10px rgba(213,172,86,.35);
+    box-shadow:none;
     cursor:pointer;
+    transition:color .15s ease, text-shadow .15s ease, background-color .15s ease;
 }
 #load-action-panel button:hover:not(:disabled) {
-    color:#fff1ba;
-    border-color:rgba(244,205,107,.9);
-    box-shadow:inset 0 1px 0 rgba(255,232,167,.25), 0 0 16px rgba(216,179,80,.35);
+    color:#fff5d7;
+    background:rgba(219,184,112,.06);
+    text-shadow:0 1px 2px #171008, 0 0 6px rgba(255,239,184,.85), 0 0 14px rgba(213,172,86,.5);
+}
+#load-action-panel button:focus-visible {
+    outline:1px solid #d5b878;
+    outline-offset:2px;
+    border-radius:2px;
 }
 #load-action-panel button:disabled {
     opacity:.42;
@@ -1896,14 +1916,14 @@ button.classic-skill-cell { cursor:pointer; }
 .load-info-row.cha { top:87.25%; }
 .load-info-row.int { top:91.25%; }
 #load-action-panel {
-    left:80.95%;
+    left:80.1%;
     top:64.25%;
-    width:7.45%;
+    width:14.5%;
     gap:clamp(8px,1.05vw,14px);
 }
 #load-action-panel button {
     height:clamp(18px,2.55vw,32px);
-    font-size:clamp(8px,.9vw,12px);
+    font-size:clamp(12px,min(1.5vw,2.5vh),21px);
 }
 
 /* 🏘️ v3.2.83 城鎮 NPC 地圖：與狩獵框同尺寸(800×450 16:9)·NPC 動態站位(散佈景深)·hover 顯示名字·點擊開功能 */
@@ -2189,7 +2209,7 @@ button.classic-skill-cell { cursor:pointer; }
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
     }
-    #load-action-panel button { width: 100%; height: 48px; font-size: 14px; }
+    #load-action-panel button { width: 100%; height: 48px; font-size: 20px; }
     #load-btn-enter,
     #load-btn-export,
     #load-btn-delete { grid-column: 1 / -1; }

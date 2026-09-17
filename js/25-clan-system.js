@@ -1705,18 +1705,18 @@ function clanDonateGold() {
 function clanDonateDiamonds() {
     let el = document.getElementById('clan-diamond-donate');
     let amount = Math.floor(Number(el && el.value) || 0);
-    if (amount < 1) { alert('請輸入要捐獻的龍之鑽石數量。'); return; }
-    if (typeof window.pandoraAdjustSharedDiamonds !== 'function') { alert('龍之鑽石資料目前無法使用。'); return; }
+    if (amount < 1) { alert('請輸入要捐獻的藍鑽數量。'); return; }
+    if (typeof window.pandoraAdjustSharedDiamonds !== 'function') { alert('藍鑽資料目前無法使用。'); return; }
     let spend = window.pandoraAdjustSharedDiamonds(-amount);
-    if (!spend || !spend.ok) { alert((spend && spend.error) || '龍之鑽石不足。'); return; }
+    if (!spend || !spend.ok) { alert((spend && spend.error) || '藍鑽不足。'); return; }
     let points = amount * 100;
     let result = _clanAdjustContribution(points);
     if (!result.ok) {
         let refund = window.pandoraAdjustSharedDiamonds(amount);   // 退鑽也可能失敗（共用桶寫入異常）：如實回報，勿讓鑽石默默蒸發
-        alert((result.error || '捐獻失敗。') + ((refund && refund.ok) ? '' : ' 且龍之鑽石退回失敗，請重新整理後於黑市確認鑽石數量。'));
+        alert((result.error || '捐獻失敗。') + ((refund && refund.ok) ? '' : ' 且藍鑽退回失敗，請重新整理後於黑市確認鑽石數量。'));
         return;
     }
-    if (typeof logSys === 'function') logSys(`<span class="text-cyan-300">捐獻 ${amount.toLocaleString()} 顆龍之鑽石，獲得 ${points.toLocaleString()} 貢獻與血盟經驗。</span>`);
+    if (typeof logSys === 'function') logSys(`<span class="text-cyan-300">捐獻 ${amount.toLocaleString()} 顆藍鑽，獲得 ${points.toLocaleString()} 貢獻與血盟經驗。</span>`);
     if (typeof updateUI === 'function') updateUI();
     renderClanTab();
 }
@@ -2017,9 +2017,9 @@ function renderClanTab() {
                 </div>
                 <div class="flex gap-2">
                     <input id="clan-diamond-donate" type="number" min="1" step="1" value="1" class="min-w-0 flex-1 bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded">
-                    <button class="btn px-3 py-2 font-bold bg-cyan-900 border-cyan-600 text-cyan-100" onclick="clanDonateDiamonds()">捐龍鑽（持有 ${diamonds.toLocaleString()}）</button>
+                    <button class="btn px-3 py-2 font-bold bg-cyan-900 border-cyan-600 text-cyan-100" onclick="clanDonateDiamonds()">捐藍鑽（持有 ${diamonds.toLocaleString()}）</button>
                 </div>
-                <div class="text-xs text-slate-400 mt-2">10,000 金幣 = 1 貢獻；1 龍之鑽石 = 100 貢獻。貢獻會增加等量的全模式共用血盟經驗。</div>
+                <div class="text-xs text-slate-400 mt-2">10,000 金幣 = 1 貢獻；1 藍鑽 = 100 貢獻。貢獻會增加等量的全模式共用血盟經驗。</div>
             </div>
             <div class="border-t border-slate-700 pt-3">
                 <div class="text-slate-100 font-bold mb-1">血盟成員</div>

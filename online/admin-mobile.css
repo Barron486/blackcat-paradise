@@ -1,0 +1,73 @@
+/* Touch targets and layouts shared by the account and GM pages. */
+html { -webkit-text-size-adjust: 100%; }
+.login-page { min-height: 100dvh; }
+@media (max-width: 768px), (max-height: 520px) and (pointer: coarse) {
+  body { overflow-wrap: anywhere; }
+  input, select, textarea { font-size: 16px; }
+  .small, .text-button, .admin-tabs button { min-height: 44px; }
+  .login-page { padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); align-items: start; }
+  .auth-shell { min-height: 0; }
+  .auth-art { min-height: 160px; padding: 20px; }
+  .auth-art h1 { font-size: clamp(32px, 9vw, 42px); }
+  .auth-art p { font-size: 17px; }
+  .auth-panel { padding: 22px; }
+  .auth-panel .eyebrow { display: none; }
+  .auth-panel h2 { font-size: 24px; }
+  .auth-panel .muted { margin-bottom: 14px; }
+  .auth-panel label { margin: 12px 0; }
+  .auth-panel .text-button { margin-top: 8px; }
+  .auth-note { margin-top: 18px; padding-top: 14px; }
+  .topbar { height: auto; min-height: 72px; padding: calc(10px + env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left)); gap: 10px; }
+  .brand { gap: 7px; font-size: 17px; }
+  .brand small { font-size: 8px; }
+  .crest { font-size: 26px; }
+  .top-actions { gap: 8px; flex-shrink: 0; }
+  .top-actions .secondary { padding: 8px 10px; font-size: 13px; }
+  .gm-shell { padding: 22px max(12px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+  .page-heading { flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
+  .page-heading > .secondary { min-height: 44px; padding: 8px 14px; font-size: 14px; }
+  .metrics article { padding: 13px; min-width: 0; }
+  .metrics span { font-size: 13px; }
+  .metrics small { font-size: 11px; }
+  .metrics strong { font-size: 28px; }
+  .admin-tabs { position: sticky; top: 0; z-index: 5; gap: 0; margin-bottom: 20px; background: #101218f5; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .admin-tabs button { font-size: 13px; padding: 12px 3px; white-space: nowrap; }
+  .surface { min-width: 0; padding: 16px; }
+  .action-card { padding: 14px 10px; gap: 4px; }
+  .action-card strong { font-size: 15px; }
+  .command-main { gap: 16px; }
+  .sticky { position: static; }
+  .search-row { display: grid; grid-template-columns: 1fr; gap: 0; }
+  .search-row label { margin: 8px 0; min-width: 0; }
+  .search-row select { width: 100%; }
+  .field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+  .field-row label { min-width: 0; }
+  .check-label { grid-column: 1/-1; padding: 0; min-height: 44px; margin-top: 0; }
+  .check-label input { width: 24px; height: 24px; }
+  .item-results { grid-template-columns: 1fr; max-height: 320px; overscroll-behavior: contain; }
+  .item-result { min-height: 64px; }
+  .target-summary { gap: 7px; }
+  .section-heading { gap: 12px; }
+  .section-heading input { max-width: none; }
+  .table-scroll { overflow: visible; }
+  #view-players table, #player-list { display: block; }
+  #view-players thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  #player-list tr { display: block; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; background: #111720; }
+  #player-list td { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 0 10px; padding: 10px 0; min-width: 0; }
+  #player-list td::before { content: attr(data-label); grid-column: 1; grid-row: 1 / span 100; color: #94a1b5; font-size: 13px; }
+  #player-list td > * { grid-column: 2; }
+  #player-list td:last-child { border: 0; }
+  #player-list td button { justify-self: start; min-height: 44px; }
+  .admin-footer { flex-wrap: wrap; gap: 8px; }
+  dialog { width: calc(100% - 20px); max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); padding: 24px 18px 18px; }
+  .dialog-close { width: 44px; height: 44px; right: 6px; top: 4px; }
+  #confirm-detail { padding: 12px; overflow-wrap: anywhere; }
+  .dialog-actions { position: sticky; bottom: -18px; padding: 12px 0 6px; background: #1a1f29; }
+  .dialog-actions button { flex: 1; min-height: 48px; }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  .auth-shell { grid-template-columns: minmax(180px, .7fr) 1fr; max-width: 800px; min-height: 0; }
+  .auth-art { min-height: 0; }
+  .auth-art h1 { font-size: 32px; }
+  .auth-panel { padding: 24px; }
+}

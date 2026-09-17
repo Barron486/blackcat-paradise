@@ -154,6 +154,14 @@ function gainItem(id, cnt=1, silent=false, forceNormal=false, affixOld=false, de
 
     // 紀錄這次產生的物品屬性
     let itemInfo = { id: id, cnt: cnt, en: _tEn, bless: bless, anc: anc, attr: attr, seteff: seteff };
+    // Only monster-earned legendary/relic equipment creates a world drop receipt.
+    // The server resolves names and rarity from its catalog and deduplicates the sequence on sync.
+    if (_lootMobInfo && d && (d.legend || d.relic) && ['wpn', 'arm', 'acc'].includes(d.type) && !d.isArrow) {
+        player._rareLootSeq = (Number.isSafeInteger(player._rareLootSeq) ? player._rareLootSeq : 0) + 1;
+        if (!Array.isArray(player._rareLootEvents)) player._rareLootEvents = [];
+        player._rareLootEvents.push({seq: player._rareLootSeq, itemId: id, monster: _lootMobInfo.n, mapId: mapState.current, quantity: cnt, bless: bless, anc: anc});
+        if (player._rareLootEvents.length > 64) player._rareLootEvents.splice(0, player._rareLootEvents.length - 64);
+    }
     
     if (!silent && d) {
         // ✦ v3.6.69 物品日誌亮點：只有「傳說」與「遺物」才加亮點提示（傳說＝琥珀橘 c-legend／遺物＝海藍 c-relic）。
@@ -1299,6 +1307,7 @@ function renderStatusIconBar() {
 
 // 統一渲染「狀態」欄：魔法/藥水增益(buff) + 受到的減益(debuff)
 function renderStatusEffects() {
+    if(document.body.classList.contains('status-tab-ready')) return; // 狀態分頁自行更新，停止重畫已隱藏的狀態列。
     if(state.ff) return; // 補跑期間不刷新畫面
     let el = document.getElementById('dt-buffs');
     if(!el) return;

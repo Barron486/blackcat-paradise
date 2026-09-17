@@ -289,6 +289,7 @@ function prideHasTalisman(tier, kinds) {
     return player.inv.some(i => { let d = DB.items[i.id]; return d && d.prideTier === tier && d.prideKind && allow.includes(d.prideKind) && (i.cnt || 1) >= 1; });
 }
 function mapOptDisabled(m) {
+    if(typeof gmMapAllowed==='function' && !gmMapAllowed(m.v,false))return true;
     if (m.disabled) return true;
     // 🧑‍🤝‍🧑 v3.7.84 受僱為其他角色的傭兵期間＝只能停留在安全區 → 下拉中所有非 town_ 地圖一律灰階不可選
     //    （與 changeMap 的 mercenaryRoleBattleBlocked 同一條規則·此處只是把它前推到 UI 上；快取版避免每個選項都掃 localStorage）
@@ -1117,6 +1118,7 @@ function ismaelBuyAcc() {
 }
 
 function changeMap(force) {
+    if(!window._gmTeleporting && typeof gmMapAllowed==='function' && !gmMapAllowed(document.getElementById('map-select').value,true)){syncMapSelectors();return false;}
     // 行動限制狀態（石化／麻痺／冰凍／暈眩）時無法主動切換地圖；force=true 供復活、載入等內部流程略過
     if (!force && player.statuses &&
         (player.statuses.stone > 0 || player.statuses.paralyze > 0 || player.statuses.freeze > 0 || player.statuses.stun > 0 || player.statuses.sleep > 0)) {
@@ -1125,7 +1127,7 @@ function changeMap(force) {
         return;
     }
     let _changeTarget = document.getElementById('map-select').value;
-    if (_changeTarget !== mapState.current && typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked(_changeTarget)) {
+    if (!window._gmTeleporting && _changeTarget !== mapState.current && typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked(_changeTarget)) {
         syncMapSelectors();
         return false;
     }
@@ -1510,6 +1512,7 @@ function _sanctConsume(id) {
     return true;
 }
 function sanctuaryEnter(mapKey, costId) {
+    if(!gmMapAllowed(mapKey,true))return false;
     let d0 = DB.items[costId];
     if (typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked(mapKey)) return;
     if (!_sanctConsume(costId)) { logSys(`<span class="text-red-400">沒有 ${d0 ? d0.n : costId}，無法進入。</span>`); return; }
@@ -1570,7 +1573,7 @@ function renderArkataBuyback(el) {
                 <button class="btn ${ok ? 'bg-yellow-700 hover:bg-yellow-600 border-yellow-500' : 'bg-slate-600 border-slate-500 opacity-60 cursor-not-allowed'} py-2 px-4 font-bold shrink-0" ${ok ? '' : 'disabled'} onclick="arkataBuyback(${i})">買回</button>
             </div>`;
     }).join('');
-    // 🕊️ v3.6.84 裝備贖回（兩模式皆可）：邪惡狀態死亡遺失的裝備（player.pvpLostItems·上限 5 件）花 1000 龍鑽指定贖回一件
+    // 🕊️ v3.6.84 裝備贖回（兩模式皆可）：邪惡狀態死亡遺失的裝備（player.pvpLostItems·上限 5 件）花 1000 藍鑽指定贖回一件
     let lost = Array.isArray(player.pvpLostItems) ? player.pvpLostItems : [];
     let dia = (typeof pandoraGetSharedDiamonds === 'function') ? pandoraGetSharedDiamonds() : 0;
     let itemRows = lost.map((r, i) => {
@@ -1583,7 +1586,7 @@ function renderArkataBuyback(el) {
         return `
             <div class="flex items-center justify-between gap-2 bg-slate-800/60 border border-slate-600 rounded p-3">
                 <div class="text-sm leading-relaxed"><span class="${cl} font-bold">${nm}</span>${when ? `<span class="text-xs text-slate-500">（${when} 遺失）</span>` : ''}<br>
-                    <span class="text-xs text-slate-400">贖回費用 <span class="text-sky-300 font-bold">${ARKATA_REDEEM_COST.toLocaleString()}</span> 龍之鑽石</span></div>
+                    <span class="text-xs text-slate-400">贖回費用 <span class="text-sky-300 font-bold">${ARKATA_REDEEM_COST.toLocaleString()}</span> 藍鑽</span></div>
                 <button class="btn ${ok ? 'bg-sky-800 hover:bg-sky-700 border-sky-500' : 'bg-slate-600 border-slate-500 opacity-60 cursor-not-allowed'} py-2 px-4 font-bold shrink-0" ${ok ? '' : 'disabled'} onclick="arkataRedeemItem(${i})">贖回</button>
             </div>`;
     }).join('');
@@ -1592,7 +1595,7 @@ function renderArkataBuyback(el) {
             <div class="text-slate-300 text-sm leading-relaxed">聖使阿卡塔：逝者失去的事物不會真正消散——我能以聖光為你凝聚回來。</div>
 
             <div class="text-sky-300 font-bold text-sm border-b border-sky-900/60 pb-1">裝備贖回</div>
-            <div class="text-xs text-slate-400">邪惡狀態下死亡遺失的裝備會被記錄：${lost.length} / 5（滿 5 件後新的遺失會擠掉最舊的一筆）・持有龍之鑽石：<span class="text-sky-300">${dia.toLocaleString()}</span></div>
+            <div class="text-xs text-slate-400">邪惡狀態下死亡遺失的裝備會被記錄：${lost.length} / 5（滿 5 件後新的遺失會擠掉最舊的一筆）・持有藍鑽：<span class="text-sky-300">${dia.toLocaleString()}</span></div>
             ${itemRows || '<div class="text-slate-500 text-sm bg-slate-800/40 border border-slate-700 rounded p-4 text-center">目前沒有遺失的裝備紀錄。</div>'}
             ${player.classicMode ? `
             <div class="text-amber-300 font-bold text-sm border-b border-amber-900/60 pb-1 mt-2">死亡經驗買回</div>
@@ -1600,16 +1603,16 @@ function renderArkataBuyback(el) {
             ${rows || '<div class="text-slate-500 text-sm bg-slate-800/40 border border-slate-700 rounded p-4 text-center">目前沒有死亡紀錄。願聖光持續眷顧你。</div>'}` : ''}
         </div>`;
 }
-const ARKATA_REDEEM_COST = 1000;   // 🕊️ v3.6.84 裝備贖回費用（龍之鑽石）
-// 🕊️ v3.6.84 指定贖回一件遺失裝備：扣 1000 龍鑽 → 以**完整快照**還原（強化值/祝福/遠古/屬性全保留），紀錄即銷毀。
+const ARKATA_REDEEM_COST = 1000;   // 🕊️ v3.6.84 裝備贖回費用（藍鑽）
+// 🕊️ v3.6.84 指定贖回一件遺失裝備：扣 1000 藍鑽 → 以**完整快照**還原（強化值/祝福/遠古/屬性全保留），紀錄即銷毀。
 //   ⚠️ 先驗物品有效性、再扣款、最後才 splice+回灌——順序顛倒會出現「扣了鑽石卻沒拿到東西」。
 function arkataRedeemItem(i) {
     let list = Array.isArray(player.pvpLostItems) ? player.pvpLostItems : [];
     let rec = list[i];
     let host = document.getElementById('interaction-content');
     if (!rec || !rec.item || !DB.items[rec.item.id]) { list.splice(i, 1); if (host) renderArkataBuyback(host); return; }   // 防呆：物品定義已不存在→銷毀無效紀錄
-    if (typeof pandoraGetSharedDiamonds !== 'function' || typeof pandoraAdjustSharedDiamonds !== 'function') { logSys('<span class="text-red-400">龍之鑽石系統尚未載入，請重新整理後再試。</span>'); return; }
-    if (pandoraGetSharedDiamonds() < ARKATA_REDEEM_COST) { logSys(`<span class="text-red-400">龍之鑽石不足（需要 ${ARKATA_REDEEM_COST.toLocaleString()}）。</span>`); return; }
+    if (typeof pandoraGetSharedDiamonds !== 'function' || typeof pandoraAdjustSharedDiamonds !== 'function') { logSys('<span class="text-red-400">藍鑽系統尚未載入，請重新整理後再試。</span>'); return; }
+    if (pandoraGetSharedDiamonds() < ARKATA_REDEEM_COST) { logSys(`<span class="text-red-400">藍鑽不足（需要 ${ARKATA_REDEEM_COST.toLocaleString()}）。</span>`); return; }
     let pay = pandoraAdjustSharedDiamonds(-ARKATA_REDEEM_COST);
     if (!pay || !pay.ok) { logSys(`<span class="text-red-400">${(pay && pay.error) || '扣款失敗，請再試一次。'}</span>`); return; }
     let snap = JSON.parse(JSON.stringify(rec.item));
@@ -1619,7 +1622,7 @@ function arkataRedeemItem(i) {
     if (typeof registerEquipObtained === 'function') registerEquipObtained(snap.id);   // 直推 inv 繞過 gainItem → 手動補收集冊登錄與掉落統計
     if (typeof auditTrackGain === 'function') auditTrackGain({ id: snap.id, cnt: 1 });
     let nm = (typeof getItemFullName === 'function') ? getItemFullName(snap) : (DB.items[snap.id] ? DB.items[snap.id].n : snap.id);
-    logSys(`<span class="text-sky-300">聖使阿卡塔以聖光為你尋回了 <span class="font-bold">${nm}</span>（花費 ${ARKATA_REDEEM_COST.toLocaleString()} 龍之鑽石）。</span>`);
+    logSys(`<span class="text-sky-300">聖使阿卡塔以聖光為你尋回了 <span class="font-bold">${nm}</span>（花費 ${ARKATA_REDEEM_COST.toLocaleString()} 藍鑽）。</span>`);
     if (typeof renderTabs === 'function') renderTabs();
     updateUI(); saveGame();
     if (host) renderArkataBuyback(host);
@@ -1646,6 +1649,7 @@ function arkataBuyback(i) {
 // 🏴 潘朵拉黑市快捷鍵：不切換地圖，直接沿用村莊 NPC 的同一個浮動視窗與市場狀態。
 // 浮動視窗原本位於 #town-view；狩獵中父層會隱藏，因此首次使用時移至 body，之後所有 NPC 互動仍共用此視窗。
 function openPandoraShortcut() {
+    if(window.CloudStore){window.CloudStore.showMarket?.();return;}
     let panel = document.getElementById('town-interaction-container');
     if (!panel) return;
     if (panel.parentElement && panel.parentElement.id === 'town-view') document.body.appendChild(panel);
@@ -1653,6 +1657,7 @@ function openPandoraShortcut() {
 }
 
 function interactNPC(npcId, townId) {
+    if(npcId==='npc_pandora'&&window.CloudStore){window.CloudStore.showMarket?.();return;}
     let npc = DB.towns[townId].npcs.find(n => n.id === npcId);
     if(!npc) return;
     if ((npc.id === 'npc_esti' || npc.id === 'npc_tros') && typeof clanNpcVisible === 'function' && !clanNpcVisible(npc.id, townId)) return;
@@ -2172,7 +2177,7 @@ function renderTownNPCMap(townId) {
     // 🗼🌀 v3.2.89 傲慢之塔／時空裂痕：入口告示改成地圖上的可點 NPC（_spr 專屬圖·_float 專屬點擊→浮動視窗）
     if (townId === 'town_pride') vis.push({ id: '_pride_entrance', n: '傲慢之塔', title: '入口', _spr: '1148', _float: 'pride' });
     if (townId === 'town_rift') vis.push({ id: '_rift_entrance', n: '時空裂痕', title: '入口', _spr: '1149', _float: 'rift' });
-    // 🏴 潘朵拉玩家 NPC：每個安全區可各有一位龍鑽／金幣收購者，並沿用玩家職業站立動畫。
+    // 🏴 潘朵拉玩家 NPC：每個安全區可各有一位藍鑽／金幣收購者，並沿用玩家職業站立動畫。
     try {
         if (typeof getWanderingBuyersForTown === 'function') {
             let wanderers = getWanderingBuyersForTown(townId);

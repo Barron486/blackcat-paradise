@@ -85,7 +85,7 @@ function auditTrackKill(mob) {
     // 📊 v3.6.58 刻意**不乘** getExpGainMult(player.lv)：該倍率在 Lv100 為 0（滿等不入帳），統計頁會整片歸零、
     //    連「這張圖效率如何」都看不出來。此處改記「同條件下應得的經驗」＝練功效率指標（Lv<100 時倍率恆 1，數字與實得完全相同）。
     //    ⚠️ 實際入帳仍在 killMob :320（照樣乘 getExpGainMult）——統計是參考值，不是經驗來源，勿把這裡當入帳口徑。
-    let g = Math.floor((mob.exp || 0) * (1 + partyExpBonusPct() / 100) * (1 + (typeof dollFieldVal === 'function' ? dollFieldVal('expBonus') : 0) / 100));   // 🤝 v3.7.62 組隊不再拆分經驗；統計記主玩家完整應得值
+    let g = Math.floor((mob.exp || 0) * gmWorld.expMultiplier * (1 + partyExpBonusPct() / 100) * (1 + (typeof dollFieldVal === 'function' ? dollFieldVal('expBonus') : 0) / 100));   // 🤝 v3.7.62 組隊不再拆分經驗；統計記主玩家完整應得值
     if (g > 0) _audit.exp += g;
     _audit.kills++;
 }
@@ -215,7 +215,7 @@ function renderAuditDrops(el) {
             // 🦊 v3.5.4 變身鏈頭目（玉藻→九尾→殺生石）：後續階不在出怪池無自己的列→掉落物併入鏈根（玉藻）顯示（實際掉落也確實由打倒最終階獲得）
             let _seen = { [mid]: 1 }, _t = mob.transformTo;
             while (_t && DB.mobs[_t] && !_seen[_t]) { _seen[_t] = 1; _auditMobDrops(DB.mobs[_t].n).forEach(id => { if (drops.indexOf(id) === -1) drops.push(id); }); _t = DB.mobs[_t].transformTo; }
-            let dropHtml = drops.length
+            let dropHtml = (typeof gmMonsterDropHtml==='function') ? gmMonsterDropHtml(mob.n) : drops.length
                 ? drops.map(id => `<span class="${getItemColor({ id })}">${DB.items[id].n}</span>`).join('、')
                 : '<span class="text-slate-500">（無掉落物）</span>';
             let _nameCls = mob.boss ? 'text-orange-400' : getMobColor(mob.lv);   // 🔧 BOSS：橘金色標註（不加呼吸光暈）
@@ -230,7 +230,7 @@ function renderAuditDrops(el) {
             <span class="text-purple-300 font-bold text-base">本圖掉落物品</span>
             <button onclick="toggleAuditView()" class="btn px-3 py-1 text-xs bg-indigo-900 border-indigo-600 text-indigo-200 font-bold">統計表</button>
         </div>
-        <div class="text-slate-400 text-xs">目前地圖出沒的怪物與其掉落物品（不含機率）。</div>
+        <div class="text-slate-400 text-xs">${gmWorld.showDropRates?'機率為單次基礎掉率 × 世界倍率；隊伍、裝備及任務條件另計。互斥掉落池超過 100% 時按權重分配。':'目前地圖出沒的怪物與其掉落物品。'}</div>
         ${body}
     </div>`;
 }
@@ -372,7 +372,7 @@ function killMob(idx) {
     let _hideKillMsg = (mob.race === '建築' && mob.noAutoTeleport);
     if(!_hideKillMsg) logCombat(`擊敗了 <span class="${getMobColor(mob.lv)}">${mob.n}</span>！`, 'player-heavy');  // 👈 新增
     // 🤝 v3.7.62 組隊經驗不再拆分：主玩家、每名未倒地傭兵、每隻未倒地寵物各取得完整經驗；既有組隊加成保留。
-    let _expEach = mob.exp * (1 + partyExpBonusPct() / 100);
+    let _expEach = mob.exp * (1 + partyExpBonusPct() / 100) * gmWorld.expMultiplier;
     let _petExpGain = Math.floor(_expEach * (1 + dollFieldVal('expBonus') / 100));   // 🐾 每隻存活寵物各得完整玩家份額；玩家滿等不影響養寵
     let _playerExpGain = Math.floor(_petExpGain * getExpGainMult(player.lv));   // ⚠️v3.0.82 經典×0.5 已移除；Lv100 玩家自身仍不獲得經驗
     player.exp += _playerExpGain;
@@ -399,7 +399,7 @@ function killMob(idx) {
         let g = _goldRange.min + Math.floor(Math.random() * (_goldRange.max - _goldRange.min + 1));
         g = Math.max(1, Math.floor(g * (0.9 + Math.random() * 0.2)));   // 💰 最終金額額外浮動 −10%～+10%
         // ⚠️v3.0.82 經典模式金幣÷2 已移除（一般＝經典；歷次：×1/10 → ×1/3 → ×1/2 → ×1）
-        g = Math.floor(g * (1 + dollFieldVal('goldBonus') / 100) * partyRewardMult());   // 🪆 娃娃加成後再乘有效隊伍人數（最高 ×8）
+        g = Math.floor(g * (1 + dollFieldVal('goldBonus') / 100) * partyRewardMult() * gmWorld.goldMultiplier);   // 🪆 娃娃加成後再乘有效隊伍人數（最高 ×8）
         player.gold += g;
         // 🔧 金幣不再逐殺輸出於系統日誌；改由 gameLoop 累積、flushAwaySummary 以「掛機期間獲得總金幣」統一顯示。
 
@@ -434,7 +434,7 @@ function killMob(idx) {
 
     // === 🏅 精通任務：接取後擊敗職業對應頭目必得「精通之證」（身上已有一枚則不再掉落）===
     if (player.masteryQuest === 'active' && MASTERY_DATA[player.cls] && mob.n === MASTERY_DATA[player.cls].boss
-        && !player.inv.some(i => i.id === 'item_mastery_proof')) {
+        && !player.inv.some(i => i.id === 'item_mastery_proof') && Math.random() < gmDropChance('mastery',mob,'item_mastery_proof',100)) {
         gainItem('item_mastery_proof', 1);
         logSys('<span class="text-amber-300 font-bold">✦ 你從強敵的殘骸中拾起了「精通之證」——回威頓村找漢吧。</span>');
     }
@@ -442,22 +442,22 @@ function killMob(idx) {
     // === 🔥 50級試煉條件掉落 ===
     { let main = player.cls === 'knight' && player.trialStage === 1 && mob.n === '黑暗妖精將軍' && !player.inv.some(i => i.id === 'item_dantes_letter');
       let ally = mob.n === '黑暗妖精將軍' && typeof allyStageQuestItemActive === 'function' && allyStageQuestItemActive('item_dantes_letter');
-      if ((main || ally) && Math.random() < partyDropRate(0.01)) { let got = grantPartyStageQuestDrop('item_dantes_letter', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}取得了 丹特斯的召書。</span>`); } }
+      if ((main || ally) && Math.random() < gmDropChance('trial50',mob,'item_dantes_letter',1,partyRewardMult())) { let got = grantPartyStageQuestDrop('item_dantes_letter', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}取得了 丹特斯的召書。</span>`); } }
     { let main = player.cls === 'elf' && player.trialStage === 1 && mob.n === '巨大兵蟻' && !player.inv.some(i => i.id === 'item_ancient_book');
       let ally = mob.n === '巨大兵蟻' && typeof allyStageQuestItemActive === 'function' && allyStageQuestItemActive('item_ancient_book');
-      if ((main || ally) && Math.random() < partyDropRate(0.01)) { let got = grantPartyStageQuestDrop('item_ancient_book', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}取得了 古代黑妖之秘笈。</span>`); } }
+      if ((main || ally) && Math.random() < gmDropChance('trial50',mob,'item_ancient_book',1,partyRewardMult())) { let got = grantPartyStageQuestDrop('item_ancient_book', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}取得了 古代黑妖之秘笈。</span>`); } }
     { let main = player.cls === 'dark' && player.trialStage === 1 && mob.n === '黑暗棲林者' && !player.inv.some(i => i.id === 'item_chaos_key');
       let ally = mob.n === '黑暗棲林者' && typeof allyStageQuestItemActive === 'function' && allyStageQuestItemActive('item_chaos_key');
-      if ((main || ally) && Math.random() < partyDropRate(0.01)) { let got = grantPartyStageQuestDrop('item_chaos_key', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}取得了 混沌鑰匙。</span>`); } }
+      if ((main || ally) && Math.random() < gmDropChance('trial50',mob,'item_chaos_key',1,partyRewardMult())) { let got = grantPartyStageQuestDrop('item_chaos_key', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}取得了 混沌鑰匙。</span>`); } }
     { let main = player.cls === 'royal' && player.trialStage === 1 && mob.n === '小惡魔' && !player.inv.some(i => i.id === 'item_royal_order');
       let ally = mob.n === '小惡魔' && typeof allyStageQuestItemActive === 'function' && allyStageQuestItemActive('item_royal_order');
-      if ((main || ally) && Math.random() < partyDropRate(0.01)) { let got = grantPartyStageQuestDrop('item_royal_order', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}取得了 調職命令書。</span>`); } }   // 👑 王族 50 級試煉（唯一，不受經典掉率影響，與其他職業一致）
+      if ((main || ally) && Math.random() < gmDropChance('trial50',mob,'item_royal_order',1,partyRewardMult())) { let got = grantPartyStageQuestDrop('item_royal_order', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}取得了 調職命令書。</span>`); } }   // 👑 王族 50 級試煉（唯一，不受經典掉率影響，與其他職業一致）
     { let main = player.cls === 'knight' && player.trialStage === 2 && mapState.current === 'elf_grave' && (player.inv || []).reduce((s, i) => s + (i.id === 'item_elf_whisper' ? (i.cnt || 0) : 0), 0) < 10;
       let ally = mapState.current === 'elf_grave' && typeof allyStageQuestItemActive === 'function' && allyStageQuestItemActive('item_elf_whisper');
-      if ((main || ally) && Math.random() < partyDropRate(0.01)) { let got = grantPartyStageQuestDrop('item_elf_whisper', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}拾起了 精靈的私語。</span>`); } }   // 已持有 10 個則不再掉落（含鎖定件）
+      if ((main || ally) && Math.random() < gmDropChance('trial50',mob,'item_elf_whisper',1,partyRewardMult())) { let got = grantPartyStageQuestDrop('item_elf_whisper', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}拾起了 精靈的私語。</span>`); } }   // 已持有 10 個則不再掉落（含鎖定件）
     if (mob.n === '魔族暗殺團') {
-        { let main = player.cls === 'elf' && player.trialStage === 2 && !player.inv.some(i => i.id === 'item_sealed_intel'); let ally = typeof allyStageQuestItemActive === 'function' && allyStageQuestItemActive('item_sealed_intel'); if (main || ally) { let got = grantPartyStageQuestDrop('item_sealed_intel', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}從魔族暗殺團身上取得了 密封的情報書。</span>`); } }
-        { let main = player.cls === 'mage' && player.trialStage === 1 && !player.inv.some(i => i.id === 'item_spy_report'); let ally = typeof allyStageQuestItemActive === 'function' && allyStageQuestItemActive('item_spy_report'); if (main || ally) { let got = grantPartyStageQuestDrop('item_spy_report', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}從魔族暗殺團身上取得了 間諜報告書。</span>`); } }
+        { let main = player.cls === 'elf' && player.trialStage === 2 && !player.inv.some(i => i.id === 'item_sealed_intel'); let ally = typeof allyStageQuestItemActive === 'function' && allyStageQuestItemActive('item_sealed_intel'); if ((main || ally) && Math.random() < gmDropChance('trial50',mob,'item_sealed_intel',100)) { let got = grantPartyStageQuestDrop('item_sealed_intel', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}從魔族暗殺團身上取得了 密封的情報書。</span>`); } }
+        { let main = player.cls === 'mage' && player.trialStage === 1 && !player.inv.some(i => i.id === 'item_spy_report'); let ally = typeof allyStageQuestItemActive === 'function' && allyStageQuestItemActive('item_spy_report'); if ((main || ally) && Math.random() < gmDropChance('trial50',mob,'item_spy_report',100)) { let got = grantPartyStageQuestDrop('item_spy_report', main); if (got.main || got.allies.length) logSys(`<span class="text-amber-300 font-bold">✦ ${partyQuestDropSubject(got)}從魔族暗殺團身上取得了 間諜報告書。</span>`); } }
     }
 
     // === 🔥 炎魔友好度（隱藏值）：於魔族神殿擊殺任意敵人 +1（用於解鎖炎魔謁見所；需先完成 50 級試煉才能進入魔族神殿） ===
@@ -475,11 +475,11 @@ function killMob(idx) {
 
     // === 🐉 v3.7.56 四大龍：擊敗各有 10% 機率掉落「頑皮幼龍蛋」／「淘氣幼龍蛋」（兩顆獨立判定・不受經典掉率影響・可重複取得）===
     if (['安塔瑞斯', '法利昂', '巴拉卡斯', '林德拜爾'].includes(mob.n)) {
-        if (Math.random() < partyDropRate(0.10)) {
+        if (Math.random() < gmDropChance('egg',mob,'item_dragon_egg',10,partyRewardMult())) {
             gainItem('item_dragon_egg', 1);
             logSys('<span class="text-amber-300 font-bold">✦ 你從巨龍的殘骸中拾起了一顆「頑皮幼龍蛋」——它似乎在呼喚著什麼……</span>');
         }
-        if (Math.random() < partyDropRate(0.10)) {
+        if (Math.random() < gmDropChance('egg',mob,'item_dragon_egg2',10,partyRewardMult())) {
             gainItem('item_dragon_egg2', 1);
             logSys('<span class="text-sky-300 font-bold">✦ 你從巨龍的殘骸中拾起了一顆「淘氣幼龍蛋」——蛋殼裡傳來調皮的騷動……</span>');
         }
@@ -494,18 +494,18 @@ function killMob(idx) {
         let ratePct = entry[1];               // 機率(%)
         if(!DB.items[itemId]) return;          // 該物品不存在於資料庫則略過
         if(trialDropBlocked(itemId)) return;   // 🔒 試煉兌換道具：僅本職擊殺才掉＋🔥 v3.0.78 須已接取對應試煉且未達需求數量
-        if (typeof trialForced100 === 'function' && trialForced100(itemId)) { grantPartyTrialQuestDrop(itemId, 1); return; }   // 🔥 接取制試煉道具：通過閘門後 100% 掉落
+        if (typeof trialForced100 === 'function' && trialForced100(itemId)) { if(Math.random()<gmDropChance('normal',mob,itemId,100)) grantPartyTrialQuestDrop(itemId, 1); return; }   // 🔥 接取制試煉道具：通過閘門後 100% 掉落
         let _clMult = (mob.n === '卡瑞' && itemId === 'wpn_dragonslayer') ? 1 : trialItemDropMult(itemId);   // 🔧 v2.6.75 卡瑞·屠龍劍固定 100%（獎勵已綁「擊殺消耗四任務道具」的成本）；trialItemDropMult 現恆 1
         let _relicX2 = (DB.items[itemId].relic && typeof mainPlayerHasEquippedEffect === 'function' && mainPlayerHasEquippedEffect('relicDropX2')) ? 2 : 1;   // 幸運暴走兔腳只讀主操作玩家裝備
-        if(Math.random() < partyDropRate((ratePct * _dropBase * _clMult * _relicX2) / 100)) gainItem(itemId, 1);
+        if(Math.random() < gmDropChance('normal',mob,itemId,ratePct,_dropBase * _clMult * _relicX2 * partyRewardMult())) gainItem(itemId, 1);
     });
 
     // === 🔧 萬能藥稀有掉落：等級 40 以上、非血盟。一般敵人 0.01%；頭目 1%（排除夢幻之島頭目），擊殺後隨機掉落 6 種萬能藥之一 ===
     if (!_kbNoReward && !mob.siegeV2 && (mob.lv || 0) >= 40 && mob.race !== '血盟') {   // 🗝️ 軍王之室小怪／城戰 V2 守軍不進萬能藥掉落
         let _panRate = mob.boss ? (mapState.current === 'dream_island' ? 0 : 0.01) : 0.0001;   // 頭目 1%（夢幻之島頭目除外）／一般敵人 0.01%
-        if (_panRate > 0 && Math.random() < partyDropRate(_panRate * classicDropMult())) {
-            const _PANACEA = ['panacea_str', 'panacea_dex', 'panacea_con', 'panacea_int', 'panacea_wis', 'panacea_cha'];
-            let _pid = _PANACEA[Math.floor(Math.random() * _PANACEA.length)];
+        const _PANACEA = ['panacea_str', 'panacea_dex', 'panacea_con', 'panacea_int', 'panacea_wis', 'panacea_cha'];
+        const _pid = _panRate > 0 && gmChooseDrop('panacea',mob,_PANACEA.map(id=>[id,_panRate*100/6]),classicDropMult()*partyRewardMult());
+        if (_pid) {
             gainItem(_pid, 1);
             logSys(`<span class="text-pink-300 font-bold">✦ 罕見掉落！</span>你獲得了 <span class="text-pink-300 font-bold">${DB.items[_pid].n}</span>。`);
         }
@@ -519,43 +519,43 @@ function killMob(idx) {
                 && a.cls === 'dark' && a.skills && a.skills.includes('sk_dark_refine'));
         let _cdm = classicDropMult();   // 恆 1（經典與一般同掉率）；保留呼叫與其他掉落點同管線
         if (mapState.current === 'silent_outer') {
-            if (Math.random() < partyDropRate((_refine ? 0.30 : 0.20) * _cdm)) gainItem('mat_blackstone2', 1);
-            if (Math.random() < partyDropRate((_refine ? 0.15 : 0.10) * _cdm)) gainItem('mat_blackstone3', 1);
+            if (Math.random() < gmDropChance('stoneSilent',mob,'mat_blackstone2',20,(_refine?1.5:1)*_cdm*partyRewardMult())) gainItem('mat_blackstone2', 1);
+            if (Math.random() < gmDropChance('stoneSilent',mob,'mat_blackstone3',10,(_refine?1.5:1)*_cdm*partyRewardMult())) gainItem('mat_blackstone3', 1);
         } else if (_refine && typeof mapCategoryOf === 'function' && ['wild','dungeon'].includes(mapCategoryOf(mapState.current))) {   // 🔧 野外＋地監均可掉（攻城區不掉）
-            if (Math.random() < partyDropRate(0.01 * _cdm))  gainItem('mat_blackstone2', 1);
-            if (Math.random() < partyDropRate(0.005 * _cdm)) gainItem('mat_blackstone3', 1);
-            if (Math.random() < partyDropRate(0.001 * _cdm)) gainItem('mat_blackstone4', 1);
+            if (Math.random() < gmDropChance('stoneField',mob,'mat_blackstone2',1,_cdm*partyRewardMult()))  gainItem('mat_blackstone2', 1);
+            if (Math.random() < gmDropChance('stoneField',mob,'mat_blackstone3',0.5,_cdm*partyRewardMult())) gainItem('mat_blackstone3', 1);
+            if (Math.random() < gmDropChance('stoneField',mob,'mat_blackstone4',0.1,_cdm*partyRewardMult())) gainItem('mat_blackstone4', 1);
         }
     }
     // === 🔧 銀礦石掉落（黑暗妖精製作材料）===
     {
         let _oreRates = { '石頭高崙':100, '鋼鐵高崙':100, '侏儒':50, '侏儒戰士':50, '黑騎士':50, '哈柏哥布林':50, '蜥蜴人':50 };
         let _or = _oreRates[mob.n];
-        if (!_kbNoReward && _or && Math.random() < partyDropRate(_or / 100 * classicDropMult())) gainItem('mat_silverore', 1);   // 🗝️ 軍王之室小怪零產出
+        if (!_kbNoReward && _or && Math.random() < gmDropChance('ore',mob,'mat_silverore',_or,classicDropMult()*partyRewardMult())) gainItem('mat_silverore', 1);   // 🗝️ 軍王之室小怪零產出
     }
     // === 🏛️ 聖地遺物掉落：持有死亡騎士之印記、於拉斯塔巴德區域擊敗任何怪物，0.1% 機率獲得（製作長老之室武器秘笈用） ===
     if (!_kbNoReward && player.inv.some(i => i.id === 'item_dk_insignia') && typeof mapRegionOf === 'function' && mapRegionOf(mapState.current) === 'rastabad') {   // 🗝️ 軍王之室屬 rastabad 地區→小怪必須排除，否則成為無限刷聖地遺物點
-        if (Math.random() < partyDropRate(0.001 * classicDropMult())) gainItem('mat_holy_relic', 1);
+        if (Math.random() < gmDropChance('holy',mob,'mat_holy_relic',0.1,classicDropMult()*partyRewardMult())) gainItem('mat_holy_relic', 1);
     }
     // === 🔧 黑暗妖精武器掉落 ===
     { let _dwd = (typeof DARK_WEAPON_DROPS !== 'undefined') ? DARK_WEAPON_DROPS[mob.n] : null;
-      if (_dwd && !_kbNoReward) _dwd.forEach(e => { if (DB.items[e[0]] && Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1); }); }
+      if (_dwd && !_kbNoReward) _dwd.forEach(e => { if (DB.items[e[0]] && Math.random() < gmDropChance('darkWeapon',mob,e[0],e[1],_dropMult)) gainItem(e[0], 1); }); }
     // === 🔧 三階黑暗精靈水晶掉落 ===
     { let _dcd = (typeof DARK_CRYSTAL_DROPS !== 'undefined') ? DARK_CRYSTAL_DROPS[mob.n] : null;
-      if (_dcd && !_kbNoReward) _dcd.forEach(e => { if (DB.items[e[0]] && Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1); }); }
+      if (_dcd && !_kbNoReward) _dcd.forEach(e => { if (DB.items[e[0]] && Math.random() < gmDropChance('darkCrystal',mob,e[0],e[1],_dropMult)) gainItem(e[0], 1); }); }
     // === 🐉 龍騎士掉落（任務道具／書板／鎖鏈劍）：僅龍騎士主玩家擊殺時判定 ===
     { let _drd = (typeof DRAGON_DROPS !== 'undefined') ? DRAGON_DROPS[mob.n] : null;   // 🐉 龍騎士掉落表改為全職可掉（書板/鎖鏈劍·就算不能裝備也掉）；妖魔搜索文件等試煉道具由 trialDropBlocked 限定 dragon＋接取制
       if (_drd && !_kbNoReward) _drd.forEach(e => { if (!DB.items[e[0]] || trialDropBlocked(e[0])) return;
-          if (typeof trialForced100 === 'function' && trialForced100(e[0])) { grantPartyTrialQuestDrop(e[0], 1); return; }   // 🔥 v3.0.78 接取制試煉道具：100% 掉落
-          if (Math.random() < (e[1] * _dropBase * partyRewardMult() * trialItemDropMult(e[0])) / 100) gainItem(e[0], 1); }); }   // 🐉 龍騎士試煉道具（trialItemDropMult 恆 1）
+          if (typeof trialForced100 === 'function' && trialForced100(e[0])) { if(Math.random()<gmDropChance('dragon',mob,e[0],100)) grantPartyTrialQuestDrop(e[0], 1); return; }   // 🔥 v3.0.78 接取制試煉道具：100% 掉落
+          if (Math.random() < gmDropChance('dragon',mob,e[0],e[1],_dropBase*partyRewardMult()*trialItemDropMult(e[0]))) gainItem(e[0], 1); }); }   // 🐉 龍騎士試煉道具（trialItemDropMult 恆 1）
     // === ⚔️ 戰士技能印記掉落（全職可掉·僅戰士可學）===
     { let _wrd = (typeof WARRIOR_DROPS !== 'undefined') ? WARRIOR_DROPS[mob.n] : null;
       if (_wrd && !_kbNoReward) _wrd.forEach(e => { if (!DB.items[e[0]] || trialDropBlocked(e[0])) return;   // 🔥 v3.0.78 戰士試煉道具（若列於此表）同樣吃接取制閘門
-          if (typeof trialForced100 === 'function' && trialForced100(e[0])) { grantPartyTrialQuestDrop(e[0], 1); return; }
-          if (Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1); }); }
+          if (typeof trialForced100 === 'function' && trialForced100(e[0])) { if(Math.random()<gmDropChance('warrior',mob,e[0],100)) grantPartyTrialQuestDrop(e[0], 1); return; }
+          if (Math.random() < gmDropChance('warrior',mob,e[0],e[1],_dropMult)) gainItem(e[0], 1); }); }
     // 🔮 記憶水晶掉落（幻術士法術書·全職可掉，獨立 roll·與 MOB_DROPS 並存）
     { let _memd = (typeof MEM_DROPS !== 'undefined') ? MEM_DROPS[mob.n] : null;
-      if (_memd && !_kbNoReward) _memd.forEach(e => { if (DB.items[e[0]] && Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1); }); }
+      if (_memd && !_kbNoReward) _memd.forEach(e => { if (DB.items[e[0]] && Math.random() < gmDropChance('memory',mob,e[0],e[1],_dropMult)) gainItem(e[0], 1); }); }
     // 🎴 卡片掉落（血盟標籤以外·一般＝經典機率·不乘 classicDropMult·一律進背包不自動賣）
     if (!_kbNoReward && typeof rollCardDrops === 'function') rollCardDrops(mob);   // 🗝️ 軍王之室小怪零產出（小怪固定 5 秒無限重生＝卡片無限刷）
 
@@ -566,7 +566,7 @@ function killMob(idx) {
         AREA_BONUS_ITEMS.forEach(itemId => {
             let baseRate = (itemId === 'new_item_195') ? (hasWorldTree ? 0.30 : 0.20) : (hasWorldTree ? 0.03 : 0.02);
             let bonusRate = baseRate * _dropMult;   // 🔮 席琳的世界×3
-            if(DB.items[itemId] && Math.random() < Math.min(1, bonusRate)) gainItem(itemId, 1);
+            if(DB.items[itemId] && Math.random() < gmDropChance('area',mob,itemId,itemId==='new_item_195'?20:2,_dropMult*(hasWorldTree?1.5:1))) gainItem(itemId, 1);
         });
     }
 
@@ -576,7 +576,7 @@ function killMob(idx) {
     //    瘋狂的席琳世界再 ×3。結晶＝遺骸的唯一產出來源（NPC 伊奧：1 顆換 1 件指定部位遺骸）。
     if (!_kbNoReward && mob._sherine) {   // 🗝️ 軍王之室小怪零產出
         let _cr = (mob.boss ? 0.0001 : 0.00001) * (mob.lv || 1) * (mob._sherineMad ? 3 : 1);
-        if (_cr > 0 && Math.random() < partyDropRate(_cr * classicDropMult())) {
+        if (_cr > 0 && Math.random() < gmDropChance('sherine',mob,'sherine_crystal',(mob.boss?0.01:0.001)*(mob.lv||1),(mob._sherineMad?3:1)*classicDropMult()*partyRewardMult())) {
             gainItem('sherine_crystal', 1);
             logSys(`<span class="c-sherine font-bold">✦✦ 席琳結晶 從 ${mob.n} 的殘骸中浮現！✦✦</span>`);
         }
@@ -705,6 +705,7 @@ function prideTeleportBlocked() {
 }
 // 進入指定攀登樓層（pride_fN）：複製 changeMap 戰鬥進場流程（補跑期間不操作 DOM）
 function enterPrideFloor(n) {
+    if(!gmMapAllowed('pride_f'+n,true))return false;
     if (typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked('pride_f' + n)) return false;
     saveSiegeBossHp();
     mapState.current = 'pride_f' + n;
@@ -781,6 +782,7 @@ function prideEndClimb(msg) {
 // 由海音 NPC 依斯巴搭船開始（費用 10 萬金幣）；先進入「遺忘之島途中(野外)」隨機遭遇，
 // 擊敗傳送門「遺忘之島」後進入「遺忘之島」本島。旅程狀態存於 state.oblivion（不存檔；重載一律回村）。
 function enterOblivionMap(mapKey) {
+    if(!gmMapAllowed(mapKey,true))return false;
     if (typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked(mapKey)) return false;
     saveSiegeBossHp();
     mapState.current = mapKey;
@@ -810,6 +812,7 @@ function enterOblivionMap(mapKey) {
 }
 // 由依斯巴搭船：扣 10 萬金幣，進入「遺忘之島途中」
 function startOblivion() {
+    if(!gmMapAllowed('oblivion_travel',true))return false;
     if (typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked('oblivion_travel')) return;
     if (player.statuses && (player.statuses.stone > 0 || player.statuses.paralyze > 0 || player.statuses.freeze > 0 || player.statuses.stun > 0 || player.statuses.sleep > 0)) {
         logSys('你目前無法行動（石化／麻痺／冰凍／暈眩），無法出發。'); return;
@@ -908,6 +911,7 @@ function antharasClaimDailyClear() {
     return { ok: true, names: refs.map(ref => ref.name), storageError: false };
 }
 function antharasEnter() {   // NPC 多魯嘉貝爾「進入副本」：守衛＝已在副本/控場中/每日已通關
+    if(!gmMapAllowed('antharas_nest_1',true))return false;
     if (state.antharas) { logSys('你已身在侵蝕的安塔瑞斯巢穴之中。'); return; }
     if (typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked('antharas_nest_1')) return;
     if (player.statuses && (player.statuses.stone > 0 || player.statuses.paralyze > 0 || player.statuses.freeze > 0 || player.statuses.stun > 0 || player.statuses.sleep > 0)) {
@@ -1136,6 +1140,7 @@ const RIFT_DRAGONS = ['antaras', 'fafurion', 'valakas', 'lindvior'];           /
 const RIFT_DRAGON_NAMES = ['安塔瑞斯', '法利昂', '巴拉卡斯', '林德拜爾'];
 function riftCoreCount() { return player.inv.reduce((s, i) => s + (i.id === 'mat_crack_core' ? (i.cnt || 1) : 0), 0); }
 function enterRift() {
+    if(!gmMapAllowed('rift_battle',true))return false;
     if (typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked('rift_battle')) return;
     if (player.statuses && (player.statuses.stone > 0 || player.statuses.paralyze > 0 || player.statuses.freeze > 0 || player.statuses.stun > 0 || player.statuses.sleep > 0)) {
         logSys('你目前無法行動（石化／麻痺／冰凍／暈眩），無法進入時空裂痕。'); return;
@@ -1151,7 +1156,8 @@ function enterRift() {
     enterRiftMap();
     saveGame();
 }
-function enterRiftMap() {   // 仿 enterPrideFloor 的戰鬥進場（不走 changeMap，避免清掉 riftRun）
+function enterRiftMap() {
+    if(!gmMapAllowed('rift_battle',true))return false;   // 仿 enterPrideFloor 的戰鬥進場（不走 changeMap，避免清掉 riftRun）
     if (typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked('rift_battle')) return false;
     saveSiegeBossHp();
     mapState.current = 'rift_battle';
@@ -1364,6 +1370,7 @@ function renderRiftEntrance(container) {
 }
 
 function checkLvUp() {
+    const previousLevel = player.lv;
     let up = false;
     while(player.lv < 100 && player.exp >= getExpReq(player.lv)) {
         player.exp -= getExpReq(player.lv);   // 達到「升下一等所需經驗」即扣除該需求並升一級（非累積）
@@ -1372,7 +1379,7 @@ function checkLvUp() {
         up = true;
     }
     if (up) {
-        logSys(`<span class="text-yellow-400 font-bold text-lg">★★★ 升級了！目前等級 ${player.lv} ★★★</span>`);
+        logSys(`<span class="text-yellow-400 font-bold text-lg">★★★ 角色升級：Lv.${previousLevel} → Lv.${player.lv} ★★★</span>`);
         calcStats();
         player.hp = player.mhp; player.mp = player.mmp;
         try { vfxLevelUp(); } catch(e){}   // ✨ VFX：升級慶祝

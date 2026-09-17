@@ -1,0 +1,41 @@
+/* Status information lives in a tab, never over the battlefield. */
+.status-tab-ready :is(#status-icon-bar, #status-alerts, #dt-buffs) { display: none !important; }
+#btn-status { grid-column: 1 / -1; }
+#tab-status { overflow-y: auto; min-height: 0; height: 100%; padding: 16px 16px 64px; background: #141923; color: #dce3ef; overscroll-behavior: contain; }
+#tab-status.hidden { display: none; }
+.effects-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.effects-heading h2 { font-size: 21px; font-weight: 700; color: #f3d8a0; margin: 0; }
+.effects-heading p { margin: 4px 0 0; font-size: 13px; color: #a5b2c7; }
+#effects-count { border: 1px solid #6a583b; background: #302b24; border-radius: 20px; padding: 6px 12px; white-space: nowrap; color: #f7d89a; }
+.effects-tools label { display: block; font-size: 13px; margin-bottom: 6px; }
+#effects-search { width: 100%; min-height: 44px; font-size: 16px; color: #eef2ff; background: #0d121a; border: 1px solid #49566c; border-radius: 6px; padding: 8px 12px; }
+.effects-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.effects-filters button { min-height: 44px; border: 1px solid #3d4b60; color: #c6d1e1; border-radius: 6px; font-size: 14px; background: #202a39; }
+.effects-filters button[aria-pressed=true] { color: #ffe5b2; background: #51432f; border-color: #b08b4c; }
+#tab-status :is(input, button):focus-visible { outline: 2px solid #eac17c; outline-offset: 2px; }
+.effects-note { color: #a6b4c9; font-size: 12px; line-height: 1.65; margin: 12px 0; }
+#effects-list { display: grid; gap: 10px; }
+.effect-card { min-width: 0; padding: 12px; border: 1px solid #35455b; border-left: 3px solid #7caeb1; background: #1b2432; border-radius: 7px; }
+.effect-title { display: flex; align-items: center; gap: 8px; }
+.effect-symbol { flex: 0 0 28px; height: 28px; background: #2b414c; border: 1px solid #486471; border-radius: 5px; position: relative; }
+.effect-symbol:empty::after { content: '✦'; position: absolute; inset: 0; text-align: center; line-height: 26px; color: #b2dbdb; }
+.effect-symbol img { width: 100%; height: 100%; border-radius: 4px; object-fit: cover; }
+.effect-title h3 { margin: 0; flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 15px; line-height: 1.5; color: #f0e2c7; font-weight: 700; }
+.effect-kind { flex-shrink: 0; color: #acd7d7; font-size: 11px; }
+.effect-description { font-size: 13px; line-height: 1.75; margin: 10px 0; overflow-wrap: anywhere; }
+.effect-card footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; font-size: 12px; }
+.effect-source { color: #9cabc1; }
+.effect-time { color: #ddca9e; font-variant-numeric: tabular-nums; }
+.effect-card[data-kind=debuff] { border-left-color: #ec8e9e; }
+.effect-card[data-kind=debuff] .effect-kind { color: #f5acba; }
+.effect-card[data-kind=permanent] { border-left-color: #b0a0db; }
+.effect-card[data-kind=permanent] .effect-kind { color: #c9bbe9; }
+.effect-card.expiring .effect-time { color: #ffb59f; }
+#effects-empty { padding: 32px 8px; text-align: center; color: #aebacf; font-size: 14px; }
+@media (max-width: 768px), (max-height: 520px) and (pointer: coarse) {
+  #btn-status { display: none; }
+  #game-screen[data-mobile-view=status] :is(#col-left, #col-center, .tab-bar) { display: none !important; }
+  body:has(#game-screen[data-mobile-view=status]) #equipment-window { visibility: hidden; }
+  #game-screen[data-mobile-view=status] #tab-content-panel { height: auto; min-height: 420px; overflow: visible; }
+  #game-screen[data-mobile-view=status] #tab-status { height: auto; overflow: visible; padding: 14px; }
+}

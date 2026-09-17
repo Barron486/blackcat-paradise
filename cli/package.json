@@ -1,0 +1,9 @@
+{
+  "name": "blackcat-game-cli",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.15.0" },
+  "bin": { "blackcat": "main.mjs" },
+  "dependencies": { "jsdom": "30.0.1" }
+}

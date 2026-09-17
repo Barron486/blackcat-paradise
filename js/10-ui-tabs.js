@@ -433,7 +433,9 @@ function decorateClassicInventoryTab(div){
     shell.appendChild(viewport); shell.appendChild(up); shell.appendChild(down); shell.appendChild(sortWrap);
     let quick=Array.from(div.children).find(x=>x.classList.contains('sticky'));
     if(quick)quick.classList.add('classic-list-toolbar');
-    div.appendChild(shell);
+    const fit=document.createElement('div');
+    fit.className='classic-inventory-fit';
+    fit.appendChild(shell);div.appendChild(fit);
 }
 
 // ===== 召喚類技能互斥：迷魅 / 召喚 / 造屍 / 召喚屬性精靈 / 召喚強力屬性精靈 同時只能開啟一個 =====
@@ -2533,7 +2535,7 @@ function switchTab(t, btn) {
     Array.from(btn.parentElement.children).forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     // 👇 更新陣列名單
-    ['stats', 'equip', 'weapons', 'skill', 'armors', 'items', 'audit', 'pvp', 'clan', 'automation'].forEach(id => { let _e = document.getElementById(`tab-${id}`); if(_e) _e.classList.add('hidden'); });   // 🔧 v2.6.74 自動化設定改分頁內嵌（tab-automation）
+    ['stats', 'status', 'equip', 'weapons', 'skill', 'armors', 'items', 'audit', 'pvp', 'clan', 'automation'].forEach(id => { let _e = document.getElementById(`tab-${id}`); if(_e) _e.classList.add('hidden'); });   // 🔧 v2.6.74 自動化設定改分頁內嵌（tab-automation）
     document.getElementById(`tab-${t}`).classList.remove('hidden');
     if(typeof setEquipmentPanelEmbedded === 'function') setEquipmentPanelEmbedded(t === 'equip');
     if(t === 'audit' && typeof renderAuditTab === 'function') renderAuditTab();

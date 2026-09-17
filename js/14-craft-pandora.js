@@ -1168,6 +1168,7 @@ function doCraft(npcId, recipeIdx, sherine) {   // 🔮 sherine 參數保留簽�
     saveGame();
 }
 function renderPandoraGacha(div) {
+    if(window.CloudStore){window.CloudStore.showMarket?.();return;}
     // 🔧 潘朵拉黑市（取代舊抽獎機）：每 10 分鐘上架一件商品，可直接購買
     _pandoraDiv = div;
     refreshPandoraMarket(false);
@@ -1511,6 +1512,7 @@ function _pandoraLogBuyOrder(slot) {
 
 // 黑市輪換（js/03 每 10 秒呼叫一次；force＝全面換貨）。回傳本次是否有商品刷新。
 function refreshPandoraMarket(force) {
+    if(window.CloudStore)return;
     if (typeof player === 'undefined' || !player) return false;
     let nowT = (typeof state !== 'undefined' && state) ? (state.ticks || 0) : 0;
     let m = player.pandoraMarket2;
@@ -1566,6 +1568,7 @@ function refreshPandoraMarket(force) {
 
 // 稀有(權重1)商品上架時的常駐橫幅：持續到商品輪換/售出或玩家點擊潘朵拉
 function renderPandoraBanner() {
+    if(window.CloudStore)return;
     let el = document.getElementById('pandora-banner');
     let annId = (typeof player !== 'undefined' && player) ? player.pandoraAnnounce : null;
     let annInst = annId ? { id: annId, bless: !!player.pandoraAnnounceBless } : null;
@@ -1585,6 +1588,7 @@ function renderPandoraBanner() {
 
 // 系統與物品日誌標題列右側：顯示黑市「最新上架」的商品（權重1＝亮紫，其餘＝白色）
 function renderSyslogPandora() {
+    if(window.CloudStore)return;
     let el = document.getElementById('syslog-pandora');
     if (!el) return;
     let m = (typeof player !== 'undefined' && player) ? player.pandoraMarket2 : null;
@@ -1712,6 +1716,7 @@ function pandoraRenderMarket(div) {
 
 // 購買指定格商品（上架時已決定祝福與否；售出格保持「已售出」直到該格輪換）
 function buyPandoraItem(i) {
+    if(window.CloudStore){window.CloudStore.showMarket?.();return;}
     let m = player.pandoraMarket2;
     let s = m && m.slots && m.slots[i];
     let msgEl = () => document.getElementById('pandora-msg');
@@ -1745,6 +1750,7 @@ function buyPandoraItem(i) {
 
 /* ===== 玩家自訂名稱：點擊左上狀態欄名稱 → 輸入框 → 確認 ===== */
 function startEditName() {
+    if(window.CloudStore){window.CloudStore.showShop?.();return;}
     if (window._editingName || !player.cls) return;
     window._editingName = true;
     let el = document.getElementById('st-class');
@@ -1758,6 +1764,7 @@ function startEditName() {
     if (input) { input.focus(); input.select(); }
 }
 function confirmEditName() {
+    if(window.CloudStore){window.CloudStore.showShop?.();return;}
     let input = document.getElementById('name-edit-input');
     let v = input ? input.value.trim() : '';
     v = v.replace(/[<>&"']/g, '');   // 🔧 過濾 HTML 特殊字元：名稱會以 innerHTML 呈現，避免自我注入標籤

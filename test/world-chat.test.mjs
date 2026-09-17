@@ -1,0 +1,27 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {createRequire} from 'node:module';
+const {JSDOM}=createRequire(new URL('../cli/package.json',import.meta.url))('jsdom');
+const settle=()=>new Promise(r=>setImmediate(r));
+test('unified chat preserves NPC controls, separates channels, and shows fresh authenticated presence',async t=>{
+  const dom=new JSDOM('<body><div id="game-screen"><div id="syslog-panel"><input id="world-input"><button id="world-send">送出</button><div id="world-log">原有 NPC 對話</div></div></div><aside id="cloud-toolbar"><button data-chat></button><button data-online></button></aside>',{runScripts:'outside-only',pretendToBeVisual:true});t.after(()=>dom.window.close());
+  const w=dom.window,doc=w.document,npc=doc.getElementById('syslog-panel'),calls=[],timers=[];
+  let npcClicks=0;doc.getElementById('world-send').onclick=()=>npcClicks++;
+  w.setInterval=(fn,ms)=>timers.push({fn,ms});
+  let total=2;
+  const cloud={request:async(path,body)=>{calls.push({path,body});if(path==='/api/online')return {total,players:total-1,ai:1,list:[{name:'<img src=x>',map:'新兵修練場',ai:false},{name:'黑貓',map:'村莊',ai:true}]};if(path==='/api/world')return {messages:[{id:1,username:'玩家',text:'<script>測試</script>',at:Date.now()},{id:2,username:'cat',displayName:'黑貓',text:'大家好',ai:true,model:'qwen3:8b',at:Date.now()}]};return {ok:true};}};
+  w.eval(readFileSync(new URL('../online/world-chat.js',import.meta.url),'utf8').replace('export function','window.startWorldChat = function'));
+  const api=w.startWorldChat(cloud,doc.getElementById('cloud-toolbar'));await settle();
+  assert.equal(doc.querySelector('[data-online]').textContent,'線上 2');assert.equal(calls.some(c=>c.path==='/api/world'),false);
+  assert.equal(doc.querySelector('#chat-pane-npc #syslog-panel'),npc);assert.equal(doc.querySelectorAll('#syslog-panel').length,1);
+  doc.querySelector('[data-chat]').click();await settle();assert.equal(doc.getElementById('cloud-chat').hidden,false);
+  assert.equal(doc.querySelector('.cloud-messages script'),null);assert.match(doc.querySelector('.cloud-messages').textContent,/<script>測試<\/script>/);assert.equal(doc.querySelector('.cloud-messages .cloud-ai-badge').textContent,'AI');
+  doc.querySelector('[data-pane=npc]').click();doc.getElementById('world-send').click();assert.equal(npcClicks,1);assert.equal(calls.some(c=>c.path==='/api/chat'),false);
+  assert.equal(doc.getElementById('chat-pane-players').hidden,true);
+  doc.querySelector('[data-online]').click();await settle();assert.equal(doc.getElementById('chat-pane-online').hidden,false);assert.equal(doc.querySelector('.cloud-player-list img'),null);
+  total=3;await timers.find(t=>t.ms===10000).fn();assert.equal(doc.querySelector('[data-online]').textContent,'線上 3');
+  doc.querySelector('[data-chat]').click();const input=doc.querySelector('#cloud-chat form input');input.value='一起冒險';
+  await doc.querySelector('#cloud-chat form').onsubmit({preventDefault(){}});assert.equal(calls.find(c=>c.path==='/api/chat').body.text,'一起冒險');assert.equal(input.value,'');
+  doc.querySelector('[data-close]').click();const n=calls.length;await api.refresh();assert.equal(calls.length,n);assert.equal(doc.querySelector('[data-online]').getAttribute('aria-expanded'),'false');
+});

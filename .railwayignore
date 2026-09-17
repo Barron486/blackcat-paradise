@@ -1,0 +1,12 @@
+.git/
+data/
+node_modules/
+cli/node_modules/
+.env
+.env.*
+test-results/
+*.log
+*.sqlite*
+.railway/
+assets/
+public/

@@ -1,0 +1,20 @@
+data/
+.env
+.env.*
+.railway/
+*.sqlite*
+node_modules/
+*.log
+test-results/
+
+# Local operations notes contain production account and infrastructure details.
+/deploy/STATUS.md
+/deploy/LEVEL-SYNC-FIX.md
+
+# Credentials and temporary SSH keys must never enter version control.
+*.pem
+*.key
+*.ed25519
+*.ed25519.pub
+id_rsa*
+id_ed25519*

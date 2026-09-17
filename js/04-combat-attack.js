@@ -1651,7 +1651,7 @@ function pvpChaoticDeathItemLoss() {
     let pick = candidates[Math.floor(Math.random() * candidates.length)];
     let name = (typeof getItemFullName === 'function') ? getItemFullName(pick.item) : (DB.items[pick.item.id] ? DB.items[pick.item.id].n : pick.item.id);
     // 🗃️ v3.5.74 遺失紀錄：保存完整物品快照 player.pvpLostItems（含強化/詞綴/屬性）
-    //    🕊️ v3.6.84 接上聖使阿卡塔「裝備贖回」（1000 龍鑽指定贖回一件）→ 上限依用戶規格改為 **5 件**，滿了淘汰最舊。
+    //    🕊️ v3.6.84 接上聖使阿卡塔「裝備贖回」（1000 藍鑽指定贖回一件）→ 上限依用戶規格改為 **5 件**，滿了淘汰最舊。
     try {
         if (!Array.isArray(player.pvpLostItems)) player.pvpLostItems = [];
         player.pvpLostItems.push({ t: Date.now(), from: pick.kind, slot: pick.kind === 'eq' ? pick.slot : null, item: JSON.parse(JSON.stringify(Object.assign({}, pick.item, { cnt: 1 }))) });

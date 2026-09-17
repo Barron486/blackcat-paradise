@@ -485,6 +485,11 @@ function portablePetRoster(list){
 // 匯出：先儲存當前進度，再把該角色存檔寫成 .json 檔。優先用檔案系統 API（可自選資料夾），
 //       不支援時退回瀏覽器下載（落在預設下載資料夾）。
 async function exportSave(slot){
+    if(window.CloudStore){
+        if(window.CloudStore.exportCharacterReport)await window.CloudStore.exportCharacterReport(slot);
+        else alert('商店與雲端資料正在載入，請稍後再試。');
+        return;
+    }
     let slotNo = Math.max(1, Math.floor(Number(slot || currentSlot) || 1));
     if (slotNo === currentSlot && player && player.cls) {
         let saved = false;
@@ -531,7 +536,7 @@ async function exportSave(slot){
         data = JSON.stringify(_obj);
     } catch(e){
         try { console.error('[exportSave] failed', e); } catch(_e){}
-        alert('匯出失敗：角色、倉庫、寵物、龍之鑽石或血盟資料無法正確讀取，未產生匯出檔。');
+        alert('匯出失敗：角色、倉庫、寵物、藍鑽或血盟資料無法正確讀取，未產生匯出檔。');
         return;
     }
     const desktopExport = !!_FS;
@@ -584,6 +589,7 @@ function downloadSaveFile(data, fname){
 }
 // 匯入：對指定存檔位 n 開啟選檔視窗，驗證後用匯入的存檔「取代」該位置的存檔，並刷新清單。
 function importSave(n){
+    if(window.CloudStore){alert('線上版不開放存檔匯入。角色進度由雲端保存，匯出檔僅供檢視。');return;}
     let input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,application/json';
@@ -635,7 +641,7 @@ function importSave(n){
             d.p.enSeed = importSeed;
             d.p._roleEpoch = _roleEpoch();   // 匯入視為新的角色世代，已刪角色的舊分頁不能覆蓋這份匯入檔
             d.p.allies = [];   // 🤝 舊匯出檔也強制移除傭兵；來源角色未一併匯入時不可保留快照
-            // 🔧 抽出倉庫資料（若匯入檔含 wh）；🐾 v3.2.75 也抽出寵物名冊（pets）；龍之鑽石同為共用資料。
+            // 🔧 抽出倉庫資料（若匯入檔含 wh）；🐾 v3.2.75 也抽出寵物名冊（pets）；藍鑽同為共用資料。
             //    寫入存檔位時不保留這些匯出專用欄位（它們不進角色存檔）。
             let whData = d.wh;
             let petData = d.pets;
@@ -651,7 +657,7 @@ function importSave(n){
             }
             if(pandoraDiamonds !== undefined){
                 pandoraDiamonds = Number(pandoraDiamonds);
-                if(!Number.isFinite(pandoraDiamonds)){ alert('匯入失敗：龍之鑽石資料格式不正確。'); return; }
+                if(!Number.isFinite(pandoraDiamonds)){ alert('匯入失敗：藍鑽資料格式不正確。'); return; }
                 pandoraDiamonds = Math.max(0, Math.floor(pandoraDiamonds));
             }
             if(clanState !== undefined && (!clanState || typeof clanState !== 'object' || Array.isArray(clanState) || !clanState.modes || !clanState.members)){
@@ -681,14 +687,14 @@ function importSave(n){
                     petMsg = '\n（寵物名冊維持原狀，未還原）';
                 }
             }
-            // 💎 龍之鑽石為全角色共用；只還原數量，不覆蓋目前的叫賣 NPC、遺物布告欄與冷卻資料。
+            // 💎 藍鑽為全角色共用；只還原數量，不覆蓋目前的叫賣 NPC、遺物布告欄與冷卻資料。
             let pandoraMsg = '', restorePandoraDiamonds = false;
             if(pandoraDiamonds !== undefined){
-                if(confirm(`此匯入檔包含龍之鑽石 ${pandoraDiamonds.toLocaleString()} 顆。\n是否一併還原龍之鑽石？\n⚠ 會覆蓋目前所有角色共用的龍之鑽石數量。`)){
+                if(confirm(`此匯入檔包含藍鑽 ${pandoraDiamonds.toLocaleString()} 顆。\n是否一併還原藍鑽？\n⚠ 會覆蓋目前所有角色共用的藍鑽數量。`)){
                     restorePandoraDiamonds = true;
-                    pandoraMsg = '\n龍之鑽石已一併還原。';
+                    pandoraMsg = '\n藍鑽已一併還原。';
                 } else {
-                    pandoraMsg = '\n（龍之鑽石維持原狀，未還原）';
+                    pandoraMsg = '\n（藍鑽維持原狀，未還原）';
                 }
             }
             let clanMsg = '', restoreClan = false;
@@ -700,7 +706,7 @@ function importSave(n){
                     clanMsg = '\n（血盟資料維持原狀，未還原）';
                 }
             }
-            // 💾 角色／倉庫／寵物／龍之鑽石／血盟視為同一批匯入；失敗時回復匯入前資料。
+            // 💾 角色／倉庫／寵物／藍鑽／血盟視為同一批匯入；失敗時回復匯入前資料。
             let roleKey = 'lineage_idle_save_' + n;
             let whRestoreKey = restoreWh ? whKey(d.p) : '';
             let petRestoreKey = restorePets ? ((typeof PET_ROSTER_KEY !== 'undefined' ? PET_ROSTER_KEY : 'fb5_pet_roster') + (typeof modeSuffix === 'function' ? modeSuffix(!!(d.p && d.p.classicMode), false) : '')) : '';
@@ -733,7 +739,7 @@ function importSave(n){
                         if(before[i].raw == null) _lzRemoveStored(before[i].key);
                         else _lzSetStoredRaw(before[i].key, before[i].raw);
                     }
-                    alert('匯入失敗：龍之鑽石資料無法安全還原，角色、倉庫與寵物資料已回復匯入前狀態。');
+                    alert('匯入失敗：藍鑽資料無法安全還原，角色、倉庫與寵物資料已回復匯入前狀態。');
                     return;
                 }
             }
@@ -746,7 +752,7 @@ function importSave(n){
                     }
                     if(restorePandoraDiamonds && Number.isFinite(beforePandoraDiamonds) && typeof window.pandoraRestoreSharedDiamonds === 'function') window.pandoraRestoreSharedDiamonds(beforePandoraDiamonds);
                     if(beforeClanState && typeof window.clanRestoreSharedState === 'function') window.clanRestoreSharedState(beforeClanState);
-                    alert('匯入失敗：血盟資料無法安全還原，角色、倉庫、寵物與龍之鑽石資料已嘗試回復匯入前狀態。');
+                    alert('匯入失敗：血盟資料無法安全還原，角色、倉庫、寵物與藍鑽資料已嘗試回復匯入前狀態。');
                     return;
                 }
             }
@@ -934,7 +940,8 @@ function updateLoadInfo(){
     const exportBtn = document.getElementById('load-btn-export');
     const del = document.getElementById('load-btn-delete');
     if(create) create.classList.toggle('hidden', !empty);
-    if(importBtn) importBtn.classList.toggle('hidden', !empty);
+    if(importBtn) importBtn.classList.toggle('hidden', !empty || !!window.CloudStore);
+    if(exportBtn)exportBtn.title=window.CloudStore?'匯出角色資訊':'匯出進度';
     if(enter) enter.classList.toggle('hidden', empty);
     if(exportBtn) exportBtn.classList.toggle('hidden', empty);
     if(del) del.classList.toggle('hidden', empty);
@@ -1136,6 +1143,10 @@ function showCreation() {
     if(creation) creation.classList.remove('hidden');
     const classicToggle = document.getElementById('create-classic-toggle');
     if(classicToggle) classicToggle.checked = false;   // 刪角後同頁重創時不得沿用上一輪的經典模式勾選
+    const nameInput = document.getElementById('creation-name');
+    if(nameInput) { nameInput.value = ''; nameInput.setCustomValidity(''); nameInput.removeAttribute('aria-invalid'); }
+    const nameError = document.getElementById('creation-name-error');
+    if(nameError) nameError.textContent = '';
 
     creationSelectedClassBase = 'royal';
     creationSelectedGender = 'm';
@@ -1219,6 +1230,21 @@ function adjStat(s, v) {
     updateCreateUI();
 }
 
+function creationNameError(name) {
+    if(!name) return '請輸入角色 ID／名稱。';
+    if(name.length > 12) return '角色名稱最多 12 字。';
+    if(/[<>&"'\x00-\x1f\x7f]/.test(name)) return '名稱不可包含 < > & 引號或控制字元。';
+    return '';
+}
+function updateCreationName() {
+    const input = document.getElementById('creation-name');
+    const message = creationNameError(input ? input.value.trim() : '');
+    if(input) { input.setCustomValidity(message); input.setAttribute('aria-invalid', String(!!message)); }
+    const error = document.getElementById('creation-name-error');
+    if(error) error.textContent = message;
+    updateCreateUI();
+    return !message;
+}
 function updateCreateUI() {
     if(!curCreate.cls || !createBase[curCreate.cls]){
         ['str','dex','con','int','wis','cha'].forEach(s => {
@@ -1233,7 +1259,8 @@ function updateCreateUI() {
     ['str','dex','con','int','wis','cha'].forEach(s => document.getElementById(`c-${s}`).innerText = b[s] + curCreate[s]);
     let left = b.pts - (curCreate.str + curCreate.dex + curCreate.con + curCreate.int + curCreate.wis + curCreate.cha);
     document.getElementById('creation-pts').innerText = left;
-    document.getElementById('btn-start').disabled = left <= 0 ? false : true;
+    const name = document.getElementById('creation-name')?.value.trim() || '';
+    document.getElementById('btn-start').disabled = left !== 0 || !!creationNameError(name);
 }
 
 function onToggleClassic(el) {
@@ -1248,6 +1275,13 @@ function startGame() {
         backToMenu();
         return;
     }
+    if(!updateCreationName()) {
+        document.getElementById('creation-name')?.focus();
+        return;
+    }
+    const base = createBase[curCreate.cls];
+    if(!base || ['str','dex','con','int','wis','cha'].reduce((sum,key)=>sum+curCreate[key],0) !== base.pts) return;
+    const characterName = document.getElementById('creation-name').value.trim();
     // 🧼 v3.7.73 新角色＝乾淨的 player（修「刪角後創新職業，上一個角色的傭兵／萬能藥瓶數／精通狀態還在」）：
     //   遊戲中按「返回角色選擇」→刪角→創新角色的過程沒有重載頁面，全域 player 仍是上一個角色的物件，
     //   而本函式只逐欄覆寫其中一部分 → 未覆寫欄位被新角色整包繼承。這裡先還原成「頁面剛載入」的原型，
@@ -1282,7 +1316,7 @@ function startGame() {
     player.cls = curCreate.cls;
     player.bloodPledge = null;   // 血盟改由同模式王族花費金幣創立，不再於創角時自動加入。
     player.classicMode = !!(document.getElementById('create-classic-toggle') && document.getElementById('create-classic-toggle').checked);   // 🎮 經典模式：依創角開關決定（此角色永久生效）；🏛️v3.0.83 傳統模式已取消（traditionalMode 由 SAVE_DEFAULTS 恆 false）
-    player.name = null;   // 預設未取名，狀態欄顯示「點擊取名」，玩家可點擊命名
+    player.name = characterName;
     player.enSeed = 'es' + uid() + uid();   // 🎲 強化決定論種子（創角產生一次、存進存檔永久固定）：讓強化成敗由種子決定、不可用 save/load 刷
     player._roleEpoch = _roleEpoch();        // 🛡️ 角色世代：刪除後舊分頁不得把同欄位的舊角色寫回
     if (typeof clanSyncCurrentPlayer === 'function') clanSyncCurrentPlayer();   // 同模式已有血盟時，新角色自動成為成員。
@@ -1553,7 +1587,9 @@ function saveGame() {
     _mercMonotonicExpGuard();   // 🤝 v3.8.2 受僱中經驗只增不減：序列化前吸收磁碟較高的等級/經驗，防舊快照覆蓋待領帳本領取的經驗
     if(!_lzSet('lineage_idle_save_' + currentSlot, _saveWrap(saveStateJson()))) throw new Error('persistent storage write failed');   // 🔧 寫入成功才回報；並由 saveStateJson 排除戰鬥面向暫存參照
     if(typeof petRosterSave === 'function' && !petRosterSave()) throw new Error('pet roster write failed');
-    logSys(`遊戲進度已儲存。`);
+    if (!window.CloudStore) logSys(`遊戲進度已儲存。`);
+    // Online saveGame writes only the local cloud buffer. The account dock reports
+    // success after the server acknowledges it; avoid claiming persistence early.
     _saveFailureNotified = false;
     return true;
     } catch(e) {

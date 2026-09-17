@@ -100,9 +100,9 @@ var LZString = (function () {
 var _FS = (typeof window !== 'undefined' && window.fableStore) ? window.fableStore : null;
 // 🖥️ 打包版標記：在 <html> 加 .pkg-build → 套用打包專屬樣式（如下拉清單選項間隔加大·見 css/style.css）。網頁版(無 fableStore)不加→維持原樣。
 try { if (_FS && typeof document !== 'undefined' && document.documentElement) document.documentElement.classList.add('pkg-build'); } catch (e) {}
-function _lsGet(k) { try { return _FS ? _FS.get(k) : localStorage.getItem(k); } catch (e) { return null; } }
-function _lsSet(k, v) { try { if (_FS) return _FS.set(k, v); localStorage.setItem(k, v); return true; } catch (e) { return false; } }
-function _lsRemove(k) { try { if (_FS) { _FS.remove(k); return; } localStorage.removeItem(k); } catch (e) {} }
+function _lsGet(k) { try { if (window.CloudStore) return window.CloudStore.get(k); return _FS ? _FS.get(k) : localStorage.getItem(k); } catch (e) { return null; } }
+function _lsSet(k, v) { try { if (window.CloudStore) return window.CloudStore.set(k, v); if (_FS) return _FS.set(k, v); localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+function _lsRemove(k) { try { if (window.CloudStore) { window.CloudStore.remove(k); return; } if (_FS) { _FS.remove(k); return; } localStorage.removeItem(k); } catch (e) {} }
 
 // Web saves are written immediately, then compressed in a Worker so LZString cannot block
 // rendering or combat. A per-key revision plus raw-value guard prevents stale Worker output
@@ -160,6 +160,8 @@ function _queueLzCompression(key, value, rev) {
 })();
 // 壓縮寫入：把 JSON 字串以 'LZ1:'+UTF16 壓縮存入；壓縮或寫入失敗(多半 localStorage 配額)時退回明文（再不行才警告）
 function _lzSet(key, jsonStr) {
+  // Online server mode uses an account-isolated memory mirror and revisioned cloud writes.
+  if (typeof window !== 'undefined' && window.CloudStore) return _lsSet(key, jsonStr);
   // Electron uses real files and is not constrained by localStorage quotas. Writing the
   // signed JSON directly avoids blocking the game loop while LZString compresses a large save.
   // _lzGet already accepts both LZ1-compressed and plain values, so old saves remain compatible.
@@ -2521,7 +2523,7 @@ const DB = {
                 { id: "npc_wh_kent", n: "巴歐", title: "倉庫", type: "warehouse", d: "巴歐替占領者看管著肯特城的庫房，存放物品與金幣，四個存檔角色共用。" },
                 { id: "npc_ally_b", n: "傭兵公會", title: "協力", type: "ally", d: "傭兵公會替你牽起命運的絲線，召喚其他存檔位的角色一起作戰。" },
                 { id: "npc_ismael", n: "伊賽馬利", title: "交換物品", type: "exchange", d: "伊賽馬利精於以物易物，以卷軸或金幣交換稀有的祝福卷軸與飾品卷軸。" },
-                { id: "npc_pandora", n: "潘朵拉", title: "黑市", type: "exchange", d: "潘朵拉的黑市藏匿著來路不明的寶物，每 10 分鐘隨機上架一件商品，可直接購買。" },
+                { id: "npc_pandora", n: "潘朵拉", title: "玩家交易所", type: "exchange", d: "上架或購買玩家物品，使用藍鑽或金幣交易，成交收取 20% 系統手續費。" },
                 { id: "npc_kent_guard", n: "肯特守衛隊長", title: "城堡護衛", type: "castleguard", d: "肯特守衛隊長統領藍色鯊魚部隊，招募血厚耐打的護衛與你並肩作戰（死亡 30 秒自動復活）。" },
                 { id: "npc_esti", n: "依詩蒂", title: "血盟", type: "pledge", d: "依詩蒂低聲訴說著血盟的古老誓言，為你尋找以血為盟的夥伴。" },
                 { id: "npc_tros", n: "特羅斯", title: "血盟", type: "pledge", d: "特羅斯握劍而立，為你尋找以血為盟的夥伴。" },
@@ -2557,7 +2559,7 @@ const DB = {
                 { id: "npc_gilen", n: "吉倫", title: "魔法傳授者", type: "skill", d: "吉倫是位循循善誘的魔法導師，提供玩家學習1~3級一般魔法。" },
                 { id: "npc_basin", n: "巴辛", title: "妖魔商人", type: "shop", d: "巴辛是混跡市集的妖魔商人，販賣各種日常消耗品。" },
                 { id: "npc_wh_talking", n: "朵琳", title: "倉庫", type: "warehouse", d: "朵琳細心地替旅人看管行囊，存放物品與金幣，四個存檔角色共用。" },
-                { id: "npc_pandora", n: "潘朵拉", title: "黑市", type: "exchange", d: "潘朵拉的黑市藏匿著來路不明的寶物，每 10 分鐘隨機上架一件商品，可直接購買。" },
+                { id: "npc_pandora", n: "潘朵拉", title: "玩家交易所", type: "exchange", d: "上架或購買玩家物品，使用藍鑽或金幣交易，成交收取 20% 系統手續費。" },
                 { id: "npc_ladal", n: "拉達爾", title: "製作", type: "craft", d: "拉達爾揉皮裁料樣樣精通，能為冒險者製作皮革裝備。" },
 				{ id: "npc_falin", n: "法林", title: "製作", type: "craft", d: "法林手藝獨到，能製作銀釘皮裝備。" },
                 { id: "npc_ryan", n: "萊恩", title: "製作", type: "craft", d: "萊恩在爐火旁默默打磨成品，提供物品製作服務。" },
@@ -2648,7 +2650,7 @@ const DB = {
                 { id: "npc_upni", n: "烏普尼", title: "製作", type: "craft", d: "通曉禁忌符文的烏普尼，能將塔之力封入一紙。以 傲慢之塔傳送符 與 移動卷軸 製作 傲慢之塔支配符。" },
                 { id: "npc_norse", n: "諾斯", title: "寵物裝備製作", type: "craft", d: "獸語匠人諾斯，懂得讓忠犬之牙更加銳利。鍛造寵物裝備，強化你的寵物。" },
                 { id: "npc_baowu", n: "包武", title: "寵物保管", type: "petstore", d: "和善的看護人包武，願替遠行的旅人照看捕獲的寵物。最多保管 32 隻（同模式角色共通）；可在此讓寵物出戰、鎖定、放生，或讓等級 30 以上「一般型態」的寵物進化——用進化果實→對應高等，或用勝利果實→黃金龍（兩種果實都帶著時可自選）；高等型態與黃金龍皆為最終型態。" },
-                { id: "npc_arkata", n: "聖使阿卡塔", title: "經驗買回・裝備贖回", type: "pray", d: "聖使阿卡塔能以聖光凝聚你死亡時散逸的事物。【裝備贖回】邪惡（紅名）狀態下死亡遺失的裝備會被記錄（最多 5 件），可花費 1000 龍之鑽石指定贖回其中一件。【死亡經驗買回】經典模式限定：每次死亡的實際經驗損失都會被記錄（最多 10 筆），可花費「死亡時等級×等級×1000」金幣，買回該筆損失經驗的 50%。" }   // 🕊️ v3.4.73 起經驗買回；v3.6.84 加裝備贖回並取消 classicOnly（紅名噴裝兩模式皆會發生·經驗買回段落內部仍限經典）
+                { id: "npc_arkata", n: "聖使阿卡塔", title: "經驗買回・裝備贖回", type: "pray", d: "聖使阿卡塔能以聖光凝聚你死亡時散逸的事物。【裝備贖回】邪惡（紅名）狀態下死亡遺失的裝備會被記錄（最多 5 件），可花費 1000 藍鑽指定贖回其中一件。【死亡經驗買回】經典模式限定：每次死亡的實際經驗損失都會被記錄（最多 10 筆），可花費「死亡時等級×等級×1000」金幣，買回該筆損失經驗的 50%。" }   // 🕊️ v3.4.73 起經驗買回；v3.6.84 加裝備贖回並取消 classicOnly（紅名噴裝兩模式皆會發生·經驗買回段落內部仍限經典）
             ]
         },
         "town_elder_council": {   // 🌑 黑暗妖精聖地樞紐（依《黑暗妖精聖地.md》·v3.3.33）
@@ -3584,23 +3586,9 @@ function _origAuthorizedHost() {
 
 // 官方版指引橫幅（中性·無指控）：僅在非官方網域顯示；若被移除可安全重掛（見 gameLoop）
 function _origEnforce() {
+  // 黑貓天堂將來源與素材聲明集中於 /online/credits.html，不插入遊戲公告橫幅。
   try {
-    if (_origAuthorizedHost()) return;
-    if (!document.body || document.getElementById('_orig_pbar')) return;
-    var url = 'https://shines871.github.io/idle-lineage-class/';
-    var bar = document.createElement('div');
-    bar.id = '_orig_pbar';
-    bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483647;'
-      + 'background:linear-gradient(90deg,#0d1f3a,#17408a,#0d1f3a);color:#eef4ff;'
-      + 'font:bold 15px/1.5 "Microsoft JhengHei","Segoe UI",Arial,sans-serif;'
-      + 'padding:11px 16px;text-align:center;letter-spacing:.3px;'
-      + 'box-shadow:0 2px 14px rgba(0,0,0,.45);border-bottom:2px solid #ffcf5a;';
-    // ⚠️中性措辭·勿加「盜版/未授權/廣告/惡意」等指控（授權允許非商業轉載→指控合法轉載者有毀謗風險）
-    bar.innerHTML = '📢 這是<span style="color:#ffcf5a">非官方轉載版本</span>，內容可能不是最新。'
-      + '本遊戲<span style="color:#ffcf5a">永久免費</span>，前往<span style="color:#ffcf5a">官方最新版</span>：'
-      + '<a href="' + url + '" style="color:#ffcf5a;font-weight:bold;text-decoration:underline">'
-      + 'shines871.github.io/idle-lineage-class</a>';
-    document.body.appendChild(bar);
+    document.getElementById('_orig_pbar')?.remove();
   } catch (_) {}
 }
 

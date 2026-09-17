@@ -1,0 +1,66 @@
+#cloud-toolbar{position:fixed;right:12px;bottom:8px;z-index:100000;display:flex;align-items:center;gap:10px;padding:7px 10px;background:#111724f2;border:1px solid #65728a;border-radius:7px;color:#e6e9ef;font:12px/1.5 "Microsoft JhengHei",sans-serif;box-shadow:0 5px 20px #0009}#cloud-toolbar button,#cloud-toolbar a{padding:4px 8px;background:#29354a;color:#e6e9ef;border:1px solid #465774;border-radius:4px;cursor:pointer}#cloud-toolbar [data-gm]{color:#efcc87;border-color:#b39152;background:#3b3221}.cloud-save{color:#a2d7b6}.cloud-error{color:#f9a4a4}.cloud-account{color:#dfc491}#cloud-block{position:fixed;inset:0;z-index:100010;background:#080c14f0;display:grid;place-items:center;color:#e8edf5;font:16px/1.7 "Microsoft JhengHei",sans-serif}#cloud-block section{max-width:500px;padding:30px;background:#1a2435;border:1px solid #60708d;border-radius:10px;margin:20px}#cloud-block h2{font-size:24px;font-weight:700;margin-bottom:15px}#cloud-block p{margin-bottom:20px}#cloud-block button,#cloud-block a{display:inline-block;margin-right:15px;padding:9px 15px;background:#d0ad68;color:#1d180e;border-radius:4px}#cloud-chat{position:fixed;right:14px;bottom:58px;z-index:100001;width:390px;max-width:calc(100vw - 28px);background:#151d2a;border:1px solid #69788f;box-shadow:0 12px 50px #000b;border-radius:9px;color:#e0e6ef;font:14px/1.6 "Microsoft JhengHei",sans-serif;overflow:hidden}#cloud-chat header{display:flex;justify-content:space-between;padding:12px 16px;background:#273346;color:#ecd193}#cloud-chat header button{font-size:22px}.cloud-online{padding:8px 14px;background:#1e293a;color:#acb7c9;font-size:12px;overflow-wrap:anywhere}.cloud-messages{height:310px;overflow:auto;padding:10px 14px;overflow-wrap:anywhere}.cloud-messages p{margin-bottom:13px}.cloud-messages small{display:block;color:#75869f;font-size:11px}.cloud-messages strong{color:#d0b16d}#cloud-chat form{display:flex;gap:7px;padding:10px}#cloud-chat input{flex:1;min-width:0;padding:8px;border:1px solid #435570;border-radius:4px;background:#0e1520}#cloud-chat form button{padding:7px 12px;background:#b39355;color:#15100a;border-radius:4px}.cloud-chat-error{color:#f0a9a9;font-size:12px;padding:0 12px 8px}#cloud-chat[hidden],#cloud-toolbar [hidden]{display:none!important}@media(max-width:700px){#cloud-toolbar{left:6px;right:6px;bottom:4px;flex-wrap:wrap;gap:4px;font-size:11px}.cloud-save{flex:1}#cloud-chat{bottom:87px}.cloud-messages{height:260px}}
+#cloud-chat .cloud-ai-note{margin:0;padding:7px 14px;color:#9aaabd;font-size:11px;flex-shrink:0}.cloud-ai-badge{display:inline-block;margin-right:6px;padding:0 5px;color:#d6befb;border:1px solid #796492;border-radius:4px;font-size:10px;font-weight:700;vertical-align:1px}
+
+/* A single compact account dock; all chat surfaces share the same window. */
+:root { --cloud-dock-space: 64px; }
+#game-screen { bottom: var(--cloud-dock-space); }
+#adventure-controls { flex:0 0 auto; overflow:visible; }
+#adventure-controls > .panel-header { display:flex; flex-direction:column; align-items:stretch; padding:10px; gap:10px; }
+#adventure-controls > .panel-header > span { font-size:17px; }
+#adventure-controls > .panel-header > div { display:flex; flex-wrap:wrap; gap:6px; }
+#adventure-controls :is(select,button) { min-height:40px; min-width:0; }
+#adventure-controls :is(#map-category,#map-select) { flex:1 0 100%; width:100%; }
+#adventure-controls #cloud-toolbar.cloud-integrated { position:relative; inset:auto; display:flex; flex-wrap:nowrap; z-index:80; width:100%; box-sizing:border-box; gap:5px; padding:8px; border:0; border-top:1px solid #675037; border-radius:0 0 6px 6px; box-shadow:none; background:#1e2027; }
+#adventure-controls #cloud-toolbar .cloud-account { flex:1; min-width:0; font-size:12px; }
+#adventure-controls #cloud-toolbar > button { padding:4px 7px; font-size:12px; }
+#adventure-controls #cloud-toolbar [data-more] { min-width:32px; font-size:20px; }
+#adventure-controls #cloud-toolbar.menu-open #cloud-actions { top:calc(100% + 4px); bottom:auto; right:0; }
+#col-left:has(#adventure-controls) { overflow-y:auto; overflow-x:hidden; }
+@media(min-width:769px) {
+  #col-left { flex:0 0 clamp(240px,22vw,340px); min-width:0; }
+  #col-right { flex:0 0 clamp(270px,26vw,380px); min-width:0; }
+  #col-center { min-width:0; }
+  #combat-log-panel > .panel-header { flex-wrap:wrap; }
+  #combat-filter-pills { flex-wrap:wrap; }
+}
+#adventure-controls #cloud-toolbar.menu-open { flex-wrap:wrap; }
+#adventure-controls #cloud-toolbar.menu-open #cloud-actions { position:static; flex:1 0 100%; width:100%; box-shadow:none; }
+#cloud-toolbar { gap: 7px; padding: 4px 7px; }
+#cloud-toolbar .cloud-account { max-width: 140px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#cloud-toolbar .cloud-save { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: #93d4ae; font-size: 0; overflow: hidden; }
+#cloud-toolbar .cloud-save.cloud-error { background: #f39a91; }
+#cloud-toolbar > button { min-height: 36px; white-space: nowrap; }
+#cloud-toolbar [data-more] { min-width: 36px; font-size: 20px; line-height: 1; }
+#cloud-actions { display: none; }
+#cloud-toolbar.menu-open #cloud-actions { display: grid; gap: 8px; position: absolute; right: 0; bottom: calc(100% + 6px); width: 200px; padding: 10px; border: 1px solid #69778d; border-radius: 9px; background: #192233; box-shadow: 0 8px 30px #000b; }
+#cloud-actions :is(button, a) { min-height: 44px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+#cloud-chat { display: flex; flex-direction: column; height: min(540px, calc(100dvh - 76px)); }
+#cloud-chat > header { flex-shrink: 0; padding: 4px 12px; align-items: center; }
+#cloud-chat > header button { width: 44px; min-height: 44px; }
+#cloud-chat .cloud-chat-tabs { display: flex; flex-shrink: 0; padding: 0 8px; gap: 4px; border-bottom: 1px solid #46536a; }
+#cloud-chat .cloud-chat-tabs button { flex: 1; min-height: 44px; font-size: 13px; color: #aebbd0; border-bottom: 2px solid transparent; }
+#cloud-chat .cloud-chat-tabs button[aria-selected=true] { color: #f0d29b; border-color: #d3ae67; background: #c2a0650d; }
+#cloud-chat .cloud-chat-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+#cloud-chat .cloud-chat-pane[hidden] { display: none !important; }
+#cloud-chat .cloud-messages { flex: 1; min-height: 0; height: auto; overscroll-behavior: contain; overflow-anchor: none; }
+#cloud-chat form { flex-shrink: 0; }
+#cloud-chat form :is(input, button) { min-height: 44px; }
+#cloud-chat .cloud-chat-error { flex-shrink: 0; max-height: 50px; overflow: auto; margin: 0; }
+#cloud-chat .cloud-chat-error:empty { display: none; }
+#cloud-chat .cloud-online-summary { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 8px 12px 0; }
+#cloud-chat .cloud-online-summary strong { font-size: 13px; color: #ebd5ab; }
+#cloud-chat .cloud-online-summary button { min-width: 44px; min-height: 44px; color: #a9c9ed; }
+#cloud-chat .cloud-online-note { margin: 0; padding: 2px 12px 8px; color: #91a2b8; font-size: 11px; }
+#cloud-chat .cloud-player-list { flex: 1; min-height: 0; overflow: auto; padding: 0 12px 12px; overscroll-behavior: contain; }
+#cloud-chat .cloud-player { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid #344156; }
+#cloud-chat .cloud-player strong { overflow-wrap: anywhere; font-size: 13px; }
+#cloud-chat .cloud-player small { margin-left: auto; color: #a4b2c5; font-size: 12px; }
+#cloud-chat #syslog-panel { display: flex !important; flex: 1 1 0 !important; min-height: 0 !important; height: auto !important; margin: 0; border: 0; border-radius: 0; }
+#cloud-chat #syslog-panel > .panel-header { display: none; }
+#cloud-chat #world-log { flex: 1; min-height: 0; height: auto !important; overflow-y: auto; overscroll-behavior: contain; }
+#cloud-chat #world-input-row { flex-shrink: 0; min-height: 54px; }
+#cloud-chat #world-input { min-width: 0; font-size: 16px !important; }
+#cloud-chat #world-send { min-width: 44px; min-height: 44px; }
+#cloud-sync-warning { position: fixed; right: 12px; bottom: 62px; z-index: 100002; width: min(400px, calc(100vw - 24px)); padding: 10px 12px; border: 1px solid #c77956; border-radius: 7px; color: #ffe2d0; background: #45251ff5; box-shadow: 0 5px 20px #0008; font: 13px/1.5 "Microsoft JhengHei",sans-serif; overflow-wrap: anywhere; }
+#cloud-sync-warning[hidden] { display: none !important; }
+@media(max-width:768px) { #cloud-sync-warning { bottom: calc(62px + env(safe-area-inset-bottom, 0px)); } }

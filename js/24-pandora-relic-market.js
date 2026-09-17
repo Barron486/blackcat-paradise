@@ -1,5 +1,5 @@
 // 潘朵拉遺物布告欄＋安全區玩家收購系統
-// 共用資料獨立於角色存檔：同一套遊戲的所有角色共用龍之鑽石、玩家 NPC 與三個遺物欄位。
+// 共用資料獨立於角色存檔：同一套遊戲的所有角色共用藍鑽、玩家 NPC 與三個遺物欄位。
 (function () {
     'use strict';
 
@@ -10,7 +10,7 @@
     const CHECK_MS = 10 * 60 * 1000;
     const WANDERER_LIFE_MS = 2 * 60 * 60 * 1000;
     const BROADCAST_MS = 5 * 60 * 1000;
-    const GOLD_BROADCAST_OFFSET_MS = 1 * 60 * 1000;   // 龍鑽先喊；金幣延後 1 分鐘，兩者仍各自每 5 分鐘廣播
+    const GOLD_BROADCAST_OFFSET_MS = 1 * 60 * 1000;   // 藍鑽先喊；金幣延後 1 分鐘，兩者仍各自每 5 分鐘廣播
     const BROADCAST_PIN_MAX = 2;   // 📌 v3.5.77 叫賣訊息常駐在「系統與物品日誌」頂端的最大條數（超出者排隊，前面的人被互動/離場後自動遞補）
     const BOARD_COOLDOWN_MS = 24 * 60 * 60 * 1000;
     const RELIC_SEARCH_COST = 100;
@@ -268,7 +268,7 @@
         st.lastCheckBucket = Number.isFinite(Number(st.lastCheckBucket)) ? Math.floor(Number(st.lastCheckBucket)) : -1;
         st.diamonds = Math.max(0, Math.floor(Number(st.diamonds) || 0));
         // v1 僅能保存全遊戲一名玩家 NPC；v2 改為每個符合條件的安全區各自最多一名；
-        // v3 同一安全區可各有一位龍鑽／金幣收購 NPC。
+        // v3 同一安全區可各有一位藍鑽／金幣收購 NPC。
         let oldWanderer = st.wanderer && typeof st.wanderer === 'object' ? st.wanderer : null;
         let wanderers = Array.isArray(st.wanderers) ? st.wanderers.slice() : [];
         if (oldWanderer) wanderers.push(oldWanderer);
@@ -284,7 +284,7 @@
             let spawnedAt = Math.max(0, Math.floor(Number(w.spawnedAt) || 0));
             let expiresAt = Math.max(0, Math.floor(Number(w.expiresAt) || 0));
             if (spawnedAt) w.expiresAt = Math.min(expiresAt || (spawnedAt + WANDERER_LIFE_MS), spawnedAt + WANDERER_LIFE_MS);
-            w.currency = currency;   // 舊存檔未記錄幣別者一律視為原本的龍鑽收購。
+            w.currency = currency;   // 舊存檔未記錄幣別者一律視為原本的藍鑽收購。
             if (currency === 'gold') w.price = Math.max(1, Math.floor(Number(w.price) || 1));
             else w.reward = Math.max(1, Math.floor(Number(w.reward) || 1));
             w.alignmentValue = _normalizeAlignmentValue(w.alignmentValue);
@@ -555,7 +555,7 @@
         let isGold = _wandererCurrency(w) === 'gold';
         return {
             item: _requirementText(w.itemId, w.en),
-            price: isGold ? _goldBuyerPrice(w).toLocaleString() : '龍之鑽石',
+            price: isGold ? _goldBuyerPrice(w).toLocaleString() : '藍鑽',
             town: _townName(w.townId),
             player: (typeof player !== 'undefined' && player && player.name) ? player.name : '你',
             level: Math.max(1, Math.floor(Number(typeof player !== 'undefined' && player && player.lv) || 1)),
@@ -644,7 +644,7 @@
     }
 
     function _buyerTitle(w) {
-        return _wandererCurrency(w) === 'gold' ? '金幣收購' : '龍鑽收購';
+        return _wandererCurrency(w) === 'gold' ? '金幣收購' : '藍鑽收購';
     }
 
     function _requirementText(id, en) {
@@ -882,6 +882,7 @@
     // 否則離場遞補要等最多 30 秒的 wanderingBuyerSystemTick，中間會顯示已經不在的人。
     let _pinExpiryDue = 0;
     function _pinExpiryWatch() {
+        if(window.CloudStore)return;
         if (!_pinExpiryDue || Date.now() < _pinExpiryDue) return;
         _pinExpiryDue = 0;
         renderWanderBroadcastPins();
@@ -900,6 +901,7 @@
     // 重畫釘選列：最多 BROADCAST_PIN_MAX 條常駐在日誌頂端；空的時候 CSS :empty 會自動收起整條。
     // 簽章 early-return＝每 30 秒的 tick 不會無謂重建 DOM（重建會弄掉滑鼠停留/選單狀態）。
     function renderWanderBroadcastPins(st) {
+        if(window.CloudStore)return;
         let list = _pinnedWanderers(st);
         let el = (typeof document !== 'undefined') ? document.getElementById('sys-log-pins') : null;
         // ⚠️ 沒有釘選列的頁面（例如舊版 HTML）：快取要清空，否則「被當成已釘選→免廣播」而釘選列又不存在＝這兩位徹底消失
@@ -927,6 +929,7 @@
     }
 
     function wanderingBuyerSystemTick() {
+        if(window.CloudStore)return;
         if (typeof DB === 'undefined' || !DB.items || !DB.towns) return;
         let now = Date.now();
         let bucket = Math.floor(now / CHECK_MS);
@@ -969,6 +972,7 @@
     }
 
     function getWanderingBuyersForTown(townId) {
+        if(window.CloudStore)return [];
         let st = _readState();
         let list = _findWanderersForTown(st, townId);
         return list.map((w, index) => Object.assign({
@@ -1412,7 +1416,7 @@
         let goldPrice = _goldBuyerPrice(w);
         let buyerVerb = isGoldBuyer ? '收' : '鑽收';
         let buyerAmount = isGoldBuyer ? ` <b>${goldPrice.toLocaleString()} 金幣</b>` : '';
-        let rewardText = isGoldBuyer ? `報酬：${goldPrice.toLocaleString()} 金幣` : `報酬：龍之鑽石 × ${Math.max(1, Math.floor(Number(w.reward) || 1))}`;
+        let rewardText = isGoldBuyer ? `報酬：${goldPrice.toLocaleString()} 金幣` : `報酬：藍鑽 × ${Math.max(1, Math.floor(Number(w.reward) || 1))}`;
         let proofText = d && _isEquipmentDef(d)
             ? '成交後會消耗道具欄或倉庫內這件指定裝備；已穿戴的裝備不會被消耗。'
             : '成交後會消耗道具欄或倉庫內 1 個指定物品。';
@@ -1481,6 +1485,7 @@
     }
 
     function performWanderingBuyerTrade(wandererId) {
+        if(window.CloudStore){window.CloudStore.showMarket?.();return;}
         let before = _readState();
         let w = wandererId ? _findWanderer(before, wandererId) : _currentTownWanderer(before);
         if (!_wandererPresent(w)) {
@@ -1534,7 +1539,7 @@
         if (typeof logSys === 'function') {
             let rewardText = result.isGoldBuyer
                 ? `${result.amount.toLocaleString()} 金幣`
-                : `龍之鑽石 × ${result.amount}`;
+                : `藍鑽 × ${result.amount}`;
             logSys(`<span class="text-amber-300">完成 ${_wandererNameHtml(w)} 的收購，獲得 <b>${rewardText}</b>。</span>`);
         }
         _lastMapSignature = '__force__';
@@ -1647,7 +1652,7 @@
         if (!query.includes('遺物')) return '';
         return Object.keys(RELIC_CATEGORIES).map(key => {
             let c = RELIC_CATEGORIES[key];
-            return `<button type="button" class="pandora-buy-suggestion pandora-relic-suggestion" onclick="pandoraChooseRelicSearch('${key}')">${c.label}<span>消耗 ${RELIC_SEARCH_COST} 龍之鑽石</span></button>`;
+            return `<button type="button" class="pandora-buy-suggestion pandora-relic-suggestion" onclick="pandoraChooseRelicSearch('${key}')">${c.label}<span>消耗 ${RELIC_SEARCH_COST} 藍鑽</span></button>`;
         }).join('');
     }
 
@@ -1684,7 +1689,7 @@
             nameEl.dataset.relicCat = category;
         }
         if (priceEl) {
-            priceEl.value = String(RELIC_SEARCH_COST) + ' 龍之鑽石';
+            priceEl.value = String(RELIC_SEARCH_COST) + ' 藍鑽';
             priceEl.disabled = true;
         }
         if (box) {
@@ -1727,12 +1732,13 @@
     }
 
     function pandoraStartRelicSearch(category) {
+        if(window.CloudStore){window.CloudStore.showMarket?.();return;}
         if (!RELIC_CATEGORIES[category]) return;
         let now = Date.now();
         let result = _withStateLock(st => {
             let slot = st.boards.findIndex(b => !b.contract && Number(b.cooldownUntil || 0) <= now);
             if (slot < 0) return { commit: false, error: '三個遺物欄位都在使用中或冷卻中。' };
-            if (st.diamonds < RELIC_SEARCH_COST) return { commit: false, error: `龍之鑽石不足，需要 ${RELIC_SEARCH_COST} 顆。` };
+            if (st.diamonds < RELIC_SEARCH_COST) return { commit: false, error: `藍鑽不足，需要 ${RELIC_SEARCH_COST} 顆。` };
             let made = _makeRelicContract(st, category);
             if (made.error) return { commit: false, error: made.error };
             st.diamonds -= RELIC_SEARCH_COST;
@@ -1744,7 +1750,7 @@
             _setPandoraNotice('error', result.error || '遺物搜尋資料正忙碌，請稍後重試。');
         } else {
             let d = DB.items[result.contract.relicId];
-            _setPandoraNotice('success', `已在第 ${result.slot + 1} 欄找到${d ? d.n : '遺物'}的布告，消耗 ${RELIC_SEARCH_COST} 顆龍之鑽石。`);
+            _setPandoraNotice('success', `已在第 ${result.slot + 1} 欄找到${d ? d.n : '遺物'}的布告，消耗 ${RELIC_SEARCH_COST} 顆藍鑽。`);
             try { saveGame(); } catch (e) {}
         }
         _rerenderPandora();
@@ -1752,7 +1758,7 @@
 
     function pandoraRelicBalanceHTML() {
         let st = _readState();
-        return `｜龍之鑽石 <span class="pandora-diamond-count">${st.diamonds.toLocaleString()}</span>`;
+        return `｜藍鑽 <span class="pandora-diamond-count">${st.diamonds.toLocaleString()}</span>`;
     }
 
     function pandoraRelicBoardHTML() {
@@ -1807,7 +1813,7 @@
         return `<section class="pandora-relic-board">
             <div class="pandora-relic-board-head">
                 <b>遺物布告欄</b>
-                <span>搜尋費用 ${RELIC_SEARCH_COST} 龍之鑽石・完成或取消後，該欄冷卻 24 小時</span>
+                <span>搜尋費用 ${RELIC_SEARCH_COST} 藍鑽・完成或取消後，該欄冷卻 24 小時</span>
             </div>
             <div class="pandora-relic-grid">${cards}</div>
         </section>`;
@@ -1833,6 +1839,7 @@
     }
 
     function pandoraExchangeRelic(slotIndex) {
+        if(window.CloudStore){window.CloudStore.showMarket?.();return;}
         let before = _readState();
         let board = before.boards[slotIndex];
         let contract = board && board.contract;
@@ -1898,8 +1905,9 @@
         _rerenderPandora();
     }
 
-    // test.html 專用：測試版創角時重設帳號共用龍之鑽石；正式版即使誤呼叫也不會生效。
+    // test.html 專用：測試版創角時重設帳號共用藍鑽；正式版即使誤呼叫也不會生效。
     function pandoraTestSetDiamonds(amount) {
+        if(window.CloudStore)return {ok:false,error:'藍鑽只能由 GM 發放'};
         if (!TEST_BUILD) return false;
         let value = Math.max(0, Math.floor(Number(amount) || 0));
         let result = _withStateLock(st => {
@@ -1910,17 +1918,19 @@
         return !!result.ok;
     }
 
-    // 匯出／匯入只處理龍之鑽石，不覆蓋叫賣 NPC、遺物布告欄與冷卻中的共用市場資料。
+    // 匯出／匯入只處理藍鑽，不覆蓋叫賣 NPC、遺物布告欄與冷卻中的共用市場資料。
     function pandoraGetSharedDiamonds() {
+        if(window.CloudStore)return window.CloudStore.diamonds||0;
         return _readState().diamonds;
     }
 
     function pandoraAdjustSharedDiamonds(delta) {
+        if(window.CloudStore)return {ok:false,error:'藍鑽統一由伺服器管理，請使用玩家交易所或藍鑽商店'};
         delta = Math.trunc(Number(delta) || 0);
         if (!delta) return { ok: true, diamonds: _readState().diamonds };
         let result = _withStateLock(st => {
             let next = Math.floor(Number(st.diamonds) || 0) + delta;
-            if (next < 0) return { commit: false, error: '龍之鑽石不足。' };
+            if (next < 0) return { commit: false, error: '藍鑽不足。' };
             st.diamonds = next;
             return { diamonds: next };
         });
@@ -1929,6 +1939,7 @@
     }
 
     function pandoraRestoreSharedDiamonds(amount) {
+        if(window.CloudStore)return {ok:false,error:'無法透過存檔修改藍鑽'};
         let value = Math.max(0, Math.floor(Number(amount) || 0));
         let result = _withStateLock(st => {
             st.diamonds = value;

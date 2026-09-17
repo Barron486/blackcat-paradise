@@ -1,0 +1,149 @@
+/* Online mobile layout, loaded after the upstream artwork and utility styles. */
+#mobile-game-nav, #mobile-npc-list { display: none; }
+#mobile-live-log-header, .mobile-live-log-heading { display: none; }
+
+@media (max-width: 768px), (max-height: 520px) and (pointer: coarse) {
+  :root { --cloud-dock-space: calc(60px + env(safe-area-inset-bottom, 0px)); }
+  html { -webkit-text-size-adjust: 100%; }
+  #app-stage { inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px); }
+  button, a, select { touch-action: manipulation; }
+  input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: 16px !important; }
+  #game-screen { height: calc(100dvh - var(--cloud-dock-space)); padding: 8px; scroll-padding: 116px 0 12px; }
+  #mobile-vitals { flex: 0 0 48px; min-height: 48px; top: 0; }
+  #mobile-game-nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex: 0 0 48px; order: -9; position: sticky; top: 56px; z-index: 70; gap: 5px; padding: 3px; background: #14151ded; border: 1px solid #6d563c; border-radius: 7px; }
+  #mobile-game-nav button { min-height: 44px; color: #bec5d1; font-size: 15px; border-radius: 4px; }
+  #mobile-game-nav button[aria-pressed=true] { color: #ffe3a2; background: #584326; box-shadow: inset 0 0 0 1px #af8b4c; }
+  #game-screen[data-mobile-view=adventure] :is(#col-left, #col-right, #syslog-panel),
+  #game-screen[data-mobile-view=character] :is(#col-center, .tab-bar),
+  #game-screen[data-mobile-view=bag] :is(#col-left, #col-center),
+  #game-screen[data-mobile-view=logs] :is(#col-left, #col-right, #map-view-panel) { display: none !important; }
+  body:has(#game-screen[data-mobile-view=adventure]) #equipment-window,
+  body:has(#game-screen[data-mobile-view=logs]) #equipment-window { visibility: hidden; }
+  #col-right { min-height: 0; }
+  #col-right > .tab-bar { position: static; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #col-right > .tab-bar .btn { min-height: 44px; font-size: 14px !important; }
+  #tab-content-panel { min-height: 0; height: max(420px, calc(100dvh - 260px)); }
+  /* The complete inventory frame participates in page scrolling on phones. */
+  #tab-content-panel:has(> .classic-inventory-tab:not(.hidden)) { height: auto; }
+  #tab-content-panel > .classic-inventory-tab { height: auto; }
+  .classic-inventory-fit { flex: 0 0 auto; container-type: normal; }
+  .classic-inventory-fit > .classic-inventory-shell { width: 100%; }
+  #game-screen[data-mobile-view=character] #tab-content-panel { height: auto; min-height: 0; }
+  #game-screen[data-mobile-view=character] #tab-stats { height: auto; }
+  #adventure-controls > .panel-header { padding: 6px; gap: 6px; }
+  #adventure-controls > .panel-header :is(button, select) { min-height: 44px; height: 44px; }
+  #adventure-controls > .panel-header button { font-size: 14px !important; flex-basis: calc(33.333% - 4px); }
+  #adventure-controls > .panel-header #map-category { flex: 1 1 calc(40% - 3px); }
+  #adventure-controls > .panel-header #map-select { flex: 1 1 calc(60% - 3px); }
+  #mobile-npc-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px; }
+  #mobile-npc-list button { min-height: 48px; padding: 8px; color: #eed7a2; font-size: 14px; text-align: left; background: #252832; border: 1px solid #635440; border-radius: 6px; }
+  #map-view-panel:has(#town-view.hidden) #mobile-npc-list { display: none; }
+  #game-screen[data-mobile-view=logs] :is(#combat-log-panel, #syslog-panel) { flex-basis: 310px !important; height: 310px !important; }
+  #combat-log-panel :is(.cf-pill, .logtab-btn), #world-send { min-height: 44px; }
+  #world-input { min-height: 44px; }
+
+  /* Keep damage and loot visible below the battlefield without covering the action. */
+  #game-screen[data-mobile-view=adventure] #combat-log-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 44px 22px minmax(0, 1.25fr) 22px minmax(0, 1fr);
+    flex: 0 0 auto !important;
+    height: clamp(200px, calc(100dvh - 56.25vw - 345px), 340px) !important;
+    min-height: 200px;
+  }
+  #game-screen[data-mobile-view=adventure] #combat-log-panel > .panel-header { display: none; }
+  #game-screen[data-mobile-view=adventure] #mobile-live-log-header { display: flex; grid-area: 1 / 1; align-items: center; justify-content: space-between; padding-left: 10px; color: #f0d5a2; border-bottom: 1px solid #62503c; background: #282329; font-size: 14px; }
+  #mobile-live-log-header button { min-height: 44px; padding: 0 12px; color: #c7d5e7; font-size: 13px; }
+  #game-screen[data-mobile-view=adventure] .mobile-live-log-heading { display: flex; align-items: center; margin: 0; padding: 0 10px; background: #171b24; color: #adc7e7; font-size: 12px; font-weight: 700; }
+  #game-screen[data-mobile-view=adventure] #mobile-combat-log-heading { grid-area: 2 / 1; }
+  #game-screen[data-mobile-view=adventure] #mobile-sys-log-heading { grid-area: 4 / 1; color: #ecd091; border-top: 1px solid #4e463a; }
+  #game-screen[data-mobile-view=adventure] :is(#combat-log, #sys-log) { display: block !important; min-height: 0; min-width: 0; padding: 4px 9px !important; border-radius: 0; overflow-y: auto; overscroll-behavior-y: contain; overflow-wrap: anywhere; font-size: 13px !important; line-height: 1.5; }
+  #game-screen[data-mobile-view=adventure] #combat-log { grid-area: 3 / 1; }
+  #game-screen[data-mobile-view=adventure] #sys-log { grid-area: 5 / 1; }
+  #game-screen[data-mobile-view=adventure] :is(#combat-log, #sys-log) { overflow-anchor: none; }
+  #game-screen[data-mobile-view=adventure] .log-entry { margin-bottom: 3px; }
+  #game-screen[data-mobile-view=adventure] :is(#combat-log, #sys-log):empty::after { color: #8994a6; content: '戰鬥開始後，即時顯示傷害紀錄'; }
+  #game-screen[data-mobile-view=adventure] #sys-log:empty::after { content: '獲得物品與系統訊息會顯示在這裡'; }
+  #game-screen[data-mobile-view=adventure] :is(#combat-log-unlock, #sys-log-unlock) { position: relative; bottom: auto; right: auto; grid-column: 1; justify-self: end; align-self: end; margin: 0 4px 4px 0; min-height: 44px; max-width: calc(100% - 8px); }
+  #game-screen[data-mobile-view=adventure] #combat-log-unlock { grid-row: 3; }
+  #game-screen[data-mobile-view=adventure] #sys-log-unlock { grid-row: 5; }
+
+  /* A compact dock; secondary account actions open above it. */
+  #cloud-toolbar { left: max(6px, env(safe-area-inset-left)); right: max(6px, env(safe-area-inset-right)); bottom: 0; padding: 4px 6px calc(4px + env(safe-area-inset-bottom)); display: flex; flex-wrap: nowrap; gap: 5px; font-size: 12px; border-radius: 9px 9px 0 0; }
+  #cloud-toolbar .cloud-account { flex: 1; min-width: 0; max-width: none; }
+  #cloud-toolbar > button { min-height: 44px; padding: 6px 9px; font-size: 13px; }
+  #cloud-toolbar [data-more] { min-width: 44px; padding: 4px; font-size: 22px; }
+  #cloud-chat { left: max(6px, env(safe-area-inset-left)); right: max(6px, env(safe-area-inset-right)); top: calc(var(--phone-visible-top, 0px) + 8px + env(safe-area-inset-top)); bottom: auto; width: auto; max-width: none; height: min(550px, calc(var(--phone-visible-height, 100dvh) - 16px - env(safe-area-inset-top))); display: flex; flex-direction: column; }
+  #cloud-chat header { padding: 5px 12px; align-items: center; flex-shrink: 0; }
+  #cloud-chat header button { width: 44px; min-height: 44px; }
+  #cloud-chat .cloud-online { max-height: 64px; overflow: auto; flex-shrink: 0; }
+  #cloud-chat .cloud-messages { height: auto; min-height: 40px; flex: 1; overscroll-behavior: contain; }
+  #cloud-chat form { flex-shrink: 0; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  #cloud-chat form :is(input, button) { min-height: 44px; }
+  #cloud-block section { max-height: calc(100dvh - 32px); overflow: auto; padding: 22px; }
+
+  /* Scrollable dialogs stay clear of the account dock and phone safe areas. */
+  #creation-screen, #load-select-panel:not(.hidden) { height: calc(100dvh - var(--cloud-dock-space)); min-height: 0; }
+  #creation-screen { align-items: flex-start; justify-content: flex-start; }
+  #load-select-panel:not(.hidden) { position: absolute; inset: 0; display: block; overflow: auto; }
+  #creation-screen:has(#creation-panel:not(.hidden)) > #login-art-stage,
+  #creation-screen:has(#load-select-panel:not(.hidden)) > #login-art-stage { display: none; }
+  #town-interaction-container:not(.hidden), #warehouse-window-frame { max-height: calc(100dvh - var(--cloud-dock-space) - 16px) !important; top: 8px !important; left: 50% !important; right: auto !important; transform: translateX(-50%) !important; }
+  #item-modal:not(.hidden) { height: calc(100dvh - var(--cloud-dock-space) - 16px) !important; max-height: calc(100dvh - var(--cloud-dock-space) - 16px) !important; width: calc(100vw - 16px) !important; top: 8px !important; left: 50% !important; right: auto !important; bottom: auto !important; transform: translateX(-50%) !important; }
+  #item-modal > div:not(#modal-compare) { display: block !important; }
+  #modal-compare:not(.hidden) { flex: 0 1 24dvh; max-height: 24dvh !important; }
+  body:has(#item-modal:not(.hidden)) #pandora-banner { display: none !important; }
+  #item-modal button, #town-interaction-container button, #warehouse-window-close { min-height: 44px; }
+  :is(#autosell-rule-modal, #autosell-preview-modal, #poly-modal, #osiris-box-modal, #summon-select-overlay, #card-book, #equip-book, #misc-book, #relic-book, #collection-panel) { padding-bottom: var(--cloud-dock-space) !important; }
+  :is(#autosell-rule-modal .as-box, #autosell-preview-modal > div, #poly-modal > div, #osiris-box-modal > div, #summon-select-overlay > div, #card-book > div, #equip-book > div, #misc-book > div, #relic-book > div, #collection-panel > div) { max-height: calc(100dvh - var(--cloud-dock-space) - 16px) !important; }
+}
+
+@media (max-width: 768px), (max-height: 520px) and (pointer: coarse) {
+  #login-art-stage { height: calc(100dvh - var(--cloud-dock-space)); min-height: 580px; }
+  #main-menu { margin: 0; top: 29%; }
+  #main-menu > button { width: 100%; }
+  #login-meta-layer { bottom: 18px; }
+  #load-art-stage { height: auto; min-height: 100%; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+  #load-slot-grid { position: relative; inset: auto; width: 100%; height: 340px; flex-shrink: 0; gap: 8px; }
+  #load-page-tabs { position: relative; inset: auto; transform: none; width: 126px; height: 48px; align-self: center; flex-shrink: 0; }
+  #load-info-panel { position: relative; inset: auto; width: 100%; height: 250px; flex-shrink: 0; }
+  #load-action-panel { position: relative; inset: auto; width: 100%; gap: 8px; }
+  #load-action-panel button { min-height: 48px; }
+  #creation-panel:not(.hidden) { position: relative; inset: auto; transform: none; width: 100%; height: auto; min-height: 100%; max-height: none; padding: 16px; display: grid !important; grid-template-columns: 1fr 1fr; gap: 16px 10px; align-content: start; overflow: visible; }
+  #creation-panel > :not(#creation-bg-image) { position: relative; inset: auto; transform: none; width: 100%; min-width: 0; }
+  #creation-bg-image { position: absolute; inset: 0; height: 100%; width: 100%; }
+  #creation-name-field { grid-column: 1/-1; grid-row: 1; }
+  #creation-class-desc-frame { grid-column: 1; grid-row: 2; height: 220px; padding: 12px; }
+  #creation-class-title { font-size: 23px; }
+  #class-desc { font-size: 14px; line-height: 1.6; }
+  #creation-avatar-stage { grid-column: 2; grid-row: 2; height: 220px; }
+  #creation-class-list { grid-column: 1/-1; height: auto; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, 64px); gap: 12px 4px; }
+  #creation-class-list .creation-class-btn { inset: auto; width: 60px; height: 60px; }
+  #creation-gender-panel { grid-column: 1/-1; height: 48px; justify-content: center; gap: 25px; padding: 0; }
+  #creation-gender-panel button { width: 48px; height: 48px; }
+  #stat-allocation { grid-column: 1/-1; height: auto; display: grid; grid-template-columns: 1fr; gap: 8px; pointer-events: auto; padding: 12px; background: #111722e8; border: 1px solid #6c583d; border-radius: 8px; }
+  #creation-pts { position: static; width: auto; height: auto; font-size: 16px; text-align: center; }
+  #creation-pts::before { content: '剩餘配點　'; font-size: 14px; }
+  #stat-allocation .creation-stat-control { position: relative; inset: auto; width: 100%; height: auto; grid-template-columns: minmax(0, 1fr) 38px 44px 44px; gap: 8px; }
+  #stat-allocation .creation-stat-control::before { position: static; text-align: left !important; font-size: 15px; }
+  .creation-stat-control.stat-str::before { content: '力量'; }
+  .creation-stat-control.stat-dex::before { content: '敏捷'; }
+  .creation-stat-control.stat-con::before { content: '體質'; }
+  .creation-stat-control.stat-wis::before { content: '精神'; }
+  .creation-stat-control.stat-cha::before { content: '魅力'; }
+  .creation-stat-control.stat-int::before { content: '智力'; }
+  #stat-allocation .creation-stat-btn { width: 44px; height: 44px; font-size: 20px; border: 1px solid #8b7350; border-radius: 6px; background: #302a23; }
+  #classic-mode-control { grid-column: 1/-1; min-height: 44px; justify-content: flex-start; font-size: 15px; }
+  #creation-back-button, #btn-start.creation-start-button { height: 48px; font-size: 16px; }
+}
+
+/* Map selection and account tools occupy one panel in the page, never the bag. */
+@media(max-width:768px),(max-height:520px) and (pointer:coarse){
+#adventure-controls{order:-8;width:100%;margin:0;flex:0 0 auto;}
+#game-screen:not([data-mobile-view=adventure]) #adventure-controls > .panel-header{display:none;}
+#adventure-controls > .panel-header > div{display:flex;flex-wrap:wrap;gap:6px;}
+#adventure-controls :is(#map-category,#map-select){flex:1 0 100%;width:100%;}
+#adventure-controls #cloud-toolbar.cloud-integrated{padding:6px;min-height:54px;}
+#adventure-controls #cloud-toolbar > button{min-height:44px;padding:4px 9px;}
+#adventure-controls #cloud-toolbar .cloud-account{max-width:none;}
+}

@@ -1,0 +1,15 @@
+{
+  "name": "idle-lineage-class-gm",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.0.0" },
+  "scripts": {
+    "cli": "node cli/main.mjs",
+    "start": "node server/index.mjs",
+    "test": "node --test test/*.test.mjs",
+    "gm:create": "node server/create-gm.mjs",
+    "gm:promote": "node server/promote-gm.mjs",
+    "backup": "node server/backup.mjs"
+  }
+}
