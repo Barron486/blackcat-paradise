@@ -1940,7 +1940,7 @@ button.classic-skill-cell { cursor:pointer; }
 #town-view > #town-interaction-container.hidden { display: none !important; }
 
 /* ===== Mobile game layout (desktop rules remain unchanged) ===== */
-@media (max-width: 768px), (max-height: 520px) and (pointer: coarse) {
+@media (max-width: 1024px), (max-height: 520px) and (pointer: coarse) {
     body { overflow: hidden; }
 
     #game-screen {
@@ -3217,7 +3217,7 @@ button.classic-skill-cell { cursor:pointer; }
 }
 
 /* ===== Mobile floating-window bounds (desktop remains untouched) ===== */
-@media (max-width: 768px), (max-height: 520px) and (pointer: coarse) {
+@media (max-width: 1024px), (max-height: 520px) and (pointer: coarse) {
     #item-modal:not(.hidden) {
         position: fixed !important;
         inset: 8px !important;

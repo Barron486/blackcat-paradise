@@ -1,14 +1,5 @@
-// ===== 嵌入式雙頁角色裝備面板 =====
-// 🗑️ v3.5.87 整區刪除浮動視窗殘骸（用戶拍板）：本面板自 v3.5.x 起恆為嵌入模式（init 無條件加
-//    equipment-window-embedded、全專案無 remove/toggle），原「可拖曳浮動視窗」的拖曳三件套、關閉鈕、
-//    側欄清單（renderSidePanel/openEquipmentSidePanel/closeEquipmentSidePanel/plainItemName）、
-//    closeEquipmentWindow、fitEquipmentWindowToViewport 非嵌入分支——共約 150 行永不可達死碼全數移除。
-// 🗑️ 變身立繪引擎（_startMorphPortrait 三層 8fps 循環）一併移除：css/floating-ui.css 以
-//    `.equipment-morph-snapshot{display:none!important}` 無條件隱藏（現行 183×408 純裝備格底圖無立繪區），
-//    引擎只是在 display:none 子樹裡空轉探測圖檔＋跑 125ms interval（#17 計時器洩漏）。
-//    素材 assets/morphanim/ 仍供戰鬥區變身動畫（js/09 MORPH_ANIM_3DIR）使用，未動；
-//    日後若新底圖恢復立繪區，從 git 前版或 v3.5.86 的 js/19 找回 _startMorphPortrait 整組即可。
-// 本面板保留：雙頁裝備格(renderSlots·第 2 頁＝席琳遺骸欄) ＋ 負重%(renderStats)。
+// 雙頁裝備面板實際掛在分頁容器中，隨頁面捲動；不再以固定浮層追蹤容器座標。
+// 保留原裝備圖、席琳遺骸第二頁與負重；右上關閉鈕返回背包。
 (function () {
     const PAGE_SLOTS = [
         [
@@ -46,6 +37,7 @@
     ];
 
     let page = 0;
+    const compact = matchMedia('(max-width: 1024px), (max-height: 520px) and (pointer: coarse)');
 
     function el(id) { return document.getElementById(id); }
 
@@ -151,31 +143,22 @@
         pageTwo.setAttribute('aria-pressed', page === 1 ? 'true' : 'false');
     }
 
-    function fitEquipmentWindowToViewport() {   // 嵌入模式唯一版型：貼齊 #tab-content-panel、寬度以 183×408 底圖比例夾擠
+    function fitEquipmentWindowToViewport() {
         const frame = el('equipment-window-frame');
         const win = el('equipment-window');
         if (!frame || !win || win.classList.contains('hidden')) return;
         const host = el('tab-content-panel');
         if (!host) return;
-        let hostRect = host.getBoundingClientRect();
         const maxFrameWidth = 366;
-        if (innerWidth <= 768) {
-            const mobileFrameWidth = Math.min(hostRect.width, maxFrameWidth);
-            const mobileHeight = Math.ceil(mobileFrameWidth * 408 / 183);
-            host.style.setProperty('--equipment-panel-height', mobileHeight + 'px');
-            hostRect = host.getBoundingClientRect();
-        }
+        if (compact.matches) {
+            const height = Math.ceil(Math.min(host.clientWidth, maxFrameWidth) * 408 / 183);
+            host.style.setProperty('--equipment-panel-height', height + 'px');
+        } else host.style.removeProperty('--equipment-panel-height');
         const frameWidth = Math.max(0, Math.min(
-            hostRect.width,
+            host.clientWidth,
             maxFrameWidth,
-            hostRect.height * 183 / 408
+            host.clientHeight * 183 / 408
         ));
-        win.style.left = hostRect.left + 'px';
-        win.style.top = hostRect.top + 'px';
-        win.style.right = 'auto';
-        win.style.bottom = 'auto';
-        win.style.width = hostRect.width + 'px';
-        win.style.height = hostRect.height + 'px';
         frame.style.left = '50%';
         frame.style.top = '0';
         frame.style.setProperty('width', frameWidth + 'px', 'important');
@@ -195,25 +178,25 @@
         if (!win) return;
         const host = el('tab-content-panel');
         if (host) {
+            if (win.parentElement !== host) host.append(win);
             host.classList.toggle('equipment-panel-host', visible);
-            if (!visible || innerWidth > 768) host.style.removeProperty('--equipment-panel-height');
-            else host.style.setProperty('--equipment-panel-height', Math.ceil(Math.min(host.getBoundingClientRect().width, 366) * 408 / 183) + 'px');
+            if (!visible) host.style.removeProperty('--equipment-panel-height');
         }
         win.classList.add('equipment-window-embedded');
         win.classList.toggle('hidden', !visible);
         win.setAttribute('aria-hidden', visible ? 'false' : 'true');
         if (!visible) return;
-        if (innerWidth <= 768) {
-            const scroller = el('game-screen');
-            if (scroller && host) {
-                const scrollerRect = scroller.getBoundingClientRect();
-                const hostRect = host.getBoundingClientRect();
-                if (hostRect.bottom > scrollerRect.bottom) scroller.scrollTop += hostRect.bottom - scrollerRect.bottom + 8;
-                if (hostRect.top < scrollerRect.top) scroller.scrollTop -= scrollerRect.top - hostRect.top + 8;
-            }
-        }
         refreshEquipmentWindow();
-        requestAnimationFrame(fitEquipmentWindowToViewport);
+        requestAnimationFrame(() => {
+            fitEquipmentWindowToViewport();
+            const scroller = el('game-screen');
+            if (compact.matches && scroller && host) {
+                const top = scroller.getBoundingClientRect().top;
+                const nav = el('mobile-game-nav');
+                const inset = nav?.getBoundingClientRect().height ? 120 : 64;
+                scroller.scrollTop += host.getBoundingClientRect().top - top - inset;
+            }
+        });
     };
 
     // 🗑️ 移除 window.openEquipmentWindow／window.toggleEquipmentWindow：
@@ -237,9 +220,13 @@
         el('equipment-window-next').setAttribute('aria-label', '裝備第 2 頁');
         el('equipment-window-prev').onclick = function () { page = 0; refreshEquipmentWindow(); };
         el('equipment-window-next').onclick = function () { page = 1; refreshEquipmentWindow(); };
+        el('equipment-window-close').onclick = function () {
+            document.querySelector('.tab-bar button[onclick*="switchTab(\'items\'"]')?.click();
+        };
         window.addEventListener('resize', fitEquipmentWindowToViewport);
-        const gameScroller = el('game-screen');
-        if (gameScroller) gameScroller.addEventListener('scroll', fitEquipmentWindowToViewport, { passive: true });
+        window.visualViewport?.addEventListener('resize', fitEquipmentWindowToViewport);
+        const host = el('tab-content-panel');
+        if (host && typeof ResizeObserver === 'function') new ResizeObserver(fitEquipmentWindowToViewport).observe(host);
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -2,7 +2,7 @@
 /* Responsive equipment window: keep the complete frame inside the viewport at browser zoom. */
 /* 🗑️ v3.5.87 整區刪除浮動視窗殘骸：side-open/側欄與變身立繪（.equipment-morph-* 全組）規則已隨
    js/19 純嵌入式重寫與 markup 移除一併刪除（立繪原本就被下方 display:none!important 蓋掉＝死 UI）。
-   ⚠️ 首行壓縮 bundle 內殘留的 .equipment-window-drag/.equipment-window-close/.equipment-side-* 選擇器
+   ⚠️ 首行壓縮 bundle 內殘留的 .equipment-window-drag/.equipment-side-* 選擇器
    已無對應 markup（死選擇器·無害），為避免手改壓縮行出錯而刻意保留。 */
 .equipment-window{overflow:hidden}
 .equipment-window-frame{width:min(650px,92vw,calc(94vh * 1084 / 1447))}
@@ -24,9 +24,9 @@
 
 /* Embed the equipment artwork inside the existing right-column content frame. */
 .equipment-window.equipment-window-embedded{
-    position:fixed;
-    inset:auto;
-    z-index:20;
+    position:absolute;
+    inset:0;
+    z-index:2;
     overflow:hidden;
     pointer-events:none;
     background:#101218;
@@ -36,7 +36,11 @@
     pointer-events:auto;
     filter:none;
     touch-action:auto;
+    max-height:none!important;
+    max-width:100%!important;
 }
+#tab-content-panel.equipment-panel-host > #tab-equip{display:none!important}
+.equipment-window-embedded .equipment-window-close{left:auto;right:1.4%;min-width:44px;min-height:44px;touch-action:manipulation}
 .equipment-window-embedded .equipment-window-prev,
 .equipment-window-embedded .equipment-window-next{
     top:93.14%;
@@ -93,9 +97,10 @@
     filter:blur(.7px);
     pointer-events:none;
 }
-@media(max-width:768px){
+@media(max-width:1024px),(max-height:520px) and (pointer:coarse){
     #tab-content-panel.equipment-panel-host{
         height:var(--equipment-panel-height)!important;
         min-height:var(--equipment-panel-height)!important;
     }
+    .equipment-window-embedded .equipment-window-arrow{min-height:44px;top:auto;bottom:1.5%}
 }

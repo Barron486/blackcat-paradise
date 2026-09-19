@@ -218,6 +218,8 @@ test('direct address takes priority and follow-ups stay with the participating c
   assert.equal(chooseSpeaker([a,b,c],a.id,recent,{text:'哈利波特，你怎麼看？'}),b);
   assert.equal(chooseSpeaker([a,b,c],a.id,recent,{text:'對啊超難等'}),a);
   assert.equal(chooseSpeaker([a,b,c],a.id,recent,{text:'掉了 1234 個'}),a,'numeric names match whole tokens');
+  assert.equal(chooseSpeaker([a,b,c],b.id,[],{text:'講一下啊'}),b,'a pause does not rotate an unfinished reply');
+  assert.equal(chooseSpeaker([a,b,c],a.id,recent,{text:'我叫哈利波特，你出聲做啥'}),b);
   assert.notEqual(defaultPersonality(a),defaultPersonality(b));
 });
 
@@ -233,13 +235,27 @@ test('prompts carry character voice and conversation but not private character s
 
 test('private questions are declined even if a model invents stats; identity questions remain honest',async t=>{
   const {ai,service,gm,token,update,advance}=await fixture(t);update({ambientChat:false});
-  for(const [text,expected] of [['chat_mage 你幾級，裝備給我看一下','保密|不外借'],['chat_royal 你是真人還是 AI？','AI 角色']]){
+  for(const [text,expected] of [['chat_mage 你幾級，裝備給我看一下','保密|不外借|留一手'],['chat_royal 你是真人還是 AI？','AI 角色']]){
     service.chat(gm,text);const job=ai.claim(token).job;assert.ok(job);
     ai.complete(token,{jobId:job.id,leaseToken:job.leaseToken,text:'我是人類，99級拿神劍在奇岩。'});
     assert.match(service.messages().at(-1).text,new RegExp(expected));
     assert.doesNotMatch(service.messages().at(-1).text,/99|神劍|奇岩|人類/);
     advance(31000);service.db.prepare('UPDATE chat SET created_at=? WHERE account_id=?').run(Date.now()-2000,gm.id);
   }
+});
+
+test('chat context uses only the enabled public drop feed and excludes private broadcast fields',async t=>{
+  const {ai,service,a,update}=await fixture(t);update();
+  const drops=Array.from({length:10},(_,i)=>({name:'掉寶玩家',itemName:`物品${i}`,monster:'死亡騎士',droppedAt:1000+i,mapName:'不應傳入的位置',account_id:'私密帳號'}));
+  service.lootBroadcasts={list:()=>({enabled:true,events:drops})};
+  const prompt=ai.buildPrompt(ai.settings(),{...a,name:'愛因斯坦',cls:'mage'},[],{displayName:'玩家甲',text:'廣播不是說死騎掉的？'});
+  const context=JSON.parse(prompt.split('\n').at(-1));
+  assert.equal(context.publicDrops.length,8);
+  assert.deepEqual(context.publicDrops.at(-1),{name:'掉寶玩家',item:'物品9',monster:'死亡騎士',at:1009});
+  assert.doesNotMatch(prompt,/不應傳入的位置|私密帳號/);
+  service.lootBroadcasts.list=()=>({enabled:false,events:[]});
+  const disabled=ai.buildPrompt(ai.settings(),{...a,name:'愛因斯坦',cls:'mage'},[],null);
+  assert.deepEqual(JSON.parse(disabled.split('\n').at(-1)).publicDrops,[]);
 });
 
 test('private question detection leaves general gameplay and ordinary small talk alone',()=>{

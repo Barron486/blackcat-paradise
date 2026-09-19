@@ -2,7 +2,7 @@ import './status.js';
 // Phone navigation changes presentation only; the original game keeps running.
 const game = document.getElementById('game-screen');
 const toolbar = document.getElementById('cloud-toolbar');
-const phone = matchMedia('(max-width: 768px), (max-height: 520px) and (pointer: coarse)');
+const phone = matchMedia('(max-width: 1024px), (max-height: 520px) and (pointer: coarse)');
 
 if (game && toolbar) {
   // The account controls and map selector share a normal-flow panel while playing.

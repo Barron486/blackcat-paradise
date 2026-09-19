@@ -16,7 +16,7 @@
 #adventure-controls #cloud-toolbar [data-more] { min-width:32px; font-size:20px; }
 #adventure-controls #cloud-toolbar.menu-open #cloud-actions { top:calc(100% + 4px); bottom:auto; right:0; }
 #col-left:has(#adventure-controls) { overflow-y:auto; overflow-x:hidden; }
-@media(min-width:769px) {
+@media(min-width:1025px) {
   #col-left { flex:0 0 clamp(240px,22vw,340px); min-width:0; }
   #col-right { flex:0 0 clamp(270px,26vw,380px); min-width:0; }
   #col-center { min-width:0; }
