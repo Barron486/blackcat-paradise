@@ -11,7 +11,7 @@ export class BattleTimeline {
     if(!frames.length)return true;
     const newest=frames.at(-1),now=this.now();
     if(!reset&&!hidden&&this.stream===packet.stream&&newest.seq<=this.seq)return true;
-    if(reset||hidden||this.stream!==packet.stream||newest.tick<this.tick||now-this.due>2200){
+    if(reset||hidden||this.stream!==packet.stream||newest.tick<this.tick){
       this.clear();this.stream=packet.stream;this.seq=newest.seq;this.tick=newest.tick;this.due=now;this.last=newest;this.paint(newest,{silent:true});return true;
     }
     for(const frame of frames){
@@ -20,15 +20,22 @@ export class BattleTimeline {
       this.due=Math.max(this.due+(gap||0),now);
       this.queue.push({frame,due:this.due});this.tick=frame.tick;this.seq=frame.seq;
     }
-    // A background tab or slow network must not replay a long burst of old hits.
-    if(this.queue.length>24||this.due-now>2000){
-      this.queue=[];this.last=newest;this.due=now;this.onReset();this.paint(newest,{silent:true});
-    }
+    // A slow foreground connection still needs hit/death feedback. Catch up at a
+    // bounded cadence instead of silently deleting every attack in a large packet.
+    if(this.queue.length>24||this.due-now>2000)this.retime(now);
     this.pump();return true;
+  }
+  retime(now){
+    this.queue=this.queue.slice(-30);
+    if(!this.queue.length)return;
+    const first=this.queue[0].frame.tick,span=(this.queue.at(-1).frame.tick-first)*100;
+    const scale=Math.min(1,1200/Math.max(100,span));
+    this.queue.forEach((item,i)=>{item.due=now+Math.max(i*40,(item.frame.tick-first)*100*scale);});
+    this.due=this.queue.at(-1).due;
   }
   pump(){
     const now=this.now();
-    if(this.queue.length&&now-this.queue[0].due>1200){const item=this.queue.at(-1);this.queue=[];this.last=item.frame;this.due=now;this.onReset();this.paint(item.frame,{silent:true});return;}
+    if(this.queue.length&&now-this.queue[0].due>150)this.retime(now);
     while(this.queue.length&&this.queue[0].due<=now){const {frame}=this.queue.shift();this.last=frame;this.paint(frame,{silent:false});}
   }
 }

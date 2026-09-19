@@ -2,6 +2,7 @@ import {startLootTicker} from './loot-ticker.js';
 import {startWorldChat} from './world-chat.js?v=presence-20260919';
 import {npcIntents} from '/shared/game-intents.js';
 import {startBattlePlayback} from './battle-playback.js';
+import {startBattleFeed} from './battle-feed.js';
 
 const cloud=window.CloudStore;
 if(cloud)start();
@@ -19,6 +20,7 @@ function start(){
   const docAt=slot=>{try{const raw=cloud.get('lineage_idle_save_'+slot),d=_saveUnwrap(raw);return d.ok?JSON.parse(d.payload):null;}catch{return null;}};
   const roleEpoch=doc=>doc?.p?._roleEpoch||doc?.p?.enSeed;
   const battle=startBattlePlayback();
+  const feed=startBattleFeed(cloud,{receive:packet=>battle.receive(packet),cursor:battle.cursor,onDenied:showError});
   // The browser renders snapshots only. Even a modified browser has no progression upload API.
   stopGameTimers();
   for(const name of ['tick','gameLoop','startGameTimers','settleBackgroundMs','queueCatchupMs','_resumeIncrementalBackground'])window[name]=()=>{};
@@ -56,6 +58,7 @@ function start(){
       active={slot:result.game.slot,epoch:result.game.epoch};
       if(logEpoch!==active.epoch){lastLog=0;logEpoch=active.epoch;}
       render(result.game.view,initial,result.game.battle);
+      feed.open(active);
       if((result.game.logs?.at(-1)?.id||0)<lastLog)lastLog=0;
       for(const entry of result.game.logs||[])if(entry.id>lastLog){
         const message=entry.html||escape(entry.message);
@@ -69,7 +72,7 @@ function start(){
   cloud.reconcile=adopt;cloud.adoptNames=adopt;
   async function request(op,args={},target=active){
     if(!cloud.ready)throw new Error('請先完成伺服器連線');
-    const body={lease:cloud.lease,op,args:op==='state'?{...args,presentation:battle.cursor()}:args,...(target?{slot:target.slot,epoch:target.epoch}:{}),...(op==='state'?{}:{requestId:crypto.randomUUID(),revision:cloud.revision})};
+    const body={lease:cloud.lease,op,args:op==='state'?{...args,presentation:feed.healthy()?false:battle.cursor()}:args,...(target?{slot:target.slot,epoch:target.epoch}:{}),...(op==='state'?{}:{requestId:crypto.randomUUID(),revision:cloud.revision})};
     for(let attempt=0;attempt<3;attempt++)try{
       const result=await cloud.request('/api/game',body);adopt(result);return result;
     }catch(error){
@@ -101,7 +104,7 @@ function start(){
     void enqueue(()=>request('create',args,target)).catch(()=>{});
   };
   window.loadGame=()=>{const target={slot:currentSlot,epoch:roleEpoch(docAt(currentSlot))};void enqueue(()=>request('select',{},target)).catch(()=>{});};
-  window.returnToCharacterSelect=()=>{void enqueue(async()=>{if(active)await request('leave');active=null;battle.clear();leave();renderLoadSelect();}).catch(()=>{});return true;};
+  window.returnToCharacterSelect=()=>{void enqueue(async()=>{if(active)await request('leave');active=null;feed.close();battle.clear();leave();renderLoadSelect();}).catch(()=>{});return true;};
   window.loadDeleteSelected=()=>{const slot=_loadSelectedSlot,doc=docAt(slot);if(!doc)return;const name=doc.p.name||'未命名';if(prompt(`請輸入角色名稱「${name}」確認刪除：`)!==name||!confirm('確定永久刪除此角色？'))return;void enqueue(async()=>{await request('delete',{name},{slot,epoch:roleEpoch(doc)});active=null;renderLoadSelect();}).catch(()=>{});};
   window.importSave=()=>alert('線上角色由伺服器保存，無法匯入本機存檔。');
   window.changeMap=()=>fire('travel',{mapId:document.getElementById('map-select').value});
@@ -145,7 +148,7 @@ function start(){
   toolbar.querySelector('[data-shop]').onclick=()=>cloud.showShop?.();
   toolbar.querySelector('[data-logout]').onclick=()=>void enqueue(async()=>{if(active)await request('leave');await cloud.request('/api/auth/logout',{});location.href='/login';}).catch(()=>{});
   const {refresh:world}=startWorldChat(cloud,toolbar,()=>stopped);startLootTicker(cloud,()=>cloud.ready&&!stopped);
-  setInterval(()=>{if(!pending)void enqueue(poll).catch(()=>{});},1000);setInterval(world,4000);
+  setInterval(()=>{if(!pending)void enqueue(poll).catch(()=>{});},2000);setInterval(world,4000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!pending)void enqueue(poll).catch(()=>{});});
   block('正在連接伺服器…');void connect();
 }

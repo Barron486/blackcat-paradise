@@ -29,7 +29,21 @@ test('map changes, server restarts and background delays discard obsolete animat
   time=5000;timeline.pump();assert.equal(drawn.at(-1).map,'town');assert.equal(timeline.queue.length,0);
   timeline.ingest(packet([frame(1,{map:'town'})],'battle-2'),{hidden:true});assert.equal(drawn.at(-1).silent,true);
   time=5100;timeline.ingest(packet([frame(2,{map:'town'}),frame(3,{map:'town'})],'battle-2'));
-  time=10000;timeline.pump();assert.equal(drawn.at(-1).silent,true);assert.equal(timeline.queue.length,0);
+  time=10000;timeline.pump();assert.equal(drawn.at(-1).silent,false);assert.equal(timeline.queue.length,0);
+  timeline.ingest(packet([frame(4,{map:'town'})],'battle-2'),{hidden:true});assert.equal(drawn.at(-1).silent,true);assert.equal(timeline.queue.length,0);
+});
+
+test('slow foreground packets retain attacks and damage frames instead of repeatedly muting all effects',()=>{
+  let time=0,resets=0;const drawn=[],timeline=new BattleTimeline({now:()=>time,reset:()=>resets++,paint:(f,o)=>drawn.push({seq:f.seq,...o})});
+  timeline.ingest(packet([frame(0)]));const initialResets=resets;
+  for(let round=0;round<3;round++){
+    time=4000+round*5000;
+    const start=round*30+1;
+    timeline.ingest(packet(Array.from({length:30},(_,i)=>frame(start+i,{events:[{type:'player',action:'attack'}]}))));
+    const finish=time+1400;for(;time<=finish;time+=50)timeline.pump();
+  }
+  assert.equal(resets,initialResets,'network jitter must not reset sprite state');
+  assert.equal(drawn.filter(f=>!f.silent).length,90);assert.equal(timeline.queue.length,0);
 });
 
 test('server records attacks and deaths per tick, bounds retention and keeps presentation out of saves',()=>{

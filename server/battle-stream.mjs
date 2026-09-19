@@ -42,7 +42,7 @@ export function installBattleRecording(engine){
       if(!player.cls)return;
       const pick = actor => Object.fromEntries(['hp','mhp','mp','mmp','lv','dead','curHp','_downed','_slot','uid','buffs','statuses','poly','_setPoly','_faceTgtUid','avatar','cls','d','eq'].filter(k=>actor[k]!==undefined).map(k=>[k,actor[k]]));
       const companions=[...petsOutList(),...summonRenderList(),...guardRenderList()].map(p=>Object.fromEntries(['uid','form','formGfx','hp','_downed','_diedAt','_faceMobUid'].filter(k=>p[k]!==undefined).map(k=>[k,p[k]])));
-      window.__battleFrame({tick:state.ticks,map:mapState.current,targetIdx:mapState.targetIdx,mobs:mapState.mobs,companions,player:{...pick(player),allies:(player.allies||[]).map(a=>a?pick(a):null)}});
+      window.__battleFrame({epoch:player._roleEpoch||player.enSeed,tick:state.ticks,map:mapState.current,targetIdx:mapState.targetIdx,mobs:mapState.mobs,companions,player:{...pick(player),allies:(player.allies||[]).map(a=>a?pick(a):null)}});
       for(const mob of mapState.mobs)if(mob){mob.justHit=false;mob._spellHurt=false;mob._vfxBig=false;}
     };
   `);

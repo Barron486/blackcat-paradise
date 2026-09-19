@@ -76,6 +76,8 @@ test('all eight professions retain their real starting items and valid allocatio
 });
 test('authenticated HTTP rejects edited snapshots even when the public save checksum is recomputed',async t=>{
  const app=createApp({database:':memory:',catalog,publicOrigin:'',publicAliases:[],aiOptions:{apiKey:''}});app.server.listen(0,'127.0.0.1');await once(app.server,'listening');
+ // Compare only the rejected write; legitimate timed progression must not race this assertion.
+ app.authority.clock=()=>0;
  t.after(async()=>{app.server.closeAllConnections();await new Promise(resolve=>app.server.close(resolve));});
  const base=`http://127.0.0.1:${app.server.address().port}`,client=new CloudClient({baseUrl:base}),game=new HeadlessGame();t.after(()=>game.close());
  await client.register('http_guard','guard-test-only-2026!');const lease=randomUUID();await client.acquireLease(lease);game.create({classId:'elf',name:'HTTP角色',allocation:{dex:8}});

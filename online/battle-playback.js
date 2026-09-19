@@ -57,7 +57,8 @@ export function startBattlePlayback({now}={}){
       const before=old.get(m.uid);
       // Network timestamps and headless caches cannot be used as browser animation clocks.
       delete m._animAct;delete m._animSpawned;delete m._yScat;delete m._vfxHp;
-      if(before)for(const key of visualKeys)if(before[key]!==undefined)m[key]=before[key];
+      if(before){for(const key of visualKeys)if(before[key]!==undefined)m[key]=before[key];}
+      else m._vfxHp=m.hp; // A newly spawned monster can already be hit in its first server frame.
       if(silent){m._vfxHp=m.curHp;m.justHit=false;m._spellHurt=false;m._vfxBig=false;}
     }
     const deaths=silent?[]:(frame.events||[]).filter(e=>e.type==='kill');
@@ -88,10 +89,12 @@ export function startBattlePlayback({now}={}){
     try{window.petsOutList=()=>current.companions||[];window.summonRenderList=window.guardRenderList=()=>[];return draw(()=>petRender());}
     finally{window.petsOutList=pets;window.summonRenderList=summons;window.guardRenderList=guards;}
   };
-  const timer=setInterval(()=>{if(!document.hidden)timeline.pump();},50);
-  window.addEventListener('pagehide',()=>clearInterval(timer),{once:true});
+  const pump=()=>{if(!document.hidden)timeline.pump();};
+  let timer=setInterval(pump,50);
+  window.addEventListener('pagehide',()=>clearInterval(timer));
+  window.addEventListener('pageshow',event=>{if(event.persisted){clearInterval(timer);timer=setInterval(pump,50);}});
   return {
-    receive:(packet,options={})=>timeline.ingest(packet,{...options,hidden:document.hidden}),
+    receive:(packet,options={})=>packet?.frames?.at(-1)?.map&&packet.frames.at(-1).map!==mapState.current?false:timeline.ingest(packet,{...options,hidden:document.hidden}),
     cursor:()=>timeline.cursor(),clear:()=>timeline.clear(),
     target:index=>current?.mobs[index]?.uid,
   };
