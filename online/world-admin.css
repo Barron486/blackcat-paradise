@@ -2,3 +2,5 @@
 @media(max-width:640px){.world-fields{grid-template-columns:1fr;gap:4px}.world-section .section-heading{align-items:stretch;flex-direction:column}.world-section .section-heading input{max-width:none}.admin-tabs{display:flex;flex-wrap:nowrap;overflow-x:auto}.admin-tabs button{flex-shrink:0}.world-pagination{font-size:12px}#world-edit-dialog .dialog-actions button{flex:1;min-width:90px}#world-map-list td{padding:12px 8px}}
 @media(max-width:640px){#world-edit-dialog .dialog-actions{display:grid;grid-template-columns:1fr 1fr}#world-edit-submit{grid-column:1/-1}}
 #world-broadcast fieldset{min-width:0;margin:16px 0;padding:10px 14px;border:1px solid #394253;border-radius:8px}#world-broadcast .world-check{min-height:44px;margin:8px 0}#world-broadcast>.primary{margin-top:16px}
+
+#world-presence~h3{margin:28px 0 12px}#world-clan-history{margin-top:20px}#world-clan-history .audit-entry{display:block}#world-clan-form .primary,#world-presence .primary{margin-top:12px}

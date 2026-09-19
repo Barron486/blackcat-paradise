@@ -26,7 +26,7 @@ export class CommerceService {
       const p=this.service.catalog.unwrap(raw).p;
       characters.push({slot:Number(key.slice(-1)),name:p.name||'未命名',epoch:p._roleEpoch||p.enSeed,cls:p.cls,level:p.lv,fullStatusExpiresAt:p._shopBuffs?.expiresAt||0});
     }
-    const spyTargets=onlineCharacters(this.service).filter(t=>t.id&&t.accountId!==user.id).map(({id,name,map})=>({id,name,map}));
+    const spyTargets=this.service.presence.visibleCharacters(user,onlineCharacters(this.service).filter(t=>t.id&&t.accountId!==user.id));
     return {wallet:this.wallet(user.id),products:Object.values(products).map(({column,...p})=>p),characters,spyTargets,history:this.history(user.id),serverTime:Date.now()};
   }
   history(accountId){

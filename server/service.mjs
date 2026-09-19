@@ -7,6 +7,7 @@ import { applyEffect } from '../shared/gm-effects.js';
 import {fullStatusBuffIds} from '../shared/full-status.js';
 import { itemGrantRules, rollWishes } from './item-rules.mjs';
 import {characterName,onlineCharacters} from './characters.mjs';
+import {PresenceService} from './presence.mjs';
 
 const scrypt = promisify(scryptCallback);
 const hash = s => createHash('sha256').update(s).digest('hex');
@@ -48,6 +49,7 @@ export class GameService {
       CREATE TABLE IF NOT EXISTS character_epochs(epoch TEXT PRIMARY KEY,account_id TEXT NOT NULL,slot_key TEXT NOT NULL);
     `);
     if(!this.db.prepare('PRAGMA table_info(chat)').all().some(c=>c.name==='character_name'))this.db.exec('ALTER TABLE chat ADD COLUMN character_name TEXT');
+    this.presence=new PresenceService(this);
     // Keep past character identities after deletion so exported characters cannot be cloned or restored as new ones.
     for(const row of this.db.prepare('SELECT account_id,data FROM saves').all())for(const [key,raw]of Object.entries(JSON.parse(row.data))){
       if(!SLOT.test(key))continue;
@@ -334,9 +336,9 @@ export class GameService {
   online() {
     return this.db.prepare('SELECT a.username,l.display_name AS name,l.map_name AS map,l.slot FROM leases l JOIN accounts a ON a.id=l.account_id WHERE l.expires_at>? ORDER BY a.username').all(Date.now());
   }
-  onlineSummary(){
+  onlineSummary(user){
     // Public presence lists characters uniformly; roles and automation stay in GM views.
-    const players=onlineCharacters(this).map(({id,name,map})=>({id,name,map}));
+    const players=this.presence.visibleCharacters(user,onlineCharacters(this));
     return {total:players.length,players:players.length,list:players,at:Date.now()};
   }
   chat(user,text) {

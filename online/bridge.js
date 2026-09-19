@@ -1,6 +1,6 @@
 import { applyEffect, refreshGmBuffs } from '/shared/gm-effects.js';
 import { startLootTicker } from './loot-ticker.js';
-import { startWorldChat } from './world-chat.js';
+import { startWorldChat } from './world-chat.js?v=presence-20260919';
 
 const cloud=window.CloudStore;
 if(cloud)startOnline();

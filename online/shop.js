@@ -24,7 +24,7 @@ if(cloud){
   const $=selector=>dialog.querySelector(selector),pending=new Map();let info=null,busy=false,buffPending=null,spyPending=null,wasRunning=false,timeOffset=0;
   function renderSpy(){
     const select=$('#diamond-spy-target'),targets=info.spyTargets||[],previous=spyPending?.targetId||select.value;select.replaceChildren();
-    for(const target of targets){const option=document.createElement('option');option.value=target.id;option.textContent=`${target.name} · ${target.map}`;select.append(option);}
+    for(const target of targets){const option=document.createElement('option');option.value=target.id;option.textContent=target.name+(target.map?' · '+target.map:'');select.append(option);}
     if(spyPending&&!targets.some(t=>t.id===spyPending.targetId)){const option=document.createElement('option');option.value=spyPending.targetId;option.textContent=spyPending.name+'（等待確認結果）';select.append(option);}
     if([...select.options].some(o=>o.value===previous))select.value=previous;
     if(!select.options.length){const option=document.createElement('option');option.value='';option.textContent='目前沒有其他線上角色';select.append(option);}

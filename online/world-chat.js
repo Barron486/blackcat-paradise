@@ -20,7 +20,6 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
     </div>
     <div id="chat-pane-online" class="cloud-chat-pane" role="tabpanel" aria-labelledby="chat-tab-online" hidden>
       <div class="cloud-online-summary"><strong data-count>查詢中…</strong><button type="button" data-refresh>更新</button></div>
-      <p class="cloud-online-note">每 10 秒更新；離線帳號最多約 45 秒後移出名單。</p>
       <div class="cloud-player-list" aria-live="polite"></div>
     </div>
     <p class="cloud-chat-error" role="status"></p>`;
@@ -73,15 +72,16 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
     presenceBusy = true;
     try {
       const data = await cloud.request('/api/online');
-      onlineButton.textContent = `線上 ${data.total}`;
-      onlineButton.title = `目前在線 ${data.total} 人`;
-      chat.querySelector('[data-count]').textContent = `在線 ${data.total} 人`;
+      const total=Number.isSafeInteger(data.total)&&data.total>=0?data.total:data.list.length;
+      onlineButton.textContent = `線上 ${total}`;
+      onlineButton.title = `目前在線 ${total} 人`;
+      chat.querySelector('[data-count]').textContent = `在線 ${total} 人`;
       const target = chat.querySelector('.cloud-player-list');target.replaceChildren();
       for (const player of data.list) {
         const row = document.createElement('div'), name = document.createElement('strong'), map = document.createElement('small');
         row.className = 'cloud-player';name.textContent = player.name;map.textContent = player.map;
         if(player.id){const inspect=document.createElement('button');inspect.type='button';inspect.className='cloud-player-name';inspect.append(name);inspect.title='使用偷窺卡查看角色 · 300 藍鑽';inspect.onclick=()=>{if(cloud.showSpy)void cloud.showSpy(player.id);else errorBox.textContent='商店載入中，請稍後再試。';};row.append(inspect);}else row.append(name);
-        row.append(map);target.append(row);
+        if(player.map)row.append(map);target.append(row);
       }
       if (!data.list.length) target.textContent = '目前沒有在線角色。';
       if (pane === 'online') errorBox.textContent = '';
