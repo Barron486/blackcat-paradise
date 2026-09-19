@@ -79,8 +79,8 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
         const row = document.createElement('div'), name = document.createElement('strong'), map = document.createElement('small');
         row.className = 'cloud-player';name.textContent = player.name;map.textContent = player.map;
         row.append(name);
-        if (player.ai || player.gm) {
-          const badge = document.createElement('span');badge.className = 'cloud-ai-badge';badge.textContent = player.ai ? 'AI' : 'GM';row.append(badge);
+        if (player.ai) {
+          const badge = document.createElement('span');badge.className = 'cloud-ai-badge';badge.textContent = 'AI';row.append(badge);
         }
         row.append(map);target.append(row);
       }

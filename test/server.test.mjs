@@ -65,6 +65,26 @@ test('ordinary players cannot use any GM method',async t=>{
   const {service,a}=await fixture(t);
   for(const op of [()=>service.players(a),()=>service.preview(a,{action:'kill'}),()=>service.execute(a,{}),()=>service.audit(a),()=>service.setRole(a,a.id,'gm')])assert.throws(op,e=>e.status===403);
 });
+
+test('public presence and chat conceal GM roles while self and admin permissions remain available',async t=>{
+  const app=createApp({database:':memory:',catalog,publicOrigin:'',publicAliases:[]});app.server.listen(0,'127.0.0.1');await once(app.server,'listening');
+  t.after(async()=>{app.server.closeAllConnections();await new Promise(resolve=>app.server.close(resolve));});
+  const gm=await app.service.register('keeper',password,{initialGm:true}),player=await app.service.register('visitor',password);
+  for(const user of [gm,player])app.service.acquireLease(user,randomUUID());
+  app.service.chat(gm,'早安，一起冒險');
+  const gmSession=await app.service.login(gm.username,password),playerSession=await app.service.login(player.username,password);
+  const base=`http://127.0.0.1:${app.server.address().port}`;
+  const get=(route,session=playerSession)=>fetch(base+route,{headers:{Cookie:'idle_session='+session.session}});
+  const presenceResponse=await get('/api/online');assert.equal(presenceResponse.status,200);
+  const presence=await presenceResponse.json();assert.equal(presence.total,2);assert.equal(presence.players,2);assert.ok(presence.list.some(p=>p.name===gm.username),'GM remains a normal visible player');
+  const worldResponse=await get('/api/world');assert.equal(worldResponse.status,200);
+  const world=await worldResponse.json();assert.ok(world.online.some(p=>p.username===gm.username));assert.equal(world.messages[0].username,gm.username);assert.equal(world.messages[0].text,'早安，一起冒險');
+  for(const row of [...presence.list,...world.online,...world.messages])for(const key of ['gm','role','isGm','isGM'])assert.equal(Object.hasOwn(row,key),false,`public ${key} must be absent`);
+  const self=await(await get('/api/me',gmSession)).json();assert.equal(self.user.role,'gm');
+  const boot=await(await get('/api/bootstrap',gmSession)).json();assert.equal(boot.user.role,'gm');
+  assert.equal((await get('/api/gm/players')).status,403);
+  const admin=await get('/api/gm/players',gmSession);assert.equal(admin.status,200);assert.equal((await admin.json()).players.find(p=>p.id===gm.id).role,'gm');
+});
 test('grant reaches every existing character, including offline accounts, once',async t=>{
   const {service,gm,a,b}=await fixture(t);
   service.db.prepare('UPDATE leases SET expires_at=0 WHERE account_id=?').run(b.id);

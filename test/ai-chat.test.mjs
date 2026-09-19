@@ -166,7 +166,7 @@ test('presence counts active leases once and excludes expired players',async t=>
   const {service,gm,a,b,update}=await fixture(t);update({speakers:[a.id]});
   service.acquireLease(gm,randomUUID());
   let result=service.onlineSummary();assert.equal(result.total,3);assert.equal(result.players,2);assert.equal(result.ai,1);
-  assert.equal(result.list.find(p=>p.name===gm.username).gm,true);
+  const gmPresence=result.list.find(p=>p.name===gm.username);assert.ok(gmPresence);assert.equal(Object.hasOwn(gmPresence,'gm'),false);assert.equal(Object.hasOwn(gmPresence,'role'),false);
   service.db.prepare('UPDATE leases SET expires_at=? WHERE account_id=?').run(Date.now()-1,b.id);
   result=service.onlineSummary();assert.equal(result.total,2);assert.equal(result.players,1);assert.equal(result.ai,1);
 });

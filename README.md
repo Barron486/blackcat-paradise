@@ -42,7 +42,7 @@ npm run cli -- help
 node --test --test-concurrency=1 test/*.test.mjs
 ```
 
-本版 **139 項測試通過**，涵蓋帳號隔離、CSRF、GM 權限、存檔衝突、升級保存、藍鑽與卡片、交易重試及原子性、CLI、AI 聊天、世界設定與掉寶廣播。測試使用隔離資料庫。
+本版 **140 項測試通過**，涵蓋帳號隔離、CSRF、GM 權限、存檔衝突、升級保存、藍鑽與卡片、交易重試及原子性、CLI、AI 聊天、世界設定與掉寶廣播。測試使用隔離資料庫。
 
 需要瀏覽器測試時，可執行 `node test/manual-server.mjs` 啟動 `http://localhost:8790/login`。測試帳號和密碼見該檔，資料只存在記憶體，不連正式站。
 

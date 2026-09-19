@@ -10,7 +10,7 @@ test('unified chat preserves NPC controls, separates channels, and shows fresh a
   let npcClicks=0;doc.getElementById('world-send').onclick=()=>npcClicks++;
   w.setInterval=(fn,ms)=>timers.push({fn,ms});
   let total=2;
-  const cloud={request:async(path,body)=>{calls.push({path,body});if(path==='/api/online')return {total,players:total-1,ai:1,list:[{name:'<img src=x>',map:'新兵修練場',ai:false},{name:'黑貓',map:'村莊',ai:true}]};if(path==='/api/world')return {messages:[{id:1,username:'玩家',text:'<script>測試</script>',at:Date.now()},{id:2,username:'cat',displayName:'黑貓',text:'大家好',ai:true,model:'qwen3:8b',at:Date.now()}]};return {ok:true};}};
+  const cloud={request:async(path,body)=>{calls.push({path,body});if(path==='/api/online')return {total,players:total-1,ai:1,list:[{name:'<img src=x>',map:'新兵修練場',gm:true,ai:false},{name:'黑貓',map:'村莊',ai:true}]};if(path==='/api/world')return {messages:[{id:1,username:'玩家',text:'<script>測試</script>',at:Date.now()},{id:2,username:'cat',displayName:'黑貓',text:'大家好',ai:true,model:'qwen3:8b',at:Date.now()}]};return {ok:true};}};
   w.eval(readFileSync(new URL('../online/world-chat.js',import.meta.url),'utf8').replace('export function','window.startWorldChat = function'));
   const api=w.startWorldChat(cloud,doc.getElementById('cloud-toolbar'));await settle();
   assert.equal(doc.querySelector('[data-online]').textContent,'線上 2');assert.equal(calls.some(c=>c.path==='/api/world'),false);
@@ -20,6 +20,7 @@ test('unified chat preserves NPC controls, separates channels, and shows fresh a
   doc.querySelector('[data-pane=npc]').click();doc.getElementById('world-send').click();assert.equal(npcClicks,1);assert.equal(calls.some(c=>c.path==='/api/chat'),false);
   assert.equal(doc.getElementById('chat-pane-players').hidden,true);
   doc.querySelector('[data-online]').click();await settle();assert.equal(doc.getElementById('chat-pane-online').hidden,false);assert.equal(doc.querySelector('.cloud-player-list img'),null);
+  const rows=doc.querySelectorAll('.cloud-player');assert.equal(rows.length,2);assert.equal(rows[0].querySelector('strong').textContent,'<img src=x>');assert.equal(rows[0].querySelector('.cloud-ai-badge'),null,'GM receives no public badge, including legacy responses');assert.equal(rows[1].querySelector('.cloud-ai-badge').textContent,'AI');assert.doesNotMatch(doc.querySelector('.cloud-player-list').textContent,/GM/);
   total=3;await timers.find(t=>t.ms===10000).fn();assert.equal(doc.querySelector('[data-online]').textContent,'線上 3');
   doc.querySelector('[data-chat]').click();const input=doc.querySelector('#cloud-chat form input');input.value='一起冒險';
   await doc.querySelector('#cloud-chat form').onsubmit({preventDefault(){}});assert.equal(calls.find(c=>c.path==='/api/chat').body.text,'一起冒險');assert.equal(input.value,'');

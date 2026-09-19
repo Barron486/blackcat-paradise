@@ -334,7 +334,8 @@ export class GameService {
   onlineSummary(){
     const ai=new Set(this.aiChat?.settings().speakers||[]);
     const maps=new Map((this.catalog.world?.maps||[]).map(m=>[m.id,m.name]));
-    const players=this.db.prepare('SELECT a.id,a.role,l.display_name AS name,a.username,l.map_name AS map FROM leases l JOIN accounts a ON a.id=l.account_id WHERE l.expires_at>? ORDER BY a.username').all(Date.now()).map(p=>({name:p.name||p.username,map:maps.get(p.map)||p.map||'角色選擇',gm:p.role==='gm',ai:ai.has(p.id)}));
+    // Shared presence must not expose account privileges; GM roles stay in authenticated admin views.
+    const players=this.db.prepare('SELECT a.id,l.display_name AS name,a.username,l.map_name AS map FROM leases l JOIN accounts a ON a.id=l.account_id WHERE l.expires_at>? ORDER BY a.username').all(Date.now()).map(p=>({name:p.name||p.username,map:maps.get(p.map)||p.map||'角色選擇',ai:ai.has(p.id)}));
     const aiCount=players.filter(p=>p.ai).length;return {total:players.length,players:players.length-aiCount,ai:aiCount,list:players,at:Date.now()};
   }
   chat(user,text) {
