@@ -4,6 +4,7 @@ import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {CloudClient} from './cloud-client.mjs';
 import {HeadlessGame} from './engine.mjs';
+import {RemoteGame} from './remote-game.mjs';
 import {loadProfile,saveProfile,paths,writeJsonAtomic} from './profiles.mjs';
 import {CLASS_PRESETS,createStrategy} from './strategy.mjs';
 import {GameSync} from './sync.mjs';
@@ -45,6 +46,15 @@ export async function runWorker(profileName, options={}) {
     if(snapshot.user.role!=='player')throw new Error('自動遊玩僅接受一般玩家帳號');
     profile.lease ||= randomUUID();saveProfile(profileName,profile);
     await client.acquireLease(profile.lease,{takeover:options.takeover===true});
+    if(snapshot.authoritative){
+      const preset=CLASS_PRESETS[profile.classId];
+      engine=new RemoteGame({client,lease:profile.lease,snapshot,slot:profile.slot||1});
+      await engine.open({classId:profile.classId,name:profile.characterName,allocation:preset?.points||preset?.allocation,gender:'m'});
+      if(engine.snapshot().p.cls!==profile.classId)throw new Error('雲端角色職業與 profile 不符');
+      if(paused)await engine.pause(true);
+      sync=new GameSync({client,engine,snapshot:engine.boot,lease:profile.lease,slot:profile.slot||1});
+      await sync.flush();online=true;checkpoint();log('connected',{username:profile.username,revision:sync.revision,serverOwned:true});return;
+    }
     const prior=readJson(checkpointFile);
     const recover=prior&&!prior.synced&&prior.values;
     const values=recover?prior.values:snapshot.values;
@@ -69,8 +79,8 @@ export async function runWorker(profileName, options={}) {
         if(!Number.isFinite(packet.expiresAt)||packet.expiresAt<Date.now())throw new Error('命令已逾時，未執行');
         let result;
         if(packet.type==='stop'){stop=true;result={stopping:true};}
-        else if(packet.type==='pause'){paused=true;result={paused:true};}
-        else if(packet.type==='resume'){paused=false;tickAnchor=performance.now();result={paused:false};}
+        else if(packet.type==='pause'){if(engine.remote)await engine.pause(true);paused=true;result={paused:true};}
+        else if(packet.type==='resume'){if(engine.remote)await engine.pause(false);paused=false;tickAnchor=performance.now();result={paused:false};}
         else if(packet.type==='status')result=engine.status();
         else if(packet.type==='inspect') {
           const doc=engine.snapshot(),catalog=engine.catalog();
@@ -86,7 +96,7 @@ export async function runWorker(profileName, options={}) {
           targetMap=packet.mapId;strategy.setTarget?.(targetMap);result={targetMap};
         } else if(packet.type==='action') {
           if(!online)throw new Error('雲端中斷中，暫停角色操作');
-          result=engine.action(packet.name,packet.args||{});checkpoint();
+          result=await engine.action(packet.name,packet.args||{});checkpoint();
           log('manual-action',{action:packet.name});
         } else throw new Error('未知的 CLI 命令');
         status=stop?'stopping':!online?'reconnecting':engine.snapshot().p._gmDead?'gm-stopped':paused?'paused':'playing';
@@ -115,7 +125,7 @@ export async function runWorker(profileName, options={}) {
         if(now>=nextDecision) {
           nextDecision=now+5000;
           const action=strategy.decide(engine.snapshot(),engine.catalog(),{targetMap});
-          if(action)try{engine.action(action.name,action.args||{});lastDecision=action.reason||action.name;log('decision',{action:action.name,reason:lastDecision});strategy.recordResult?.(action,true);}
+          if(action)try{await engine.action(action.name,action.args||{});lastDecision=action.reason||action.name;log('decision',{action:action.name,reason:lastDecision});strategy.recordResult?.(action,true);}
           catch(error){lastDecision=error.message;log('decision-skipped',{action:action.name,message:error.message});strategy.recordResult?.(action,false);}
         }
       } else tickAnchor=performance.now();
@@ -124,7 +134,7 @@ export async function runWorker(profileName, options={}) {
       await delay(100);
     }
     status='stopping';publish();
-    try{await sync.flush();online=true;lastError=null;}catch(error){online=false;lastError=publicError(error);log('final-sync-pending',{error:lastError});}
+    try{await sync.flush();if(engine.remote)await engine.leave();online=true;lastError=null;}catch(error){online=false;lastError=publicError(error);log('final-sync-pending',{error:lastError});}
     checkpoint();status='stopped';log('stopped',{saved:online});
   } catch(error) {
     finalError=error;lastError=publicError(error);status='error';log('worker-error',{error:lastError});

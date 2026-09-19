@@ -79,7 +79,7 @@ test('authenticated HTTP rejects edited snapshots even when the public save chec
  t.after(async()=>{app.server.closeAllConnections();await new Promise(resolve=>app.server.close(resolve));});
  const base=`http://127.0.0.1:${app.server.address().port}`,client=new CloudClient({baseUrl:base}),game=new HeadlessGame();t.after(()=>game.close());
  await client.register('http_guard','guard-test-only-2026!');const lease=randomUUID();await client.acquireLease(lease);game.create({classId:'elf',name:'HTTP角色',allocation:{dex:8}});
- await client.sync({lease,revision:0,changes:game.values(),presence:{slot:1}});const before=await client.bootstrap(),doc=catalog.unwrap(before.values[key]);doc.p.gold=-1000;
+ await client.game({lease,op:'create',slot:1,revision:0,requestId:randomUUID(),args:{classId:'elf',name:'HTTP角色',allocation:{dex:8}}});const before=await client.bootstrap(),doc=catalog.unwrap(before.values[key]);doc.p.gold=-1000;
  await assert.rejects(client.sync({lease,revision:before.revision,changes:{[key]:catalog.wrap(doc)}}),e=>e.status===403&&e.data.saveRejected);
  assert.deepEqual((await client.bootstrap()).values,before.values);
  assert.equal((await fetch(base+'/api/gm/save-security',{headers:{Cookie:client.exportSession().cookie}})).status,403);

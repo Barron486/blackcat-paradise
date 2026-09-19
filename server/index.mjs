@@ -11,6 +11,7 @@ import { CommerceService } from './commerce.mjs';
 import { MarketService } from './market.mjs';
 import { WorldSettingsService } from './world-settings.mjs';
 import { LootBroadcastService } from './loot-broadcasts.mjs';
+import { AuthoritativeGame } from './authoritative-game.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const rootPath = path.resolve(fileURLToPath(ROOT));
@@ -27,6 +28,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
   const market = new MarketService(service,commerce);
   const worldSettings = new WorldSettingsService(service);
   const lootBroadcasts = new LootBroadcastService(service);
+  const authority = new AuthoritativeGame(service);
   const origins=new Set([publicOrigin,...publicAliases].filter(Boolean).map(value=>{
     const u=new URL(value);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.pathname!=='/'||u.search||u.hash)throw new Error('公開網址必須是有效的 HTTP(S) origin');return u.origin;
   }));
@@ -90,7 +92,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
       }
       if(route.startsWith('/api/')) {
         if(req.method==='POST' && req.headers['x-csrf-token']!==user.csrf &&
-          !(['/api/sync','/api/lease'].includes(route)&&service.gameSessionCsrf(user,req.headers['x-csrf-token'])))
+          !(['/api/sync','/api/lease','/api/game'].includes(route)&&service.gameSessionCsrf(user,req.headers['x-csrf-token'])))
           throw new ApiError(403,'請求驗證失敗，請重新整理頁面');
         if(route==='/api/me') return json(res,200,{user:{id:user.id,username:user.username,role:user.role},csrf:user.csrf});
         if(route==='/api/bootstrap') return json(res,200,service.bootstrap(user));
@@ -98,7 +100,11 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
         if(route==='/api/loot-broadcasts'&&req.method==='GET') return json(res,200,lootBroadcasts.list(Number(new URL(req.url,base).searchParams.get('after'))));
         if(route==='/api/auth/logout'&&req.method==='POST') {service.logout(session);return json(res,200,{ok:true},{'Set-Cookie':cookie('',true)});}
         if(route==='/api/lease'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.acquireLease(user,b.lease,b.takeover===true));}
-        if(route==='/api/sync'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.sync(user,b.lease,b.revision,b.changes,b.presence));}
+        if(route==='/api/sync'&&req.method==='POST') {
+          const error=new ApiError(403,'遊戲已改由伺服器結算，請重新整理或更新 CLI；不再接受本機存檔上傳',{saveRejected:true,slotKey:'all',code:'SERVER_AUTHORITY_REQUIRED'});
+          service.saveGuard.record(user,error);throw error;
+        }
+        if(route==='/api/game'&&req.method==='POST') {limit(`game:${user.id}`,180);const body=await readBody(req);if(body.op&&body.op!=='state')limit(`game-action:${user.id}`,60);return json(res,200,authority.handle(user,body));}
         if(route==='/api/world') return json(res,200,{online:service.onlineSummary(user).list,messages:service.publicMessages(),lootBroadcasts:lootBroadcasts.history()});
         if(route==='/api/online'&&req.method==='GET') return json(res,200,service.onlineSummary(user));
         if(route==='/api/gm/location-clans'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.presence.assign(user,b));}
@@ -156,7 +162,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
         const boot=service.bootstrap(user);
         const html=readFileSync(new URL('index.html',ROOT),'utf8').replace('</head>',
           `<script id="cloud-boot" type="application/json">${escapedJson(boot)}</script><script src="/online/bootstrap.js"></script><link rel="stylesheet" href="/online/cloud.css"><link rel="stylesheet" href="/online/mobile.css"></head>`)
-          .replace('</body>','<script type="module" src="/online/bridge.js?v=save-guard-20260919"></script><script type="module" src="/online/mobile.js"></script><script type="module" src="/online/shop.js"></script><script type="module" src="/online/market.js"></script></body>');
+          .replace('</body>','<script type="module" src="/online/authoritative.js?v=server-combat-20260919"></script><script type="module" src="/online/mobile.js"></script><script type="module" src="/online/shop.js"></script><script type="module" src="/online/market.js"></script></body>');
         res.writeHead(200,{'Content-Type':MIME['.html'],'Cache-Control':'no-store'});return res.end(req.method==='HEAD'?undefined:html);
       }
       if(route==='/gm') service.gm(user);
@@ -189,8 +195,8 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
   });
   const cleanup=setInterval(()=>{const now=Date.now();for(const [key,rate]of rates)if(now-rate.at>120000)rates.delete(key);},60000);cleanup.unref();
   server.on('listening',()=>aiChat.start());
-  server.on('close',()=>{aiChat.stop();clearInterval(cleanup);service.close();});
-  return {server,service,aiChat,commerce,market,worldSettings};
+  server.on('close',()=>{aiChat.stop();clearInterval(cleanup);authority.close();service.close();});
+  return {server,service,aiChat,commerce,market,worldSettings,authority};
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) {

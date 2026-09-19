@@ -19,10 +19,12 @@ export class GameSync {
   }
   now() { return Date.now()+this.offset; }
   checkpoint() {
+    if(this.engine.remote)return {serverOwned:true,synced:true,revision:this.revision,updatedAt:Date.now()};
     this.engine.save();
     return {values:this.engine.values(),baseline:this.baseline,revision:this.revision,updatedAt:Date.now(),synced:Object.keys(saveChanges(this.engine.values(),this.baseline)).length===0};
   }
   async flush() {
+    if(this.engine.remote){await this.engine.refresh();this.revision=this.engine.revision;this.offset=this.engine.boot.serverTime-Date.now();this.lastSyncedAt=Date.now();return {revision:this.revision,lastSyncedAt:this.lastSyncedAt};}
     for(let attempt=0;attempt<3;attempt++) {
       this.engine.save();
       const values=this.engine.values(),changes=saveChanges(values,this.baseline),status=this.engine.status();

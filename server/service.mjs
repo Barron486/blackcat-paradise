@@ -112,7 +112,7 @@ export class GameService {
   bootstrap(user) {
     const save = this.db.prepare('SELECT * FROM saves WHERE account_id=?').get(user.id);
     return { user: { id:user.id, username:user.username, role:user.role }, csrf:user.csrf,
-      revision:save.revision, values:JSON.parse(save.data), serverTime:Date.now(), version:this.catalog.version, worldSettings:this.world?.state(), lootBroadcastCursor:this.lootBroadcasts?.latestId()||0 };
+      revision:save.revision, values:JSON.parse(save.data), serverTime:Date.now(), version:this.catalog.version, authoritative:!!this.authority, worldSettings:this.world?.state(), lootBroadcastCursor:this.lootBroadcasts?.latestId()||0 };
   }
   acquireLease(user, id, takeover = false) {
     requireValue(typeof id === 'string' && /^[\w-]{20,80}$/.test(id), '遊戲視窗識別碼不正確');

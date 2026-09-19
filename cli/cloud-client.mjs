@@ -56,6 +56,7 @@ export class CloudClient {
   login(username, password) { return this.#request('/api/auth/login', { username, password }, false); }
   me() { return this.#request('/api/me'); }
   bootstrap() { return this.#request('/api/bootstrap'); }
+  game(body) { return this.#request('/api/game', body); }
   acquireLease(lease, { takeover = false } = {}) { return this.#request('/api/lease', { lease, takeover: takeover === true }); }
   sync({ lease, revision, changes, presence = {} }) { return this.#request('/api/sync', { lease, revision, changes, presence }); }
   world() { return this.#request('/api/world'); }

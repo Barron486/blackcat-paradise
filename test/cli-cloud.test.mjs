@@ -37,10 +37,9 @@ test('CLI transport registers, persists private session, syncs and logs out thro
   const before = await restored.bootstrap();
   const lease = randomUUID();
   await restored.acquireLease(lease);
-  const saved = await restored.sync({ lease, revision: before.revision, changes: { lineage_cli_note: '測試' },
-    presence: { name: '王族代理', slot: 1, map: '說話之島' } });
-  assert.equal(saved.revision, 1);
-  assert.equal((await restored.bootstrap()).values.lineage_cli_note, '測試');
+  await assert.rejects(restored.sync({lease,revision:before.revision,changes:{lineage_cli_note:'測試'}}),e=>e.status===403);
+  const saved=await restored.game({lease,op:'state'});assert.equal(saved.snapshot.revision,0);
+  assert.equal((await restored.bootstrap()).values.lineage_cli_note,undefined);
   assert.deepEqual((await restored.world()).online[0], {id:null,name:'角色選擇中',map:'角色選擇'},'presence cannot impersonate an unsaved character or expose a login account');
   await restored.chat('獨立測試訊息');
   assert.equal((await restored.world()).messages[0].text, '獨立測試訊息');
@@ -59,22 +58,13 @@ test('CLI transport leaves lease takeovers and save conflicts under caller contr
   await client.acquireLease(firstLease);
   await assert.rejects(other.acquireLease(secondLease), e => e.status === 423 && e.code === 'LEASE_CONFLICT');
   await other.acquireLease(secondLease, { takeover: true });
-  await assert.rejects(client.sync({ lease: firstLease, revision: 0, changes: {} }), e => e.status === 423);
-  await other.sync({ lease: secondLease, revision: 0, changes: { lineage_cli_note: 'newer' } });
-  const pendingEffect = { seq: 7, action: 'kill', at: Date.now() };
-  service.db.prepare('INSERT INTO gm_effects(account_id,revision,save_key,payload) VALUES(?,?,?,?)')
-    .run(user.id, 1, 'lineage_idle_save_1', JSON.stringify(pendingEffect));
-  await assert.rejects(other.sync({ lease: secondLease, revision: 0, changes: { lineage_cli_note: 'stale' } }), e => {
-    assert.equal(e.status, 409);
-    assert.equal(e.code, 'SAVE_CONFLICT');
-    assert.equal(e.data.snapshot.revision, 1);
-    assert.equal(e.data.snapshot.values.lineage_cli_note, 'newer');
-    assert.deepEqual(e.data.effects, [{ key: 'lineage_idle_save_1', ...pendingEffect }]);
-    assert.ok(!inspect(e).includes(e.data.snapshot.csrf));
-    assert.ok(!JSON.stringify(e).includes(e.data.snapshot.csrf));
-    return true;
+  await assert.rejects(client.game({lease:firstLease,op:'state'}),e=>e.status===423);
+  service.db.prepare('UPDATE saves SET data=?,revision=1 WHERE account_id=?').run(JSON.stringify({lineage_cli_note:'newer'}),user.id);
+  await assert.rejects(other.game({lease:secondLease,op:'create',slot:1,revision:0,requestId:randomUUID(),args:{}}),e=>{
+    assert.equal(e.status,409);assert.equal(e.code,'SAVE_CONFLICT');assert.equal(e.data.snapshot.revision,1);
+    assert.ok(!inspect(e).includes(e.data.snapshot.csrf));assert.ok(!JSON.stringify(e).includes(e.data.snapshot.csrf));return true;
   });
-  assert.equal((await other.bootstrap()).values.lineage_cli_note, 'newer');
+  assert.equal((await other.bootstrap()).values.lineage_cli_note,'newer');
 });
 
 test('CLI transport enforces timeout and refuses credential forwarding on redirects', async t => {

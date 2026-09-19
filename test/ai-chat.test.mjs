@@ -129,7 +129,7 @@ test('real HTTP publishes character chat without provenance while keeping model 
   const base=`http://127.0.0.1:${app.server.address().port}`;
   const gm=await app.service.register('http_ai_gm',password,{initialGm:true});
   const client=new CloudClient({baseUrl:base}),{user}=await client.register('http_ai_player',password);
-  const lease=randomUUID();await client.acquireLease(lease);await client.sync({lease,revision:0,changes:{lineage_idle_save_1:JSON.stringify({p:{cls:'elf',name:'妖精',lv:1,hp:30,inv:[],_roleEpoch:randomUUID()},ms:{current:'training'}})},presence:{slot:1}});
+  const lease=randomUUID();await client.acquireLease(lease);app.service.sync(user,lease,0,{lineage_idle_save_1:JSON.stringify({p:{cls:'elf',name:'妖精',lv:1,hp:30,inv:[],_roleEpoch:randomUUID()},ms:{current:'training'}})},{slot:1});
   const session=client.exportSession();let response=await fetch(base+'/api/gm/ai-chat',{headers:{Cookie:session.cookie}});assert.equal(response.status,403);
   const token=app.aiChat.rotateToken(gm).token;app.aiChat.update(gm,{...app.aiChat.settings(),enabled:true,speakers:[user.id]});
   const headers={'Content-Type':'application/json',Origin:base,Authorization:`Bearer ${token}`};

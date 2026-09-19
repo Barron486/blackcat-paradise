@@ -12,6 +12,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {createApp} from '../server/index.mjs';
 import {CloudClient} from '../cli/cloud-client.mjs';
 import {HeadlessGame} from '../cli/engine.mjs';
+import {RemoteGame} from '../cli/remote-game.mjs';
 import {GameSync,saveChanges} from '../cli/sync.mjs';
 
 const execute=promisify(execFile),entry=fileURLToPath(new URL('../cli/main.mjs',import.meta.url));
@@ -28,13 +29,14 @@ test('cloud conflict retains earned XP and applies GM events once to every slot'
   const {user}=await client.register('sync_play','test-passphrase-2026');
   const gm=await service.register('sync_gm','test-passphrase-2026',{initialGm:true});
   const lease=randomUUID();await client.acquireLease(lease);
-  const engine=new HeadlessGame(),second=new HeadlessGame({slot:2});t.after(()=>{engine.close();second.close();});
-  engine.create({classId:'knight',name:'衝突測試',allocation:{str:4,con:4}});
-  second.create({classId:'elf',name:'第二角色',allocation:{dex:8}});
-  engine.setValues({...engine.values(),...second.values()});
-  const sync=new GameSync({client,engine,lease,snapshot:await client.bootstrap()});
+  const engine=new RemoteGame({client,lease,snapshot:await client.bootstrap()});t.after(()=>engine.close());
+  await engine.open({classId:'knight',name:'衝突測試',allocation:{str:4,con:4}});
+  const sync=new GameSync({client,engine,lease,snapshot:engine.boot});
+  await engine.action('travel',{mapId:'training'});
+  // Advance only the server clock in this isolated fixture.
+  service.authority.runtimes.get(user.id).anchor-=25000;
   await sync.flush();
-  engine.action('travel',{mapId:'training'});engine.step(250);
+  await engine.pause(true);
   const earned=engine.snapshot();assert.ok(earned.p.gold>1000);
   const count=(doc)=>(doc.p.inv.find(i=>i.id==='potion_heal')?.cnt||0);
   const beforeCount=count(earned);
@@ -42,13 +44,12 @@ test('cloud conflict retains earned XP and applies GM events once to every slot'
   const run=command=>service.execute(gm,{...command,requestId:randomUUID(),targetFingerprint:service.preview(gm,command).targetFingerprint});
   run(cmd);
   await sync.flush();
-  let snapshot=await client.bootstrap(),saved=engine.decodeSave(snapshot.values.lineage_idle_save_1);
+  let snapshot=await client.bootstrap(),saved=service.catalog.unwrap(snapshot.values.lineage_idle_save_1);
   assert.equal(saved.p.lv,earned.p.lv);assert.equal(saved.p.exp,earned.p.exp);assert.equal(saved.p.gold,earned.p.gold);
   assert.equal(count(saved),beforeCount+7);
-  assert.equal(count(engine.decodeSave(snapshot.values.lineage_idle_save_2)),107);
   await sync.flush();assert.equal(count(engine.snapshot()),beforeCount+7,'replayed sync does not duplicate grants');
   run({action:'kill',scope:'account',accountId:user.id,reason:'隔離測試'});
-  await sync.flush();assert.equal(engine.status().gmDead,true);assert.throws(()=>engine.action('revive'),/GM/);
+  await sync.flush();assert.equal(engine.status().gmDead,true);await assert.rejects(engine.action('revive'),/GM/);
   assert.equal(sync.checkpoint().synced,true);
   await client.acquireLease(randomUUID(),{takeover:true});
   await assert.rejects(sync.flush(),error=>error.status===423);

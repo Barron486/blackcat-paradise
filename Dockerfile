@@ -7,7 +7,9 @@ RUN mkdir /upstream && tar -xzf /tmp/upstream.tar.gz -C /upstream --strip-compon
 FROM node:24-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 DATA_DIR=/data
-COPY package.json index.html ./
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+COPY index.html ./
 COPY server ./server
 COPY shared ./shared
 COPY online ./online

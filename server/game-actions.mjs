@@ -1,0 +1,119 @@
+import {npcIntents} from '../shared/game-intents.js';
+const integer=(v,min=1,max=10000)=>{if(!Number.isSafeInteger(v)||v<min||v>max)throw new Error(`數量須為 ${min}～${max}`);return v;};
+const id=v=>{if(typeof v!=='string'||!v.length||v.length>160||/[<>\x00-\x1f]/.test(v))throw new Error('識別碼不正確');return v;};
+const stat=v=>{if(!['str','dex','con','int','wis','cha'].includes(v))throw new Error('屬性不正確');return v;};
+const keys=(a,allowed)=>{if(Object.keys(a).some(k=>!allowed.includes(k)))throw new Error('操作包含不允許的欄位');};
+/** Every entry resolves inventory, prices, costs and rewards inside the server VM. */
+export function extraAction(game,name,a){
+  const run=(code,args=a)=>game.run(code,args);
+  switch(name){
+    case 'npc-command':{
+      keys(a,['npcId','method','params','fields']);id(a.npcId);
+      if(!npcIntents.includes(a.method)||!Array.isArray(a.params)||a.params.length>4)throw new Error('不支援的 NPC 操作');
+      for(const value of a.params)if(!['string','number','boolean'].includes(typeof value)||String(value).length>160)throw new Error('NPC 選項不正確');
+      run(`if(!DB.towns[mapState.current]?.npcs?.some(n=>n.id===__args.npcId))throw new Error('此地沒有這位 NPC');interactNPC(__args.npcId,mapState.current);`);
+      const panel=game.window.document.getElementById('interaction-content');
+      // Parse only literal calls emitted by the server's menu. Never evaluate code,
+      // callbacks, prices, material recipes, or function names supplied by the client.
+      const allowed=[...panel.querySelectorAll('[onclick]:not([disabled])')].some(el=>{
+        const match=/^\s*([A-Za-z]\w*)\((.*)\)\s*;?\s*$/.exec(el.getAttribute('onclick'));
+        if(!match||match[1]!==a.method)return false;
+        try{const parts=match[2].trim()?match[2].match(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|true|false|-?\d+(?:\.\d+)?/g):[];
+          if((parts||[]).join(',').replace(/\s/g,'')!==match[2].replace(/\s/g,''))return false;
+          const parsed=parts.map(p=>JSON.parse(p.startsWith("'")?'"'+p.slice(1,-1).replace(/\\'/g,"'").replace(/"/g,'\\"')+'"':p));
+          return JSON.stringify(parsed)===JSON.stringify(a.params);
+        }catch{return false;}
+      });
+      if(!allowed)throw new Error('NPC 選項已改變或目前不可用，請重新開啟對話');
+      if(a.fields&&Object.keys(a.fields).length>100)throw new Error('表單過大');
+      for(const [key,value]of Object.entries(a.fields||{})){
+        const el=[...panel.querySelectorAll('input[id],select[id]')].find(el=>el.id===key);
+        if(!el||el.disabled||el.readOnly)throw new Error('不允許的 NPC 輸入欄位');
+        if(el.tagName==='SELECT'){if(![...el.options].some(o=>!o.disabled&&o.value===String(value)))throw new Error('選項不正確');el.value=String(value);}
+        else if(el.type==='checkbox'){if(typeof value!=='boolean')throw new Error('勾選欄位不正確');el.checked=value;}
+        else if(el.type==='number'){integer(Number(value),Math.max(0,Number(el.min)||0),Math.min(10000,Number(el.max)||10000));el.value=String(value);}
+        else throw new Error('此操作不接受文字輸入');
+      }
+      const confirm=game.window.confirm;game.window.confirm=()=>true;
+      try{run('window[__args.method](...__args.params);');}finally{game.window.confirm=confirm;}
+      break;
+    }
+    case 'batch-use':{
+      keys(a,['uid','qty']);id(a.uid);integer(a.qty,1,1000);
+      run(`{const i=player.inv.find(i=>i.uid===__args.uid);if(!i||!DB.items[i.id]?.batchUse)throw new Error('無法批次使用此道具');}`);
+      const prompt=game.window.prompt;game.window.prompt=()=>String(a.qty);try{run('batchUseItem(__args.uid);');}finally{game.window.prompt=prompt;}break;
+    }
+    case 'unequip':keys(a,['slot']);id(a.slot);run(`if(!Object.hasOwn(player.eq,__args.slot))throw new Error('未知裝備欄位');unequipItem(__args.slot);`);break;
+    case 'sell':keys(a,['uid','qty']);id(a.uid);integer(a.qty);run(`{const i=player.inv.find(i=>i.uid===__args.uid);if(!i)throw new Error('背包沒有此物品');sellItem(i.uid,__args.qty,getSellPrice(i));}`);break;
+    case 'lock':case 'junk':keys(a,['uid']);id(a.uid);run(name==='lock'?'toggleLock(__args.uid);':'toggleJunk(__args.uid);');break;
+    case 'sell-junk':keys(a,[]);run('autoSellJunk(true);');break;
+    case 'sort':keys(a,['mode','enabled']);if(a.mode!==undefined&&!['category','quality','name'].includes(a.mode))throw new Error('排列方式不正確');if(a.enabled!==undefined&&typeof a.enabled!=='boolean')throw new Error('自動排列設定不正確');run(`if(__args.mode)setInventorySortMode(__args.mode);if(__args.enabled!==undefined)toggleInventoryAutoSort(__args.enabled);sortInventoryNow();`);break;
+    case 'quick-junk':case 'quick-enhance':{
+      keys(a,['type','uids','goal','blessed']);if(!['wpn','arm','item'].includes(a.type)||!Array.isArray(a.uids)||a.uids.length>2000)throw new Error('批次選擇不正確');for(const uid of a.uids)id(uid);
+      if(name==='quick-enhance'){integer(a.goal,0,15);if(typeof a.blessed!=='boolean')throw new Error('卷軸設定不正確');
+        run(`{if(!Object.hasOwn(quickEnh,__args.type))throw new Error('分類不正確');const items=_qeEligibleItems(__args.type).filter(i=>__args.uids.includes(i.uid));if(items.reduce((n,i)=>n+(i.cnt||1),0)>1000)throw new Error('每次最多強化 1000 件');quickEnh[__args.type]={active:true,target:__args.goal,useBless:__args.blessed,sel:Object.fromEntries(__args.uids.map(id=>[id,true]))};document.getElementById('qe-target-'+__args.type)?.remove();runQuickEnhance(__args.type);}`);
+      }else run(`{if(!Object.hasOwn(quickJunk,__args.type))throw new Error('分類不正確');const items=_qjEligibleItems(__args.type);quickJunk[__args.type]={active:true,sel:Object.fromEntries(__args.uids.map(id=>[id,true])),known:Object.fromEntries(items.map(i=>[i.uid,true]))};runQuickJunk(__args.type);}`);
+      break;
+    }
+    case 'teleport':keys(a,[]);run('playerTeleport();');break;
+    case 'revive-in-place':keys(a,[]);run(`if(player._gmDead)throw new Error('GM 死亡必須由 GM 復活');reviveInPlace();`);break;
+    case 'target':keys(a,['index']);integer(a.index,0,9);run(`if(!mapState.mobs[__args.index])throw new Error('目標不存在');mapState.targetIdx=__args.index;`);break;
+    case 'bonus':keys(a,['stat']);stat(a.stat);run('adjBonusStat(__args.stat);');break;
+    case 'element':keys(a,['element']);if(!['fire','water','wind','earth'].includes(a.element))throw new Error('屬性不正確');run(`if(player.cls!=='elf'||!DB.towns[mapState.current])throw new Error('請回村選擇妖精屬性');chooseElfElement(__args.element);`);break;
+    case 'respec':{
+      keys(a,['allocation']);if(!a.allocation||Object.keys(a.allocation).length!==6)throw new Error('配點不完整');
+      for(const [s,v]of Object.entries(a.allocation)){stat(s);integer(v,0,60);}
+      run(`{const b=createBase[player.cls],points=b.pts+Math.max(0,player.lv-49);if(Object.values(__args.allocation).reduce((s,n)=>s+n,0)>points||Object.entries(__args.allocation).some(([k,v])=>b[k]+v>60))throw new Error('配點不合法');startRespec();if(!_respec)throw new Error('需要回憶蠟燭');_respec.draft=__args.allocation;confirmRespec();}`);break;
+    }
+    case 'enhance':case 'auto-enhance':case 'curse-enhance':{
+      keys(a,['uid','equipped','scrollId','goal']);id(a.uid);id(a.scrollId);if(typeof a.equipped!=='boolean')throw new Error('裝備位置不正確');
+      if(name==='auto-enhance')integer(a.goal,0,15);
+      run(`{const i=__args.equipped?Object.values(player.eq).find(i=>i?.uid===__args.uid):player.inv.find(i=>i.uid===__args.uid),s=DB.items[__args.scrollId];if(!i)throw new Error('物品不存在');const d=DB.items[i.id];const ids=d.type==='wpn'?['scroll_weapon','scroll_weapon_b','scroll_weapon_c']:d.type==='arm'?['scroll_armor','scroll_armor_b','scroll_armor_c']:d.type==='acc'?['scroll_acc']:[];if(d.noEnhance||d.isArrow||!ids.includes(__args.scrollId)||!player.inv.some(i=>i.id===__args.scrollId&&i.cnt>0))throw new Error('此卷軸無法強化這項物品');}`);
+      if(name==='auto-enhance' && !['scroll_weapon','scroll_armor'].includes(a.scrollId))throw new Error('批次強化只接受一般卷軸');
+      if((name==='curse-enhance')!==a.scrollId.endsWith('_c'))throw new Error('卷軸操作不符');
+      if(name==='auto-enhance')run('executeAutoSafeEnhance(__args.uid,__args.equipped,__args.scrollId,__args.goal);');
+      else if(name==='curse-enhance')run('executeCurseDeEnhance(__args.uid,__args.equipped,__args.scrollId);');
+      else run('executeEnhance(player.inv.find(i=>i.id===__args.scrollId).uid,__args.uid,__args.equipped);');break;
+    }
+    case 'warehouse':{
+      keys(a,['operation','uid','qty']);if(!['deposit','withdraw','gold-in','gold-out','deposit-all','sort'].includes(a.operation))throw new Error('未知倉庫操作');
+      run(`if(!DB.towns[mapState.current])throw new Error('請先回村使用倉庫');`);
+      if(['deposit','withdraw'].includes(a.operation)){id(a.uid);integer(a.qty);run(a.operation==='deposit'?'whDeposit(__args.uid,__args.qty);':'whWithdraw(__args.uid,__args.qty);');}
+      else if(a.operation.startsWith('gold-')){integer(a.qty,1,Number.MAX_SAFE_INTEGER);run(`{const e=document.createElement('input');e.id='wh-gold-amt';document.getElementById(e.id)?.remove();e.value=String(__args.qty);document.body.append(e);whGold(__args.operation==='gold-in'?'in':'out');e.remove();}`);}
+      else run(a.operation==='deposit-all'?'whOneClickDeposit();':'sortWarehouse();');break;
+    }
+    case 'craft':{
+      keys(a,['npcId','index','qty']);id(a.npcId);integer(a.index,0,10000);integer(a.qty,1,1000);
+      run(`{if(!DB.towns[mapState.current]?.npcs?.some(n=>n.id===__args.npcId)||!CRAFT_RECIPES[__args.npcId]?.[__args.index])throw new Error('此地無法製作這項物品');const id='craft-qty-'+__args.npcId+'-'+__args.index;document.getElementById(id)?.remove();const e=document.createElement('input');e.id=id;e.value=__args.qty;document.body.append(e);try{doCraft(__args.npcId,__args.index,false);}finally{e.remove();}}`);break;
+    }
+    case 'trial':keys(a,['key','complete']);id(a.key);if(typeof a.complete!=='boolean')throw new Error('任務操作不正確');run(`{const q=Object.hasOwn(TRIAL_Q,__args.key)&&TRIAL_Q[__args.key];if(!q||!DB.towns[mapState.current]?.npcs?.some(n=>n.n===q.npc))throw new Error('請向當地任務 NPC 交付');if(__args.complete)trialQComplete(__args.key);else trialQAccept(__args.key);}`);break;
+    case 'pet':{
+      keys(a,['operation','uid','slot','itemUid','method','value']);id(a.uid);
+      const calls={deploy:'petDeployToggle(__args.uid)',lock:'petToggleLock(__args.uid)',equip:'petGearEquip(__args.uid,__args.slot,__args.itemUid)',unequip:'petGearUnequip(__args.uid,__args.slot)',revive:'petRevive(__args.uid,__args.method)',potion:'petSetPotPct(__args.uid,__args.value)'};
+      if(!Object.hasOwn(calls,a.operation))throw new Error('不支援的寵物操作');
+      if(['equip','unequip'].includes(a.operation)&&!['wpn','arm'].includes(a.slot))throw new Error('寵物裝備欄不正確');
+      if(a.operation==='equip')id(a.itemUid);if(a.operation==='revive'&&!['rez','scroll'].includes(a.method))throw new Error('復活方式不正確');if(a.operation==='potion')integer(a.value,0,95);
+      run(calls[a.operation]+';petRosterSave();');break;
+    }
+    case 'mercenary':{
+      keys(a,['operation','slot','method']);integer(a.slot,1,8);
+      if(!['toggle','dismiss','refresh','revive'].includes(a.operation))throw new Error('不支援的傭兵操作');
+      run(`if(__args.slot===currentSlot)throw new Error('無法招募自己');if(__args.operation!=='revive'&&!DB.towns[mapState.current])throw new Error('請回村管理傭兵');`);
+      if(a.operation==='revive'&&!['rez','scroll'].includes(a.method))throw new Error('復活方式不正確');
+      const confirm=game.window.confirm;game.window.confirm=()=>true;
+      try{run(({toggle:'toggleAlly(__args.slot);',dismiss:'dismissAlly(__args.slot);',refresh:'refreshAllyOnce(__args.slot);',revive:'reviveMercenary(__args.slot,__args.method);'})[a.operation]);}finally{game.window.confirm=confirm;}break;
+    }
+    case 'auto-sell':{
+      keys(a,['rules','enabled','global']);if(typeof a.enabled!=='boolean'||typeof a.global!=='boolean')throw new Error('設定不正確');
+      const r=a.rules;if(!r||typeof r!=='object'||Array.isArray(r))throw new Error('規則不正確');
+      keys(r,['delaySec','protectBless','protectAnc','protectAttr','protectSet','protectLegend','protectOldSeries','protectRelic','protectCraftEquip','craftSets','equip','misc','overrides']);
+      integer(r.delaySec,10,86400);integer(r.craftSets,1,1000);
+      for(const [k,v]of Object.entries(r))if(k.startsWith('protect')&&typeof v!=='boolean')throw new Error('保護規則不正確');
+      for(const [k,v]of Object.entries(r.equip||{})){if(!['wpn','arm','acc'].includes(k)||typeof v.on!=='boolean')throw new Error('裝備規則不正確');keys(v,['on','max']);integer(v.max,-1,15);}
+      for(const [k,v]of Object.entries(r.misc||{})){id(k);if(!v||typeof v!=='object'||Array.isArray(v)||typeof v.on!=='boolean')throw new Error('道具規則不正確');keys(v,['on','keep']);integer(v.keep,0,100000);}
+      for(const [k,v]of Object.entries(r.overrides||{})){id(k);if(!['sell','keep'].includes(v))throw new Error('道具例外不正確');}
+      run('player.autoSellRules=__args.rules;player.autoSellOn=__args.enabled;player.autoSellGlobal=__args.global;(player.inv||[]).forEach(i=>{delete i._userKeep;});_saveGlobalAutoSellSettings(__args.global);applyAutoSellRules();');break;
+    }
+    default:throw new Error(`尚未支援的伺服器操作：${name}`);
+  }
+}

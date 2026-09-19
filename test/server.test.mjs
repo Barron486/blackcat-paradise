@@ -54,12 +54,12 @@ test('open game tabs may sync with another valid same-account session CSRF, neve
  const base=`http://127.0.0.1:${app.server.address().port}`,lease=randomUUID();
  const post=(route,csrf,body)=>fetch(base+route,{method:'POST',headers:{Origin:base,'Content-Type':'application/json',Cookie:'idle_session='+newer.session,'X-CSRF-Token':csrf},body:JSON.stringify(body)});
  assert.equal((await post('/api/lease',older.csrf,{lease})).status,200);
- assert.equal((await post('/api/sync',older.csrf,{lease,revision:0,changes:{}})).status,200);
- assert.equal((await post('/api/sync',other.csrf,{lease,revision:0,changes:{}})).status,403);
+ assert.equal((await post('/api/game',older.csrf,{lease,op:'state'})).status,200);
+ assert.equal((await post('/api/game',other.csrf,{lease,op:'state'})).status,403);
  assert.equal((await post('/api/gm/role',older.csrf,{accountId:account.id,role:'player'})).status,403);
  app.service.logout(older.session);
- assert.equal((await post('/api/sync',older.csrf,{lease,revision:0,changes:{}})).status,403);
- assert.equal((await post('/api/sync',newer.csrf,{lease,revision:0,changes:{}})).status,200);
+ assert.equal((await post('/api/game',older.csrf,{lease,op:'state'})).status,403);
+ assert.equal((await post('/api/game',newer.csrf,{lease,op:'state'})).status,200);
 });
 test('ordinary players cannot use any GM method',async t=>{
   const {service,a}=await fixture(t);
@@ -296,7 +296,7 @@ test('HTTP integration: login, static assets, CSRF, GM API and real multiplayer 
   assert.equal((await request('/api/gm/execute',{},gm,{'X-CSRF-Token':'bad'})).status,403);
   assert.equal((await request('/api/chat',{text:'hello'},player,{Origin:'https://attacker.example'})).status,403);
   assert.equal((await request('/api/auth/setup',{username:'evilgm',password})).status,403);
-  const game=await request('/',undefined,player);assert.equal(game.status,200);const html=await game.text();assert.match(html,/cloud-boot/);assert.match(html,/online\/bridge.js/);
+  const game=await request('/',undefined,player);assert.equal(game.status,200);const html=await game.text();assert.match(html,/cloud-boot/);assert.match(html,/online\/authoritative.js/);
   assert.equal((await request('/gm',undefined,gm)).status,200);
   const items=await(await request('/api/gm/catalog?q='+encodeURIComponent('屠龍劍'),undefined,gm)).json();assert.ok(items.items.some(i=>i.id==='wpn_dragonslayer'));
   await request('/api/chat',{text:'真人世界頻道測試 <script>alert(1)</script>'},player);

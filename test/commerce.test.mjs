@@ -105,7 +105,7 @@ test('HTTP protects GM credit and purchases with authentication/CSRF and exports
  t.after(async()=>{app.server.closeAllConnections();await new Promise(resolve=>app.server.close(resolve));});
  const base=`http://127.0.0.1:${app.server.address().port}`,client=new CloudClient({baseUrl:base});
  const gm=await app.service.register('http_gm',password,{initialGm:true});const {user}=await client.register('http_player',password),session=client.exportSession(),lease=randomUUID();
- await client.acquireLease(lease);await client.sync({lease,revision:0,changes:{[key]:JSON.stringify(doc())}});
+ await client.acquireLease(lease);app.service.sync(user,lease,0,{[key]:JSON.stringify(doc())});
  const request=async(url,body,csrf=session.csrf)=>fetch(base+url,{method:body?'POST':'GET',headers:{Cookie:session.cookie,Origin:base,'Content-Type':'application/json','X-CSRF-Token':csrf},body:body?JSON.stringify(body):undefined});
  assert.equal((await fetch(base+'/api/shop')).status,401);
  assert.equal((await request('/api/gm/diamonds',{accountId:user.id,amount:3500,reason:'越權',requestId:randomUUID()})).status,403);
