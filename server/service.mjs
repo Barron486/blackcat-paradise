@@ -207,10 +207,17 @@ export class GameService {
   normalizeCommand(body) {
     const actions=['buff_all','kill','grant_item','revive','clear_buffs','teleport','restore_progress'];
     requireValue(actions.includes(body.action),'不支援的 GM 操作');
-    requireValue(['all','online','account'].includes(body.scope),'請選擇有效的操作範圍');
+    requireValue(['all','online','account','character'].includes(body.scope),'請選擇有效的操作範圍');
     requireValue(typeof body.reason==='string' && body.reason.trim().length>=2 && body.reason.length<=200,'請填寫 2～200 字的操作原因');
-    const command={action:body.action,scope:body.scope,accountId:body.scope==='account'?body.accountId:null,reason:body.reason.trim()};
-    if(body.scope==='account') requireValue(typeof body.accountId==='string' && !!this.db.prepare('SELECT id FROM accounts WHERE id=?').get(body.accountId),'找不到指定帳號');
+    const accountScope=['account','character'].includes(body.scope);
+    const command={action:body.action,scope:body.scope,accountId:accountScope?body.accountId:null,reason:body.reason.trim()};
+    if(accountScope) requireValue(typeof body.accountId==='string' && !!this.db.prepare('SELECT id FROM accounts WHERE id=?').get(body.accountId),'找不到指定帳號');
+    if(body.scope==='character') {
+      requireValue(body.action==='grant_item','指定單一角色目前僅用於發放物品');
+      requireValue(Number.isInteger(body.slot)&&body.slot>=1&&body.slot<=8,'請指定角色欄位 1～8');
+      command.slot=body.slot;
+    }
+    if(body.action==='grant_item'&&body.slot!==undefined)requireValue(body.scope==='character','指定角色欄位時，請使用指定單一角色範圍');
     if(body.action==='restore_progress') {
       requireValue(body.scope==='account','進度修復必須指定單一帳號');
       requireValue(Number.isInteger(body.slot)&&body.slot>=1&&body.slot<=8,'請指定角色欄位 1～8');
@@ -239,11 +246,11 @@ export class GameService {
   }
   targets(command) {
     const rows=this.db.prepare('SELECT a.id,a.username,s.data,s.revision,l.expires_at,l.slot FROM accounts a JOIN saves s ON s.account_id=a.id LEFT JOIN leases l ON l.account_id=a.id').all();
-    return rows.filter(row=>command.scope!=='account'||row.id===command.accountId).flatMap(row=>{
+    return rows.filter(row=>!['account','character'].includes(command.scope)||row.id===command.accountId).flatMap(row=>{
       if(command.scope==='online' && !(row.expires_at>Date.now())) return [];
       const values=JSON.parse(row.data), chars=[];
       for(const [key,value] of Object.entries(values)) if(SLOT.test(key)) {
-        if(command.action==='restore_progress'&&Number(key.match(SLOT)[1])!==command.slot)continue;
+        if((command.action==='restore_progress'||command.scope==='character')&&Number(key.match(SLOT)[1])!==command.slot)continue;
         if(command.scope==='online' && Number(key.match(SLOT)[1])!==row.slot) continue;
         let doc; try { doc=this.catalog.unwrap(value); } catch { throw new ApiError(409,`帳號 ${row.username} 的角色存檔損壞，已取消整批操作`); }
         if(doc?.p?.cls) chars.push({key,doc});
@@ -319,6 +326,7 @@ export class GameService {
         if(command.action==='restore_progress')this.db.prepare('DELETE FROM leases WHERE account_id=?').run(target.id);
       }
       const result={seq,accountCount:preview.accountCount,characterCount:preview.characterCount,action:command.action,createdAt:now};
+      if(command.scope==='character')result.recipient={accountId:command.accountId,username:targets[0].username,slot:command.slot,name:targets[0].chars[0].doc.p.name||'未命名'};
       this.db.prepare('UPDATE gm_commands SET result=? WHERE seq=?').run(JSON.stringify(result),seq);
       return result;
     });

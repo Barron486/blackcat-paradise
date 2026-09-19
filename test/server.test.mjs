@@ -98,6 +98,41 @@ test('grant reaches every existing character, including offline accounts, once',
   assert.throws(()=>service.execute(gm,{...request,quantity:3}),e=>e.status===409);
 });
 
+test('single-character item grants isolate offline slots, preserve other saves and audit the recipient once',async t=>{
+  const {service,gm,a,b,leaseA}=await fixture(t),slot2='lineage_idle_save_2';
+  service.sync(a,leaseA,1,{[slot2]:catalog.wrap(character('第二格收件人'))},{slot:1});
+  service.db.prepare('UPDATE leases SET expires_at=0 WHERE account_id=?').run(a.id);
+  const before=service.bootstrap(a),other=service.bootstrap(b);
+  const body={action:'grant_item',scope:'character',accountId:a.id,slot:2,itemId:'wpn_dragonslayer',quantity:2,enchant:7,blessed:true,reason:'指定角色獎勵'};
+  const preview=service.preview(gm,body);assert.equal(preview.accountCount,1);assert.equal(preview.characterCount,1);
+  assert.deepEqual(preview.targets,[{username:a.username,characters:['第二格收件人']}]);
+  const request={...preview.command,requestId:randomUUID(),targetFingerprint:preview.targetFingerprint};
+  const result=service.execute(gm,request),after=service.bootstrap(a),item=catalog.unwrap(after.values[slot2]).p.inv[0];
+  assert.equal(item.id,'wpn_dragonslayer');assert.equal(item.cnt,2);assert.equal(item.en,7);assert.equal(item.bless,true);assert.equal(item.lock,true);
+  assert.equal(after.values[key],before.values[key]);assert.deepEqual(service.bootstrap(b).values,other.values);
+  assert.equal(result.characterCount,1);assert.equal(service.execute(gm,request).replayed,true);
+  assert.equal(service.bootstrap(a).revision,after.revision);
+  assert.deepEqual(result.recipient,{accountId:a.id,username:a.username,slot:2,name:'第二格收件人'});
+  assert.deepEqual(service.audit(gm)[0].result.recipient,result.recipient);assert.equal(service.audit(gm)[0].command.slot,2);
+  const effects=service.db.prepare('SELECT save_key FROM gm_effects WHERE account_id=?').all(a.id);assert.deepEqual(effects.map(e=>e.save_key),[slot2]);
+  assert.throws(()=>service.execute(gm,{...request,slot:1}),e=>e.status===409);
+});
+
+test('single-character grants reject invalid or ambiguous targets, empty slots and replaced roles',async t=>{
+  const {service,gm,a,leaseA}=await fixture(t);
+  const body={action:'grant_item',scope:'character',accountId:a.id,slot:1,itemId:'potion_heal',quantity:1,enchant:0,reason:'指定角色測試'};
+  assert.throws(()=>service.preview(a,body),e=>e.status===403);
+  for(const change of [{accountId:undefined},{accountId:'missing'},{slot:undefined},{slot:0},{slot:9},{slot:1.5},{slot:'1'},{scope:'account'},{scope:'all'},{scope:'online'},{action:'kill'}]){
+    assert.throws(()=>service.preview(gm,{...body,...change}),e=>e.status===400);
+  }
+  const empty=service.preview(gm,{...body,slot:8});assert.equal(empty.characterCount,0);
+  assert.throws(()=>service.execute(gm,{...empty.command,requestId:randomUUID(),targetFingerprint:empty.targetFingerprint}),e=>e.status===400);
+  const preview=service.preview(gm,body);
+  service.sync(a,leaseA,1,{[key]:null});service.sync(a,leaseA,2,{[key]:catalog.wrap(character('替換角色'))});
+  assert.throws(()=>service.execute(gm,{...preview.command,requestId:randomUUID(),targetFingerprint:preview.targetFingerprint}),e=>e.status===409);
+  assert.equal(saved(service,a).p.inv.length,0);assert.equal(service.audit(gm).length,0);
+});
+
 test('progress recovery adds missing XP once to the latest save, isolates the slot and stops stale writers',async t=>{
   const {service,gm,a,b,leaseA}=await fixture(t),slot2='lineage_idle_save_2';
   const original=saved(service,a);original.p.lv=35;original.p.exp=10023661;original.p.gold=1234;original.p.bonus=0;

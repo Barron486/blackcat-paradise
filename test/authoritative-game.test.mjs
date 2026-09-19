@@ -152,6 +152,21 @@ test('market escrow, paid buffs and GM rewards reconcile with a running server e
   assert.equal(authority.runtimes.get(user.id).revision,result.snapshot.revision);
 });
 
+test('GM delivery to an inactive slot survives another character playing and switching roles',async t=>{
+  const {service,user,gm,send,advance}=await fixture(t);
+  const first=send('state'),second=send('create',{classId:'elf',name:'領獎妖精',allocation:{dex:8}},{slot:2});
+  send('select',{}, {epoch:first.game.epoch});
+  const count=p=>p.inv.filter(i=>i.id==='potion_heal').reduce((n,i)=>n+i.cnt,0);
+  const beforeFirst=count(first.game.view.p),beforeSecond=count(second.game.view.p);
+  const command={action:'grant_item',scope:'character',accountId:user.id,slot:2,itemId:'potion_heal',quantity:7,enchant:0,reason:'離線角色獎勵'};
+  const preview=service.preview(gm,command);service.execute(gm,{...preview.command,requestId:randomUUID(),targetFingerprint:preview.targetFingerprint});
+  advance(1000);const current=send('state');assert.equal(current.game.slot,1);assert.equal(count(current.game.view.p),beforeFirst);
+  assert.equal(count(catalog.unwrap(current.snapshot.values.lineage_idle_save_2).p),beforeSecond+7);
+  const received=send('select',{}, {slot:2,epoch:second.game.epoch});assert.equal(count(received.game.view.p),beforeSecond+7);
+  advance(1000);assert.equal(count(send('state').game.view.p),beforeSecond+7);
+  assert.equal(service.lootBroadcasts.history().length,0);
+});
+
 test('reconnecting preserves attack cooldown, damage and the current encounter',async t=>{
   const {send,advance,authority,user}=await fixture(t);
   send('action',{name:'travel',params:{mapId:'training'}});advance(1200);const before=send('state');
