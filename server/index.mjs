@@ -116,6 +116,9 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
         if(route==='/api/world') return json(res,200,{online:service.onlineSummary(user).list,messages:service.publicMessages(),lootBroadcasts:lootBroadcasts.history()});
         if(route==='/api/online'&&req.method==='GET') return json(res,200,service.onlineSummary(user));
         if(route==='/api/gm/location-clans'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.presence.assign(user,b));}
+        if(route==='/api/clans'&&req.method==='GET') return json(res,200,{clans:service.clans(user)});
+        if(route==='/api/clans'&&req.method==='POST') {const b=await readBody(req);return json(res,201,service.createClan(user,b.name));}
+        if(route==='/api/clans/join'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.joinClan(user,b.clanId));}
         if(route==='/api/chat'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.chat(user,b.text));}
         if(route==='/api/shop'&&req.method==='GET')return json(res,200,commerce.state(user));
         if(route==='/api/character-report'&&req.method==='GET'){

@@ -48,6 +48,8 @@ export class GameService {
       CREATE TABLE IF NOT EXISTS role_audit(id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id TEXT NOT NULL,
         account_id TEXT NOT NULL, role TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS character_epochs(epoch TEXT PRIMARY KEY,account_id TEXT NOT NULL,slot_key TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS clans(id TEXT PRIMARY KEY,name TEXT NOT NULL UNIQUE,leader_id TEXT NOT NULL REFERENCES accounts(id),created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS clan_members(clan_id TEXT NOT NULL REFERENCES clans(id) ON DELETE CASCADE,account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,joined_at INTEGER NOT NULL,PRIMARY KEY(clan_id,account_id),UNIQUE(account_id));
     `);
     if(!this.db.prepare('PRAGMA table_info(chat)').all().some(c=>c.name==='character_name'))this.db.exec('ALTER TABLE chat ADD COLUMN character_name TEXT');
     this.presence=new PresenceService(this);
@@ -345,6 +347,9 @@ export class GameService {
     const players=this.presence.visibleCharacters(user,onlineCharacters(this));
     return {total:players.length,players:players.length,list:players,at:Date.now()};
   }
+  clans(user) { return this.db.prepare('SELECT c.id,c.name,c.leader_id AS leaderId,c.created_at AS createdAt,a.username AS leader FROM clans c JOIN accounts a ON a.id=c.leader_id ORDER BY c.created_at').all().map(c=>({...c,members:this.db.prepare('SELECT a.id,a.username FROM clan_members m JOIN accounts a ON a.id=m.account_id WHERE m.clan_id=? ORDER BY m.joined_at').all(c.id)})); }
+  createClan(user,name) { requireValue(typeof name==='string'&&name.trim().length>=2&&name.trim().length<=24,'血盟名稱須為 2～24 字'); return this.transaction(()=>{const id=randomUUID();try{this.db.prepare('INSERT INTO clans VALUES(?,?,?,?)').run(id,name.trim(),user.id,Date.now());this.db.prepare('INSERT INTO clan_members VALUES(?,?,?)').run(id,user.id,Date.now());}catch(e){if(String(e).includes('UNIQUE'))throw new ApiError(409,'血盟名稱或角色已存在');throw e;}return {ok:true,id,name:name.trim()};}); }
+  joinClan(user,clanId) { requireValue(typeof clanId==='string'&&this.db.prepare('SELECT id FROM clans WHERE id=?').get(clanId),'找不到血盟',404); return this.transaction(()=>{try{this.db.prepare('INSERT INTO clan_members VALUES(?,?,?)').run(clanId,user.id,Date.now());}catch(e){if(String(e).includes('UNIQUE'))throw new ApiError(409,'角色已加入其他血盟');throw e;}return {ok:true,clanId};}); }
   chat(user,text) {
     requireValue(typeof text==='string'&&text.trim().length>0&&text.length<=500,'訊息須為 1～500 字');
     const last=this.db.prepare('SELECT MAX(created_at) AS at FROM chat WHERE account_id=?').get(user.id).at;
