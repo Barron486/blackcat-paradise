@@ -2,9 +2,10 @@ import {randomBytes, scrypt as scryptCallback, timingSafeEqual, createHash} from
 import {promisify} from 'node:util';
 import {ApiError} from './service.mjs';
 import {applyShopBuffEffect,fullStatusBuffIds,refreshTimedBuffs} from '../shared/full-status.js';
+import {onlineCharacters,inspectionReport} from './characters.mjs';
 const scrypt=promisify(scryptCallback);
 const check=(value,message,status=400)=>{if(!value)throw new ApiError(status,message);};
-const products={rename_card:{id:'rename_card',name:'更名卡',price:3000,column:'rename_cards'},password_card:{id:'password_card',name:'更改密碼卡',price:500,column:'password_cards'},full_status:{id:'full_status',name:'全狀態',price:300,durationSeconds:3600}};
+const products={rename_card:{id:'rename_card',name:'更名卡',price:3000,column:'rename_cards'},password_card:{id:'password_card',name:'更改密碼卡',price:500,column:'password_cards'},full_status:{id:'full_status',name:'全狀態',price:300,durationSeconds:3600},spy_card:{id:'spy_card',name:'偷窺卡',price:300}};
 const MAX_BALANCE=2_000_000_000;
 export class CommerceService {
   constructor(service){
@@ -25,7 +26,8 @@ export class CommerceService {
       const p=this.service.catalog.unwrap(raw).p;
       characters.push({slot:Number(key.slice(-1)),name:p.name||'未命名',epoch:p._roleEpoch||p.enSeed,cls:p.cls,level:p.lv,fullStatusExpiresAt:p._shopBuffs?.expiresAt||0});
     }
-    return {wallet:this.wallet(user.id),products:Object.values(products).map(({column,...p})=>p),characters,history:this.history(user.id),serverTime:Date.now()};
+    const spyTargets=onlineCharacters(this.service).filter(t=>t.id&&t.accountId!==user.id).map(({id,name,map})=>({id,name,map}));
+    return {wallet:this.wallet(user.id),products:Object.values(products).map(({column,...p})=>p),characters,spyTargets,history:this.history(user.id),serverTime:Date.now()};
   }
   history(accountId){
     return this.db.prepare('SELECT l.id,l.kind,l.diamonds,l.rename_cards AS renameCards,l.password_cards AS passwordCards,l.balance,l.note,l.created_at AS at,a.username AS actor FROM wallet_ledger l JOIN accounts a ON a.id=l.actor_id WHERE l.account_id=? ORDER BY l.id DESC LIMIT 30').all(accountId);
@@ -64,11 +66,25 @@ export class CommerceService {
     const product=Object.hasOwn(products,body.productId)?products[body.productId]:null;
     check(product,'找不到商品');
     if(product.id==='full_status')return this.buyFullStatus(user,body,product);
+    if(product.id==='spy_card')return this.useSpyCard(user,body,product);
     return this.operation(user,body.requestId,{kind:'buy',productId:product.id},()=>{
       check(this.wallet(user.id).diamonds>=product.price,'藍鑽不足，請聯絡 GM 儲值',409);
       this.db.prepare(`UPDATE wallets SET diamonds=diamonds-?,${product.column}=${product.column}+1 WHERE account_id=?`).run(product.price,user.id);
       return {ok:true,wallet:this.entry(user.id,user.id,'purchase',-product.price,product.id==='rename_card'?1:0,product.id==='password_card'?1:0,`購買${product.name}`)};
     });
+  }
+  useSpyCard(user,body,product){
+    check(typeof body.targetId==='string'&&/^[a-f0-9]{64}$/.test(body.targetId),'請選擇線上角色');
+    const result=this.operation(user,body.requestId,{kind:'spy',targetId:body.targetId},()=>{
+      const target=onlineCharacters(this.service).find(t=>t.id===body.targetId&&t.accountId!==user.id);
+      check(target,'這位玩家已離線、切換角色或無法查看，尚未扣款',409);
+      check(this.wallet(user.id).diamonds>=product.price,'藍鑽不足，請聯絡 GM 儲值',409);
+      const report=inspectionReport(this.service,target);
+      this.db.prepare('UPDATE wallets SET diamonds=diamonds-? WHERE account_id=?').run(product.price,user.id);
+      this.entry(user.id,user.id,'spy',-product.price,0,0,`使用偷窺卡：${target.name}`);
+      return {ok:true,report};
+    });
+    return {...result,wallet:this.wallet(user.id)};
   }
   buyFullStatus(user,body,product){
     check(Number.isInteger(body.slot)&&body.slot>=1&&body.slot<=8,'請選擇自己的角色');

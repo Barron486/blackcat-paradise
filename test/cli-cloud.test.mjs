@@ -41,7 +41,7 @@ test('CLI transport registers, persists private session, syncs and logs out thro
     presence: { name: '王族代理', slot: 1, map: '說話之島' } });
   assert.equal(saved.revision, 1);
   assert.equal((await restored.bootstrap()).values.lineage_cli_note, '測試');
-  assert.equal((await restored.world()).online[0].name, 'cli_player','presence cannot impersonate an unsaved character name');
+  assert.deepEqual((await restored.world()).online[0], {id:null,name:'角色選擇中',map:'角色選擇'},'presence cannot impersonate an unsaved character or expose a login account');
   await restored.chat('獨立測試訊息');
   assert.equal((await restored.world()).messages[0].text, '獨立測試訊息');
   await restored.logout();

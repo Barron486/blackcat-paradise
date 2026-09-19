@@ -36,6 +36,7 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
   const list = chat.querySelector('.cloud-messages'), errorBox = chat.querySelector('.cloud-chat-error');
   let pane = 'players', lastChatId = '', worldBusy = false, presenceBusy = false, follow = true;
   function select(next) {
+    window.worldChannelCloseMenu?.();
     pane = next;errorBox.textContent = '';
     for (const button of buttons) {
       const selected = button.dataset.pane === next;
@@ -51,6 +52,7 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
     select(next);
   }
   function close() {
+    window.worldChannelCloseMenu?.();
     chat.hidden = true;opener.setAttribute('aria-expanded', 'false');onlineButton.setAttribute('aria-expanded', 'false');
   }
   opener.onclick = () => !chat.hidden && pane === 'players' ? close() : open('players');
@@ -78,7 +80,7 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
       for (const player of data.list) {
         const row = document.createElement('div'), name = document.createElement('strong'), map = document.createElement('small');
         row.className = 'cloud-player';name.textContent = player.name;map.textContent = player.map;
-        row.append(name);
+        if(player.id){const inspect=document.createElement('button');inspect.type='button';inspect.className='cloud-player-name';inspect.append(name);inspect.title='使用偷窺卡查看角色 · 300 藍鑽';inspect.onclick=()=>{if(cloud.showSpy)void cloud.showSpy(player.id);else errorBox.textContent='商店載入中，請稍後再試。';};row.append(inspect);}else row.append(name);
         row.append(map);target.append(row);
       }
       if (!data.list.length) target.textContent = '目前沒有在線角色。';
@@ -106,7 +108,7 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
           line.className='cloud-loot-message loot-name-'+(GameLootRarity.types.includes(m.rarity)?m.rarity:'rare');
           name.textContent='稀有掉落　';line.append(name,document.createTextNode(GameLootRarity.message(m)));list.append(line);continue;
         }
-        name.textContent = (m.displayName || m.username) + '　';name.title = m.displayName || m.username;
+        name.textContent = (m.displayName || '冒險者') + '　';name.title = m.displayName || '冒險者';
         time.textContent = new Date(m.at).toLocaleTimeString('zh-TW');line.append(time);
         line.append(name, document.createTextNode(m.text));list.append(line);
       }
@@ -119,7 +121,8 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
   chat.querySelector('form').onsubmit = async event => {
     event.preventDefault();const input = chat.querySelector('form input'), submit = chat.querySelector('form button');
     if (submit.disabled) return;submit.disabled = true;
-    try { await cloud.request('/api/chat', {text: input.value});input.value = '';follow = true;errorBox.textContent = '';await refresh(); }
+    const text=input.value;
+    try { if(cloud.flush)await cloud.flush();await cloud.request('/api/chat', {text});if(input.value===text)input.value = '';follow = true;errorBox.textContent = '';await refresh(); }
     catch (error) { errorBox.textContent = error.message; }
     finally { submit.disabled = false; }
   };

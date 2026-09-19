@@ -76,9 +76,9 @@ test('public presence and chat conceal GM roles while self and admin permissions
   const base=`http://127.0.0.1:${app.server.address().port}`;
   const get=(route,session=playerSession)=>fetch(base+route,{headers:{Cookie:'idle_session='+session.session}});
   const presenceResponse=await get('/api/online');assert.equal(presenceResponse.status,200);
-  const presence=await presenceResponse.json();assert.equal(presence.total,2);assert.equal(presence.players,2);assert.ok(presence.list.some(p=>p.name===gm.username),'GM remains a normal visible player');
+  const presence=await presenceResponse.json();assert.equal(presence.total,2);assert.equal(presence.players,2);assert.ok(presence.list.every(p=>p.name==='角色選擇中'),'unselected accounts do not expose login names');
   const worldResponse=await get('/api/world');assert.equal(worldResponse.status,200);
-  const world=await worldResponse.json();assert.ok(world.online.some(p=>p.username===gm.username));assert.equal(world.messages[0].username,gm.username);assert.equal(world.messages[0].text,'早安，一起冒險');
+  const world=await worldResponse.json();assert.ok(world.online.every(p=>!Object.hasOwn(p,'username')));assert.equal(world.messages[0].displayName,'冒險者');assert.equal(Object.hasOwn(world.messages[0],'username'),false);assert.equal(world.messages[0].text,'早安，一起冒險');
   for(const row of [...presence.list,...world.online,...world.messages])for(const key of ['gm','role','isGm','isGM'])assert.equal(Object.hasOwn(row,key),false,`public ${key} must be absent`);
   const self=await(await get('/api/me',gmSession)).json();assert.equal(self.user.role,'gm');
   const boot=await(await get('/api/bootstrap',gmSession)).json();assert.equal(boot.user.role,'gm');
@@ -300,6 +300,6 @@ test('HTTP integration: login, static assets, CSRF, GM API and real multiplayer 
   assert.equal((await request('/gm',undefined,gm)).status,200);
   const items=await(await request('/api/gm/catalog?q='+encodeURIComponent('屠龍劍'),undefined,gm)).json();assert.ok(items.items.some(i=>i.id==='wpn_dragonslayer'));
   await request('/api/chat',{text:'真人世界頻道測試 <script>alert(1)</script>'},player);
-  const world=await(await request('/api/world',undefined,gm)).json();assert.equal(world.messages[0].username,'player');assert.match(world.messages[0].text,/真人世界頻道/);
+  const world=await(await request('/api/world',undefined,gm)).json();assert.equal(world.messages[0].displayName,'冒險者');assert.equal(Object.hasOwn(world.messages[0],'username'),false);assert.match(world.messages[0].text,/真人世界頻道/);
   assert.equal((await request('/api/chat',{text:'重複發言'},player)).status,429);
 });

@@ -100,7 +100,7 @@ function _wcStaticNameHtml(name, alignmentValue) {
 function _wcNameHtml(id) {
     let n = _wcNpcs[id];
     if (!n) return '<span class="wc-name">???</span>';
-    return `<span class="wc-player-name wc-name" data-wc-npc-id="${id}" style="${_wcNameStyle(n.alignmentValue)}" onclick="worldChannelNpcMenu('${id}', event)" title="點擊：嘲諷、感謝或私訊">${_wcEsc(n.name)}</span>`;
+    return `<button type="button" class="wc-player-name wc-name" data-wc-npc-id="${id}" style="${_wcNameStyle(n.alignmentValue)}" onclick="worldChannelNpcMenu('${id}', event)" title="點擊：嘲諷、感謝或私訊">${_wcEsc(n.name)}</button>`;
 }
 
 function _wcRemoveNpcMessages(id) {

@@ -78,7 +78,8 @@ test('CLI creates, starts, controls and cleanly stops a real cloud worker',async
   await cli('sync','--profile','tester');
   const cloudStatus=await cli('cloud','--profile','tester');
   assert.equal(cloudStatus.role,'player');assert.equal(cloudStatus.characters[0].classId,'knight');
-  assert.ok(cloudStatus.online.some(p=>p.username===created.username));
+  assert.ok(cloudStatus.online.some(p=>p.name===cloudStatus.characters[0].name&&p.id));
+  assert.ok(cloudStatus.online.every(p=>!Object.hasOwn(p,'username')));
   const after=(await cli('status','--profile','tester','--json'))[0];
   assert.ok(after.character.ticks<=100,'1.6 seconds of wall time cannot advance hours of combat');
   assert.ok(before.character.ticks>0);

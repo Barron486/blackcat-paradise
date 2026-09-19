@@ -137,14 +137,14 @@ test('real HTTP publishes character chat without provenance while keeping model 
   response=await fetch(base+'/api/gm/players',{headers:{Authorization:`Bearer ${token}`}});assert.equal(response.status,401);
   response=await fetch(base+'/api/ai-chat/complete',{method:'POST',headers,body:JSON.stringify({jobId:job.id,leaseToken:job.leaseToken,text:'哈囉，一起去森林冒險吧。'})});assert.equal(response.status,200);
   app.service.chat(gm,'祝各位冒險順利。');
-  const messages=(await client.world()).messages;assert.equal(messages[0].displayName,'妖精');assert.equal(messages[1].displayName,gm.username);
-  for(const message of messages)assert.deepEqual(Object.keys(message).sort(),['at','displayName','id','text','username']);
+  const messages=(await client.world()).messages;assert.equal(messages[0].displayName,'妖精');assert.equal(messages[1].displayName,'冒險者');
+  for(const message of messages)assert.deepEqual(Object.keys(message).sort(),['at','displayName','id','text']);
   const gmClient=new CloudClient({baseUrl:base});await gmClient.login(gm.username,password);
   response=await fetch(base+'/api/gm/ai-chat',{headers:{Cookie:gmClient.exportSession().cookie}});assert.equal(response.status,200);
   const admin=await response.json();assert.equal(admin.recent[0].ai,true);assert.equal(admin.recent[0].model,'gpt-5.6-luna');assert.equal(admin.recent[0].provider,'codex');
   assert.equal((await fetch(base+'/api/online')).status,401);
   const online=await (await fetch(base+'/api/online',{headers:{Cookie:session.cookie}})).json();
-  assert.equal(online.total,1);assert.equal(online.players,1);assert.equal(Object.hasOwn(online,'ai'),false);assert.deepEqual(Object.keys(online.list[0]).sort(),['map','name']);
+  assert.equal(online.total,1);assert.equal(online.players,1);assert.equal(Object.hasOwn(online,'ai'),false);assert.deepEqual(Object.keys(online.list[0]).sort(),['id','map','name']);
   response=await fetch(base+'/api/ai-chat/runtime',{method:'POST',headers,body:JSON.stringify({revision:app.aiChat.settings().revision,ollamaUrl:'http://127.0.0.1:11434',ready:true,models:['qwen3:8b']})});assert.equal(response.status,200);
 });
 
@@ -171,8 +171,8 @@ test('presence counts active leases once and excludes expired players',async t=>
   const {service,gm,a,b,update}=await fixture(t);update({speakers:[a.id]});
   service.acquireLease(gm,randomUUID());
   let result=service.onlineSummary();assert.equal(result.total,3);assert.equal(result.players,3);assert.equal(Object.hasOwn(result,'ai'),false);
-  for(const player of result.list)assert.deepEqual(Object.keys(player).sort(),['map','name']);
-  const gmPresence=result.list.find(p=>p.name===gm.username);assert.ok(gmPresence);assert.equal(Object.hasOwn(gmPresence,'gm'),false);assert.equal(Object.hasOwn(gmPresence,'role'),false);
+  for(const player of result.list)assert.deepEqual(Object.keys(player).sort(),['id','map','name']);
+  const gmPresence=result.list.find(p=>p.name==='角色選擇中');assert.ok(gmPresence);assert.equal(Object.hasOwn(gmPresence,'gm'),false);assert.equal(Object.hasOwn(gmPresence,'role'),false);
   service.db.prepare('UPDATE leases SET expires_at=? WHERE account_id=?').run(Date.now()-1,b.id);
   result=service.onlineSummary();assert.equal(result.total,2);assert.equal(result.players,2);assert.equal(Object.hasOwn(result,'ai'),false);
 });

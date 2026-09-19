@@ -6,6 +6,7 @@ import { dirname } from 'node:path';
 import { applyEffect } from '../shared/gm-effects.js';
 import {fullStatusBuffIds} from '../shared/full-status.js';
 import { itemGrantRules, rollWishes } from './item-rules.mjs';
+import {characterName,onlineCharacters} from './characters.mjs';
 
 const scrypt = promisify(scryptCallback);
 const hash = s => createHash('sha256').update(s).digest('hex');
@@ -46,6 +47,7 @@ export class GameService {
         account_id TEXT NOT NULL, role TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS character_epochs(epoch TEXT PRIMARY KEY,account_id TEXT NOT NULL,slot_key TEXT NOT NULL);
     `);
+    if(!this.db.prepare('PRAGMA table_info(chat)').all().some(c=>c.name==='character_name'))this.db.exec('ALTER TABLE chat ADD COLUMN character_name TEXT');
     // Keep past character identities after deletion so exported characters cannot be cloned or restored as new ones.
     for(const row of this.db.prepare('SELECT account_id,data FROM saves').all())for(const [key,raw]of Object.entries(JSON.parse(row.data))){
       if(!SLOT.test(key))continue;
@@ -333,22 +335,27 @@ export class GameService {
     return this.db.prepare('SELECT a.username,l.display_name AS name,l.map_name AS map,l.slot FROM leases l JOIN accounts a ON a.id=l.account_id WHERE l.expires_at>? ORDER BY a.username').all(Date.now());
   }
   onlineSummary(){
-    const maps=new Map((this.catalog.world?.maps||[]).map(m=>[m.id,m.name]));
     // Public presence lists characters uniformly; roles and automation stay in GM views.
-    const players=this.db.prepare('SELECT l.display_name AS name,a.username,l.map_name AS map FROM leases l JOIN accounts a ON a.id=l.account_id WHERE l.expires_at>? ORDER BY a.username').all(Date.now()).map(p=>({name:p.name||p.username,map:maps.get(p.map)||p.map||'角色選擇'}));
+    const players=onlineCharacters(this).map(({id,name,map})=>({id,name,map}));
     return {total:players.length,players:players.length,list:players,at:Date.now()};
   }
   chat(user,text) {
     requireValue(typeof text==='string'&&text.trim().length>0&&text.length<=500,'訊息須為 1～500 字');
     const last=this.db.prepare('SELECT MAX(created_at) AS at FROM chat WHERE account_id=?').get(user.id).at;
     requireValue(!last||Date.now()-last>=1500,'發言太快，請稍後再試',429);
-    this.db.prepare('INSERT INTO chat(account_id,text,created_at) VALUES(?,?,?)').run(user.id,text.trim(),Date.now());
+    this.db.prepare('INSERT INTO chat(account_id,text,created_at,character_name) VALUES(?,?,?,?)').run(user.id,text.trim(),Date.now(),characterName(this,user.id));
     this.db.prepare('DELETE FROM chat WHERE id<(SELECT COALESCE(MAX(id),0)-1000 FROM chat)').run();
     return {ok:true};
   }
-  messages() { return this.db.prepare('SELECT c.id,a.username,c.text,c.created_at AS at,m.display_name AS displayName,m.model,m.provider FROM chat c JOIN accounts a ON a.id=c.account_id LEFT JOIN ai_chat_messages m ON m.chat_id=c.id ORDER BY c.id DESC LIMIT 80').all().reverse().map(m=>({...m,ai:!!m.model})); }
+  messages() {
+    const names=new Map();
+    return this.db.prepare('SELECT c.id,c.account_id,c.character_name,a.username,c.text,c.created_at AS at,m.display_name,m.model,m.provider FROM chat c JOIN accounts a ON a.id=c.account_id LEFT JOIN ai_chat_messages m ON m.chat_id=c.id ORDER BY c.id DESC LIMIT 80').all().reverse().map(({account_id,character_name,display_name,...m})=>{
+      if(!names.has(account_id))names.set(account_id,characterName(this,account_id));
+      return {...m,displayName:character_name||(display_name&&display_name!==m.username?display_name:names.get(account_id)),ai:!!m.model};
+    });
+  }
   publicMessages() {
     // Keep provenance for moderation and reply scheduling, outside the player-facing API.
-    return this.messages().map(({id,username,text,at,displayName})=>({id,username,text,at,displayName:displayName||username}));
+    return this.messages().map(({id,text,at,displayName})=>({id,text,at,displayName}));
   }
 }

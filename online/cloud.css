@@ -61,6 +61,15 @@
 #cloud-chat #world-input-row { flex-shrink: 0; min-height: 54px; }
 #cloud-chat #world-input { min-width: 0; font-size: 16px !important; }
 #cloud-chat #world-send { min-width: 44px; min-height: 44px; }
+/* NPC interaction surfaces must sit above the unified chat window. */
+#world-channel-npc-menu { z-index:100003;max-width:calc(100vw - 16px); }
+#world-channel-npc-menu button { min-height:44px; }
+#world-channel-private-overlay { z-index:100004; }
+#world-channel-private-dialog { max-height:calc(100dvh - 24px);min-height:0; }
+#world-channel-private-dialog :is(button,input) { min-height:44px; }
+#cloud-chat .wc-name { display:inline;padding:0;border:0;background:transparent;font:inherit;cursor:pointer; }
+#cloud-chat .wc-name:focus-visible { outline:2px solid #e2c17f;outline-offset:2px; }
+#cloud-chat .cloud-player-name { min-height:44px;color:#ebd5ab;text-align:left;text-decoration:underline;text-underline-offset:3px; }
 #cloud-sync-warning { position: fixed; right: 12px; bottom: 62px; z-index: 100002; width: min(400px, calc(100vw - 24px)); padding: 10px 12px; border: 1px solid #c77956; border-radius: 7px; color: #ffe2d0; background: #45251ff5; box-shadow: 0 5px 20px #0008; font: 13px/1.5 "Microsoft JhengHei",sans-serif; overflow-wrap: anywhere; }
 #cloud-sync-warning[hidden] { display: none !important; }
 @media(max-width:768px) { #cloud-sync-warning { bottom: calc(62px + env(safe-area-inset-bottom, 0px)); } }
