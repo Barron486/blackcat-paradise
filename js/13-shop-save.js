@@ -1594,9 +1594,7 @@ function saveGame() {
     _mercMonotonicExpGuard();   // 🤝 v3.8.2 受僱中經驗只增不減：序列化前吸收磁碟較高的等級/經驗，防舊快照覆蓋待領帳本領取的經驗
     if(!_lzSet('lineage_idle_save_' + currentSlot, _saveWrap(saveStateJson()))) throw new Error('persistent storage write failed');   // 🔧 寫入成功才回報；並由 saveStateJson 排除戰鬥面向暫存參照
     if(typeof petRosterSave === 'function' && !petRosterSave()) throw new Error('pet roster write failed');
-    if (!window.CloudStore) logSys(`遊戲進度已儲存。`);
-    // Online saveGame writes only the local cloud buffer. The account dock reports
-    // success after the server acknowledges it; avoid claiming persistence early.
+    // Successful saves stay silent so routine checkpoints do not flood the game log.
     _saveFailureNotified = false;
     return true;
     } catch(e) {
