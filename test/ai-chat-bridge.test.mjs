@@ -15,6 +15,8 @@ test('Ollama bridge discovers local models, publishes usage and never invokes Co
   assert.equal(result.completed,true);assert.equal(result.provider,'ollama');
   assert.deepEqual(calls.map(c=>new URL(c.url).pathname),['/api/ai-chat/claim','/api/ai-chat/runtime','/api/ai-chat/complete']);
   assert.equal(calls[1].body.ready,true);assert.equal(calls[2].body.usage.output_tokens,2);
+  const quiet=await once({fetchImpl:async(url,options)=>String(url).endsWith('/complete')?new Response(JSON.stringify({ok:true,skipped:true})):fetchImpl(url,options),generateOllamaImpl:async()=>({text:''})});
+  assert.equal(quiet.completed,false);assert.equal(quiet.skipped,true);
   const stopped=new AbortController();calls.length=0;
   const cancelled=await once({fetchImpl,signal:stopped.signal,generateOllamaImpl:async()=>{stopped.abort();return {text:'不應發出'};}});
   assert.equal(cancelled.aborted,true);assert.ok(!calls.some(c=>c.url.endsWith('/complete')));

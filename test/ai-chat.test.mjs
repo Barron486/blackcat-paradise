@@ -6,6 +6,7 @@ import {GameService} from '../server/service.mjs';
 import {AiChatService} from '../server/ai-chat.mjs';
 import {createApp} from '../server/index.mjs';
 import {CloudClient} from '../cli/cloud-client.mjs';
+import {defaultPersonality,chooseSpeaker,replyKind} from '../server/chat-personality.mjs';
 
 const catalog={version:'ai-chat-test',items:{},skills:{sk_heal1:{n:'初級治癒術'}},wrap:JSON.stringify,unwrap:JSON.parse};
 const password='isolated-AI-chat-test-2026!';
@@ -19,7 +20,7 @@ async function fixture(t,options={}){
     service.sync(user,lease,0,{lineage_idle_save_1:catalog.wrap({p:{cls,name:user.username,lv:1,inv:[],hp:30,skills:[],_roleEpoch:randomUUID()},ms:{current:'training'},ticks:0})},{slot:1,name:user.username,map:'新兵修練場'});
   }
   service.db.prepare('UPDATE leases SET expires_at=?').run(now+86400000);
-  const update=patch=>ai.update(gm,{...ai.settings(),enabled:true,speakers:[a.id,b.id],...patch});
+  const update=patch=>ai.update(gm,{...ai.settings(),enabled:true,ambientChat:true,speakers:[a.id,b.id],...patch});
   const token=ai.rotateToken(gm).token;
   return {service,ai,gm,a,b,token,update,advance:ms=>{now+=ms;}};
 }
@@ -131,7 +132,7 @@ test('real HTTP publishes character chat without provenance while keeping model 
   const client=new CloudClient({baseUrl:base}),{user}=await client.register('http_ai_player',password);
   const lease=randomUUID();await client.acquireLease(lease);app.service.sync(user,lease,0,{lineage_idle_save_1:JSON.stringify({p:{cls:'elf',name:'妖精',lv:1,hp:30,inv:[],_roleEpoch:randomUUID()},ms:{current:'training'}})},{slot:1});
   const session=client.exportSession();let response=await fetch(base+'/api/gm/ai-chat',{headers:{Cookie:session.cookie}});assert.equal(response.status,403);
-  const token=app.aiChat.rotateToken(gm).token;app.aiChat.update(gm,{...app.aiChat.settings(),enabled:true,speakers:[user.id]});
+  const token=app.aiChat.rotateToken(gm).token;app.aiChat.update(gm,{...app.aiChat.settings(),enabled:true,ambientChat:true,speakers:[user.id]});
   const headers={'Content-Type':'application/json',Origin:base,Authorization:`Bearer ${token}`};
   response=await fetch(base+'/api/ai-chat/claim',{method:'POST',headers,body:'{}'});assert.equal(response.status,200);const {job}=await response.json();
   response=await fetch(base+'/api/gm/players',{headers:{Authorization:`Bearer ${token}`}});assert.equal(response.status,401);
@@ -175,4 +176,83 @@ test('presence counts active leases once and excludes expired players',async t=>
   const gmPresence=result.list.find(p=>p.name==='角色選擇中');assert.ok(gmPresence);assert.equal(Object.hasOwn(gmPresence,'gm'),false);assert.equal(Object.hasOwn(gmPresence,'role'),false);
   service.db.prepare('UPDATE leases SET expires_at=? WHERE account_id=?').run(Date.now()-1,b.id);
   result=service.onlineSummary();assert.equal(result.total,2);assert.equal(result.players,2);assert.equal(Object.hasOwn(result,'ai'),false);
+});
+
+test('GM can select more than four characters and save independent personalities',async t=>{
+  const {ai,service,gm,a,b,update}=await fixture(t),ids=[a.id,b.id];
+  for(let n=0;n<4;n++){
+    const player=await service.register(`extra_chat_${n}`,password),lease=randomUUID();
+    service.acquireLease(player,lease);
+    service.sync(player,lease,0,{lineage_idle_save_1:catalog.wrap({p:{cls:'elf',name:`精靈${n}`,lv:1,inv:[],hp:30,_roleEpoch:randomUUID()},ms:{current:'training'}})},{slot:1});
+    ids.push(player.id);
+  }
+  update({speakers:ids,personas:{[a.id]:'直爽、喜歡冷笑話。',[b.id]:'慢熟、語氣溫柔。'}});
+  assert.deepEqual(ai.settings().speakers,ids);
+  assert.equal(ai.settings().personas[a.id],'直爽、喜歡冷笑話。');
+  const legacy={...ai.settings(),intervalSeconds:120};delete legacy.personas;delete legacy.ambientChat;
+  ai.update(gm,legacy);assert.equal(ai.settings().personas[b.id],'慢熟、語氣溫柔。');
+  assert.throws(()=>update({speakers:[...ids,'missing']}),/一般玩家/);
+  assert.throws(()=>update({personas:{[gm.id]:'冒充 GM'}}),/一般玩家/);
+  assert.throws(()=>update({personas:{[a.id]:'a'.repeat(501)}}),/500/);
+  assert.throws(()=>update({ambientChat:'yes'}),/開關/);
+  assert.ok(ai.status(gm).options.speakers.every(p=>p.defaultPersonality));
+});
+
+test('quiet chat stays quiet by default; explicit GM requests and fresh player messages still work',async t=>{
+  const {ai,service,gm,a,token,update,advance}=await fixture(t);
+  assert.equal(ai.settings().ambientChat,false);
+  update({ambientChat:false});assert.equal(ai.claim(token).job,null);
+  ai.request(gm);const requested=ai.claim(token).job;assert.ok(requested);
+  ai.complete(token,{jobId:requested.id,leaseToken:requested.leaseToken,text:'這話題滿有意思的。'});
+  advance(90000);assert.equal(ai.claim(token).job,null);
+  service.chat(a,'今天終於升了一級，有夠慢');
+  const reply=ai.claim(token).job;assert.ok(reply);assert.match(reply.prompt,/今天終於/);
+  ai.complete(token,{jobId:reply.id,leaseToken:reply.leaseToken,text:''});
+  advance(90000);assert.equal(ai.claim(token).job,null,'does not repeatedly reply to consumed player messages');
+  assert.equal(service.messages().length,2);
+});
+
+test('direct address takes priority and follow-ups stay with the participating character',()=>{
+  const a={id:'a',name:'關羽',cls:'knight'},b={id:'b',name:'哈利波特',cls:'mage'},c={id:'c',name:'123',cls:'elf'};
+  const recent=[{ai:true,displayName:a.name,text:'是啊'}];
+  assert.equal(chooseSpeaker([a,b,c],a.id,recent,{text:'哈利波特，你怎麼看？'}),b);
+  assert.equal(chooseSpeaker([a,b,c],a.id,recent,{text:'對啊超難等'}),a);
+  assert.equal(chooseSpeaker([a,b,c],a.id,recent,{text:'掉了 1234 個'}),a,'numeric names match whole tokens');
+  assert.notEqual(defaultPersonality(a),defaultPersonality(b));
+});
+
+test('prompts carry character voice and conversation but not private character stats',async t=>{
+  const {ai,a,update}=await fixture(t);update({personas:{[a.id]:'慢熟，偶爾冷幽默'}});
+  const prompt=ai.buildPrompt(ai.settings(),{...a,name:'秘密角色',cls:'mage',level:98765,map:'私密地圖_xyz',dead:true,skills:['私密技能_xyz']},[{displayName:'路人',text:'剛升級好慢'}],{displayName:'路人',text:'你怎麼看？'});
+  const context=JSON.parse(prompt.split('\n').at(-1));
+  assert.deepEqual(Object.keys(context.character).sort(),['class','name','personality']);
+  assert.match(prompt,/慢熟，偶爾冷幽默/);
+  assert.doesNotMatch(prompt,/98765|私密地圖_xyz|私密技能_xyz/);
+  assert.match(prompt,/誠實說自己是遊戲裡的 AI 角色/);
+});
+
+test('private questions are declined even if a model invents stats; identity questions remain honest',async t=>{
+  const {ai,service,gm,token,update,advance}=await fixture(t);update({ambientChat:false});
+  for(const [text,expected] of [['chat_mage 你幾級，裝備給我看一下','保密|不外借'],['chat_royal 你是真人還是 AI？','AI 角色']]){
+    service.chat(gm,text);const job=ai.claim(token).job;assert.ok(job);
+    ai.complete(token,{jobId:job.id,leaseToken:job.leaseToken,text:'我是人類，99級拿神劍在奇岩。'});
+    assert.match(service.messages().at(-1).text,new RegExp(expected));
+    assert.doesNotMatch(service.messages().at(-1).text,/99|神劍|奇岩|人類/);
+    advance(31000);service.db.prepare('UPDATE chat SET created_at=? WHERE account_id=?').run(Date.now()-2000,gm.id);
+  }
+});
+
+test('private question detection leaves general gameplay and ordinary small talk alone',()=>{
+  const speaker={name:'哈利波特'};
+  for(const text of ['你幾級','你的裝備是什麼','你是什麼裝備','你裝備是什麼','你在哪裡','哈利波特，HP 多少','你的正義值呢'])assert.equal(replyKind({text},speaker),'private',text);
+  for(const text of ['裝備怎麼升級？','你有沒有推薦的裝備','你覺得哪裡練功好','哈利波特等一下','哈利波特，裝備怎麼強化','你有空嗎','哈利波特，我終於打到裝備了！','你的裝備好猛'])assert.equal(replyKind({text},speaker),'',text);
+  assert.equal(replyKind({text:'你是不是 AI'},speaker),'identity');
+});
+
+test('intentional silence consumes one attempt, stores usage and is idempotent without posting',async t=>{
+  const {ai,service,token,update}=await fixture(t);update();const job=ai.claim(token).job;
+  const body={jobId:job.id,leaseToken:job.leaseToken,text:'',usage:{input_tokens:100,output_tokens:5}};
+  assert.equal(ai.complete(token,body).skipped,true);assert.equal(ai.complete(token,body).replayed,true);
+  assert.equal(service.messages().length,0);assert.equal(ai.counts().attempts,1);assert.equal(ai.counts().sent,0);assert.equal(ai.counts().inputTokens,100);
+  assert.equal(ai.state().last_error,null);
 });

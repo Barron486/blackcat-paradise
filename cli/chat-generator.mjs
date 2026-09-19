@@ -8,7 +8,7 @@ export const CHAT_MODEL='gpt-5.6-luna';
 const schema=fileURLToPath(new URL('./chat-output.schema.json',import.meta.url));
 const MAX_MS=90_000;
 function failure(code){const e=new Error('聊天代理產生失敗');e.code=code;return e;}
-function parseOutput(raw){let value;try{value=JSON.parse(raw);}catch{throw failure('GENERATION_FAILED');}if(!value||Array.isArray(value)||typeof value.text!=='string'||!value.text.trim()||value.text.length>240||Object.keys(value).some(k=>k!=='text'))throw failure('GENERATION_FAILED');return {text:value.text.trim()};}
+function parseOutput(raw){let value;try{value=JSON.parse(raw);}catch{throw failure('GENERATION_FAILED');}if(!value||Array.isArray(value)||typeof value.text!=='string'||value.text.length>240||Object.keys(value).some(k=>k!=='text'))throw failure('GENERATION_FAILED');return {text:value.text.trim()};}
 function childEnv(){const names=['PATH','USERPROFILE','APPDATA','LOCALAPPDATA','SYSTEMROOT','WINDIR','TEMP','TMP','CODEX_HOME','HOME','HOMEDRIVE','HOMEPATH'];return Object.fromEntries(names.filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]]));}
 export async function generateChat({prompt,model=CHAT_MODEL,signal,codexBin,spawnImpl=spawn,timeoutMs=MAX_MS}={}){
   if(model!==CHAT_MODEL)throw failure('MODEL_UNAVAILABLE');if(typeof prompt!=='string'||!prompt.trim())throw failure('GENERATION_FAILED');if(signal?.aborted)throw failure('TIMEOUT');
