@@ -13,9 +13,11 @@ import { WorldSettingsService } from './world-settings.mjs';
 import { LootBroadcastService } from './loot-broadcasts.mjs';
 import { AuthoritativeGame } from './authoritative-game.mjs';
 import { BattleFeed } from './battle-feed.mjs';
+import { loadBrowserAssets } from './browser-assets.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const rootPath = path.resolve(fileURLToPath(ROOT));
+const browserAssets=loadBrowserAssets(rootPath);
 const MIME = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8',
   '.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp',
   '.gif':'image/gif','.svg':'image/svg+xml','.mp3':'audio/mpeg','.wav':'audio/wav','.ogg':'audio/ogg','.woff2':'font/woff2'};
@@ -174,7 +176,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
         const html=readFileSync(new URL('index.html',ROOT),'utf8').replace('</head>',
           `<script id="cloud-boot" type="application/json">${escapedJson(boot)}</script><script src="/online/bootstrap.js"></script><link rel="stylesheet" href="/online/cloud.css"><link rel="stylesheet" href="/online/mobile.css"></head>`)
           .replace('</body>','<script type="module" src="/online/authoritative.js?v=battle-feed-20260919"></script><script type="module" src="/online/mobile.js"></script><script type="module" src="/online/shop.js"></script><script type="module" src="/online/market.js"></script></body>');
-        res.writeHead(200,{'Content-Type':MIME['.html'],'Cache-Control':'no-store'});return res.end(req.method==='HEAD'?undefined:html);
+        res.writeHead(200,{'Content-Type':MIME['.html'],'Cache-Control':'no-store'});return res.end(req.method==='HEAD'?undefined:browserAssets.html(html));
       }
       if(route==='/gm') service.gm(user);
       if(route==='/login'||route==='/setup') route='/online/login.html';
@@ -185,6 +187,10 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
       if(!filename.startsWith(rootPath+path.sep)) throw new ApiError(404,'找不到檔案');
       let stat;try{stat=statSync(filename);}catch{throw new ApiError(404,'找不到檔案');}
       if(!stat.isFile())throw new ApiError(404,'找不到檔案');
+      if(filename.endsWith('.html')){
+        const html=browserAssets.html(readFileSync(filename,'utf8'));
+        res.writeHead(200,{'Content-Type':MIME['.html'],'Cache-Control':'no-store'});return res.end(req.method==='HEAD'?undefined:html);
+      }
       const headers={'Content-Type':MIME[path.extname(filename).toLowerCase()]||'application/octet-stream','Cache-Control':/\.(js|css|html)$/.test(filename)?'no-cache':'public, max-age=86400','Accept-Ranges':'bytes'};
       let start=0,end=stat.size-1,status=200;
       if(req.headers.range) {

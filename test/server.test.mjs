@@ -332,6 +332,11 @@ test('HTTP integration: login, static assets, CSRF, GM API and real multiplayer 
   assert.equal((await request('/api/chat',{text:'hello'},player,{Origin:'https://attacker.example'})).status,403);
   assert.equal((await request('/api/auth/setup',{username:'evilgm',password})).status,403);
   const game=await request('/',undefined,player);assert.equal(game.status,200);const html=await game.text();assert.match(html,/cloud-boot/);assert.match(html,/online\/authoritative.js/);
+  assert.match(html,/src="\/online\/authoritative.js\?v=[a-f0-9]{16}"/);
+  const imports=JSON.parse(html.match(/<script type="importmap">(.*?)<\/script>/)[1]).imports;
+  assert.match(imports['/shared/game-intents.js'],/^\/shared\/game-intents.js\?v=[a-f0-9]{16}$/);
+  assert.match(await(await request(imports['/shared/game-intents.js'],undefined,player)).text(),/startOblivion/);
+  assert.equal(game.headers.get('cache-control'),'no-store');
   assert.equal((await request('/gm',undefined,gm)).status,200);
   const items=await(await request('/api/gm/catalog?q='+encodeURIComponent('屠龍劍'),undefined,gm)).json();assert.ok(items.items.some(i=>i.id==='wpn_dragonslayer'));
   await request('/api/chat',{text:'真人世界頻道測試 <script>alert(1)</script>'},player);
