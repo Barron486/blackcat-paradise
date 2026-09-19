@@ -36,7 +36,20 @@ test('server clock owns combat: rapid polls and client ticks cannot mint rewards
   advance(10000);const after=send('state').game.status;
   assert.equal(after.ticks-before.ticks,100);assert.ok(after.gold>before.gold||after.exp>before.exp||after.level>before.level);
   const value=after.gold;for(let i=0;i<10;i++)assert.equal(send('state').game.status.gold,value);
-  advance(60000);assert.equal(send('state').game.status.ticks,after.ticks,'disconnected time is not banked');
+  advance(60000);assert.equal(send('state').game.status.ticks,after.ticks+100,'each pass has bounded work even after a long disconnect');
+  let caughtUp;for(let i=0;i<8;i++)caughtUp=send('state').game.status;
+  assert.equal(caughtUp.ticks,after.ticks+600,'only elapsed server time can be caught up, with no rewards from additional polls');
+});
+
+test('rejected actions keep the prior input revision valid after background combat advances',async t=>{
+  const {send,advance,authority,user,lease}=await fixture(t);
+  const initial=send('action',{name:'travel',params:{mapId:'training'}});
+  const command={lease,op:'action',slot:1,epoch:initial.game.epoch,revision:initial.snapshot.revision,requestId:randomUUID(),args:{name:'gainItem',params:{gold:999999}}};
+  advance(1200);
+  assert.throws(()=>authority.handle(user,command),e=>e.status===400);
+  assert.throws(()=>authority.handle(user,{...command,requestId:randomUUID()}),e=>e.status===400);
+  const valid=authority.handle(user,{...command,requestId:randomUUID(),args:{name:'settings',params:{values:{'set-hp-pot':'65'}}}});
+  assert.equal(valid.game.view.p.config.setHpPot,'65');assert.equal(valid.game.status.ticks,12);
 });
 
 test('combat checkpoints do not invalidate player intents, but newer commands, external writes and future revisions do',async t=>{

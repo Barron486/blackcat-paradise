@@ -16,22 +16,57 @@ export class AuthoritativeGame {
     this.idleMs=idleMs;this.maxRuntimes=maxRuntimes;this.runtimes=new Map();service.authority=this;
     this.db.exec(`CREATE TABLE IF NOT EXISTS game_requests(
       account_id TEXT NOT NULL,request_id TEXT NOT NULL,payload_hash TEXT NOT NULL,created_at INTEGER NOT NULL,
-      PRIMARY KEY(account_id,request_id));`);
+      PRIMARY KEY(account_id,request_id));
+      CREATE TABLE IF NOT EXISTS game_sessions(
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id),slot INTEGER NOT NULL,epoch TEXT NOT NULL,
+        paused INTEGER NOT NULL DEFAULT 0,running INTEGER NOT NULL DEFAULT 1,updated_at INTEGER NOT NULL);`);
     this.cleanup=setInterval(()=>this.evict(),30000);this.cleanup.unref();
     if(autoTick){this.timer=setInterval(()=>void this.tickResponsive(),1000);this.timer.unref();}
   }
   row(user){const row=this.db.prepare('SELECT data,revision FROM saves WHERE account_id=?').get(user.id);return {...row,values:JSON.parse(row.data)};}
-  evict(){for(const [id,r]of this.runtimes)if(this.clock()-r.lastSeen>this.idleMs){r.engine.close();this.runtimes.delete(id);}}
+  // Disconnects do not end a hunt. Only dormant (paused/dead) engines can be evicted.
+  evict(){for(const [id,r]of this.runtimes)if(r.running===false&&this.clock()-r.lastSeen>this.idleMs)this.drop(id);}
   drop(id){const r=this.runtimes.get(id);if(r){r.engine.close();this.runtimes.delete(id);}}
+  forget(id){this.drop(id);this.db.prepare('DELETE FROM game_sessions WHERE account_id=?').run(id);}
+  saveSession(user,r,doc){
+    r.running=!r.paused&&!doc.p.dead;
+    this.db.prepare(`INSERT INTO game_sessions(account_id,slot,epoch,paused,running,updated_at) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(account_id) DO UPDATE SET slot=excluded.slot,epoch=excluded.epoch,paused=excluded.paused,running=excluded.running,updated_at=excluded.updated_at`)
+      .run(user.id,r.slot,epoch(doc),Number(r.paused),Number(r.running),Date.now());
+  }
+  restore(user){
+    const saved=this.db.prepare('SELECT * FROM game_sessions WHERE account_id=?').get(user.id);
+    if(!saved)return null;
+    const row=this.row(user),raw=row.values[slotKey(saved.slot)],lease=this.db.prepare('SELECT token FROM leases WHERE account_id=?').get(user.id);
+    if(!lease||!raw||epoch(this.service.catalog.unwrap(raw))!==saved.epoch){this.forget(user.id);return null;}
+    this.evict();requireValue(this.runtimes.size<this.maxRuntimes,'遊戲伺服器忙碌，請稍後再試',503);
+    const engine=new this.Engine({values:row.values,slot:saved.slot});
+    const r={engine,slot:saved.slot,lease:lease.token,user:{id:user.id,username:user.username,role:user.role},revision:row.revision,inputRevision:row.revision,
+      anchor:this.clock(),lastSeen:this.clock(),paused:!!saved.paused,running:!!saved.running};
+    try{
+      engine.setWorldSettings(this.service.world?.state());engine.load(saved.slot);
+      this.service.transaction(()=>this.commit(user,r));this.runtimes.set(user.id,r);return r;
+    }catch(error){engine.close();throw error;}
+  }
+  recoveryCandidates(){return this.db.prepare('SELECT a.id,a.username,a.role FROM game_sessions g JOIN accounts a ON a.id=g.account_id WHERE g.running=1 ORDER BY g.updated_at').all().filter(user=>!this.runtimes.has(user.id));}
+  recover(user){
+    try{this.restore(user);}catch(error){
+      console.error('[game-resume]',user.id,error.message);
+      // Preserve the checkpoint for an explicit reconnect, without a hot retry loop.
+      this.db.prepare('UPDATE game_sessions SET running=0 WHERE account_id=?').run(user.id);
+    }
+  }
   close(){this.closed=true;clearInterval(this.cleanup);clearInterval(this.timer);for(const id of this.runtimes.keys())this.drop(id);}
   tickRuntime(id,r){
     if(this.runtimes.get(id)!==r)return;
-    try{const lease=this.db.prepare('SELECT token FROM leases WHERE account_id=?').get(id);if(lease?.token!==r.lease){this.drop(id);return;}
+    try{const lease=this.db.prepare('SELECT token FROM leases WHERE account_id=?').get(id);if(!lease){this.forget(id);return;}
+      r.lease=lease.token; // UI control can change without restarting the account's combat clock.
       this.service.transaction(()=>this.advance(r.user,r));
-    }catch(error){console.error('[game-tick]',id,error.message);this.drop(id);}
+    }catch(error){console.error('[game-tick]',id,error.message);this.drop(id);this.db.prepare('UPDATE game_sessions SET running=0 WHERE account_id=?').run(id);}
   }
   tick(){
     this.evict();
+    for(const user of this.recoveryCandidates()){if(this.runtimes.size>=this.maxRuntimes)break;this.recover(user);}
     for(const [id,r]of this.runtimes)this.tickRuntime(id,r);
   }
   async tickResponsive(){
@@ -39,6 +74,11 @@ export class AuthoritativeGame {
     this.ticking=true;
     try{
       this.evict();
+      for(const user of this.recoveryCandidates()){
+        if(this.closed||this.runtimes.size>=this.maxRuntimes)break;
+        if(!this.runtimes.has(user.id))this.recover(user);
+        await yieldTurn();
+      }
       for(const [id,r]of [...this.runtimes]){
         if(this.closed)break;
         this.tickRuntime(id,r);
@@ -60,6 +100,7 @@ export class AuthoritativeGame {
     if(data!==before.data){r.revision++;this.db.prepare('UPDATE saves SET data=?,revision=?,updated_at=? WHERE account_id=?').run(data,r.revision,Date.now(),user.id);}
     const s=r.engine.status();
     this.db.prepare('UPDATE leases SET display_name=?,slot=?,map_name=? WHERE account_id=?').run(s.name,r.slot,s.mapName||s.map,user.id);
+    this.saveSession(user,r,doc);
   }
   reconcile(user,r){
     const row=this.row(user);
@@ -71,10 +112,10 @@ export class AuthoritativeGame {
   }
   advance(user,r){
     this.reconcile(user,r);
-    const now=this.clock(),elapsed=Math.max(0,Math.min(now-r.anchor,this.idleMs)),ticks=Math.floor(elapsed/100);
-    // Preserve fractional time, but never bank disconnected time or accept client clocks.
-    if(now-r.lastSeen>this.idleMs)r.anchor=now;
-    else if(ticks){r.anchor+=ticks*100;r.engine.setWorldSettings(this.service.world?.state());r.engine.refreshGm();if(!r.paused)r.engine.step(ticks);this.commit(user,r);}
+    const now=this.clock(),ticks=Math.min(100,Math.floor(Math.max(0,now-r.anchor)/100));
+    // Only the server's live monotonic clock grants time. Bound each pass, retain
+    // backlog for later passes, and start a fresh anchor after a server restart.
+    if(ticks){r.anchor=r.paused?now:r.anchor+ticks*100;r.engine.setWorldSettings(this.service.world?.state());r.engine.refreshGm();if(!r.paused)r.engine.step(ticks);this.commit(user,r);}
   }
   response(user,r,cursor,compact=false){
     const snapshot=this.service.bootstrap(user);
@@ -94,8 +135,8 @@ export class AuthoritativeGame {
     if(mutation){requireValue(typeof requestId==='string'&&/^[\w-]{20,80}$/.test(requestId),'缺少指令識別碼');requireValue(Number.isSafeInteger(body.revision)&&body.revision>=0,'版本不正確');}
     let r=this.runtimes.get(user.id);
     this.service.checkLease(user,lease);
-    // A takeover terminates the previous controller's encounter clock.
-    if(r&&r.lease!==lease){this.drop(user.id);r=null;}
+    if(!r)r=this.restore(user);
+    if(r)r.lease=lease;
     const payloadHash=mutation?digest({op,slot:slot??null,epoch:body.epoch??null,args}):null;
     const prior=mutation&&this.db.prepare('SELECT payload_hash FROM game_requests WHERE account_id=? AND request_id=?').get(user.id,requestId);
     if(prior){requireValue(prior.payload_hash===payloadHash,'同一識別碼不能重用於不同指令',409);if(r)this.reconcile(user,r);return {...this.response(user,r,cursor,compact),replayed:true};}
@@ -123,7 +164,7 @@ export class AuthoritativeGame {
         if(!r||r.slot!==slot||op==='create'){
           this.drop(user.id);this.evict();requireValue(this.runtimes.size<this.maxRuntimes,'遊戲伺服器忙碌，請稍後再試',503);
           const engine=new this.Engine({values:row.values,slot});
-          r={engine,slot,lease,user:{id:user.id,username:user.username,role:user.role},revision:row.revision,inputRevision:row.revision,anchor:this.clock(),lastSeen:this.clock(),paused:false};this.runtimes.set(user.id,r);
+          r={engine,slot,lease,user:{id:user.id,username:user.username,role:user.role},revision:row.revision,inputRevision:row.revision,anchor:this.clock(),lastSeen:this.clock(),paused:false,running:true};this.runtimes.set(user.id,r);
           engine.setWorldSettings(this.service.world?.state());
           if(op==='create'){
             requireValue(Object.keys(args).every(k=>['classId','name','allocation','gender','classicMode'].includes(k)),'創角只接受職業、名稱與配點');
@@ -139,9 +180,11 @@ export class AuthoritativeGame {
         try{engine.window.prompt=()=>args.name;engine.window.confirm=()=>true;engine.window.alert=()=>{};engine.run('_loadSelectedSlot=__args;loadDeleteSelected();',slot);
           const values=engine.values();requireValue(!values[slotKey(slot)],'角色目前無法刪除',409);
           this.db.prepare('UPDATE saves SET data=?,revision=revision+1,updated_at=? WHERE account_id=?').run(JSON.stringify(values),Date.now(),user.id);
+          this.db.prepare('DELETE FROM game_sessions WHERE account_id=?').run(user.id);
         }finally{engine.close();}r=null;
-      }else if(op==='leave'){this.drop(user.id);r=null;this.db.prepare('UPDATE leases SET slot=NULL,map_name=? WHERE account_id=?').run('角色選擇',user.id);
+      }else if(op==='leave'){this.forget(user.id);r=null;this.db.prepare('UPDATE leases SET slot=NULL,map_name=? WHERE account_id=?').run('角色選擇',user.id);
       }else if(op==='pause'||op==='resume'){r.paused=op==='pause';r.anchor=this.clock();
+        this.saveSession(user,r,r.engine.snapshot());
       }else if(op==='action'){
         requireValue(typeof args.name==='string'&&args.params&&typeof args.params==='object'&&!Array.isArray(args.params),'操作格式不正確');
         r.engine.setWorldSettings(this.service.world?.state());
@@ -158,7 +201,7 @@ export class AuthoritativeGame {
       const row=this.row(user);
       if(failed&&row.values[slotKey(failed.slot)]){
         const engine=new this.Engine({values:row.values,slot:failed.slot});
-        try{engine.setWorldSettings(this.service.world?.state());engine.load(failed.slot);this.runtimes.set(user.id,{...failed,engine,revision:row.revision,inputRevision:row.revision,anchor:this.clock(),lastSeen:this.clock()});}catch{engine.close();}
+        try{engine.setWorldSettings(this.service.world?.state());engine.load(failed.slot);this.runtimes.set(user.id,{...failed,engine,revision:row.revision,inputRevision:Math.min(failed.inputRevision,row.revision),lastSeen:this.clock()});}catch{engine.close();}
       }
       if(error instanceof ApiError)throw error;throw new ApiError(400,error.message||'操作無法完成');
     }

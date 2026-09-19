@@ -31,6 +31,7 @@
 #cloud-toolbar .cloud-save.cloud-error { background: #f39a91; }
 #cloud-toolbar > button { min-height: 36px; white-space: nowrap; }
 #cloud-toolbar [data-more] { min-width: 36px; font-size: 20px; line-height: 1; }
+#cloud-actions .cloud-hunt-note { margin: 0; color: #cbd5e1; font-size: 12px; line-height: 1.6; white-space: normal; }
 #cloud-actions { display: none; }
 #cloud-toolbar.menu-open #cloud-actions { display: grid; gap: 8px; position: absolute; right: 0; bottom: calc(100% + 6px); width: 200px; padding: 10px; border: 1px solid #69778d; border-radius: 9px; background: #192233; box-shadow: 0 8px 30px #000b; }
 #cloud-actions :is(button, a) { min-height: 44px; display: flex; align-items: center; justify-content: center; font-size: 14px; }

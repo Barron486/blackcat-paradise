@@ -11,6 +11,9 @@ function start(){
   toolbar.innerHTML='<span class="cloud-account"></span><span class="cloud-save" role="status">連線中…</span><button type="button" data-online aria-controls="cloud-chat" aria-expanded="false">線上 —</button><button type="button" data-chat aria-controls="cloud-chat" aria-expanded="false">聊天</button><button type="button" data-more aria-controls="cloud-actions" aria-expanded="false" aria-label="帳號與設定">⋯</button><div id="cloud-actions"><button type="button" data-shop>💎 藍鑽商店</button><button type="button" data-save>同步存檔</button><a href="/gm" target="_blank" rel="noopener" data-gm>GM 控制台 ↗</a><button type="button" data-logout>登出</button></div>';
   toolbar.querySelector('.cloud-account').textContent=(cloud.boot.user.role==='gm'?'♛ GM · ':'')+cloud.boot.user.username;
   toolbar.querySelector('[data-gm]').hidden=cloud.boot.user.role!=='gm';document.body.append(toolbar);
+  const huntNote=document.createElement('p');huntNote.className='cloud-hunt-note';
+  huntNote.textContent='關閉分頁或鎖屏後仍會持續掛機。回到選角、登出或角色死亡時停止。';
+  toolbar.querySelector('#cloud-actions').prepend(huntNote);
   const status=toolbar.querySelector('.cloud-save');
   let active=null,queue=Promise.resolve(),pending=0,lastLog=0,logEpoch=null,offset=cloud.boot.serverTime-Date.now(),stopped=false;
   let npcId=null,pollController=null;
