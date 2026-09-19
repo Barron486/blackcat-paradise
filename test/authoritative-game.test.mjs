@@ -38,6 +38,53 @@ test('server clock owns combat: rapid polls and client ticks cannot mint rewards
   const value=after.gold;for(let i=0;i<10;i++)assert.equal(send('state').game.status.gold,value);
   advance(60000);assert.equal(send('state').game.status.ticks,after.ticks,'disconnected time is not banked');
 });
+
+test('combat checkpoints do not invalidate player intents, but newer commands, external writes and future revisions do',async t=>{
+  const {send,advance,authority,service,user,lease,gm}=await fixture(t);
+  const initial=send('action',{name:'travel',params:{mapId:'training'}});
+  const command={lease,op:'action',slot:1,epoch:initial.game.epoch,revision:initial.snapshot.revision,requestId:randomUUID(),args:{name:'settings',params:{values:{'set-hp-pot':'65'}}}};
+  advance(1000);authority.tick();assert.ok(service.bootstrap(user).revision>command.revision);
+  const applied=authority.handle(user,command);assert.equal(applied.game.view.p.config.setHpPot,'65');
+  assert.equal(authority.handle(user,command).replayed,true,'lost-response retry must not reapply');
+  assert.throws(()=>authority.handle(user,{...command,requestId:randomUUID()}),e=>e.status===409,'a different intent cannot reuse a revision before the previous command');
+  assert.throws(()=>authority.handle(user,{...command,requestId:randomUUID(),revision:applied.snapshot.revision+100}),e=>e.status===409);
+  assert.throws(()=>authority.handle(user,{...command,requestId:randomUUID(),revision:applied.snapshot.revision,epoch:'other-role'}),e=>e.status===409);
+  const gmCommand={scope:'account',accountId:user.id,action:'kill',reason:'驗證外部寫入衝突'},preview=service.preview(gm,gmCommand);
+  service.execute(gm,{...gmCommand,targetFingerprint:preview.targetFingerprint,requestId:randomUUID()});
+  const stale={...command,requestId:randomUUID(),revision:applied.snapshot.revision};
+  assert.throws(()=>authority.handle(user,stale),e=>e.status===409);
+  advance(1000);authority.tick();
+  assert.throws(()=>authority.handle(user,stale),e=>e.status===409,'reconciling an external write keeps the conflict barrier');
+  assert.equal(send('state').game.status.gmDead,true);
+});
+
+test('browser responses reuse the authoritative saved character and omit duplicate status and animation history',async t=>{
+  const {send,advance}=await fixture(t);
+  const compact=send('action',{name:'travel',params:{mapId:'training'}},{client:'browser'});
+  const saved=catalog.unwrap(compact.snapshot.values.lineage_idle_save_1);
+  assert.equal(compact.game.epoch,saved.p._roleEpoch);assert.equal(saved.ms.current,'training');
+  assert.equal(compact.game.view,undefined);assert.equal(compact.game.status,undefined);assert.equal(compact.game.battle,undefined);
+  advance(1000);
+  const streamed=send('state',{presentation:{stream:null,seq:0}},{client:'browser'});
+  assert.ok(streamed.game.battle.frames.length,'fallback animation polling remains available');
+  const cli=send('state');assert.ok(cli.game.view&&cli.game.status,'legacy and CLI projections are unchanged');
+  assert.throws(()=>send('state',null),e=>e.status===400);
+  assert.throws(()=>send('state',{}, {client:'admin'}),e=>e.status===400);
+});
+
+test('scheduled combat yields between characters, never overlaps a cycle and stops cleanly',async t=>{
+  const {service,authority,user,advance}=await fixture(t);
+  const other=await service.register('responsive_other',password),lease=randomUUID();service.acquireLease(other,lease);
+  authority.handle(other,{lease,op:'create',slot:1,revision:0,requestId:randomUUID(),args:{classId:'knight',name:'另一騎士',allocation:{str:2,con:6}}});
+  const turns=[],original=authority.advance.bind(authority);
+  authority.advance=(u,r)=>{turns.push(u.id);return original(u,r);};
+  advance(1000);setImmediate(()=>turns.push('network'));
+  await Promise.all([authority.tickResponsive(),authority.tickResponsive()]);
+  assert.deepEqual(turns,[user.id,'network',other.id]);
+  turns.length=0;advance(1000);const active=authority.tickResponsive();authority.close();await active;
+  assert.deepEqual(turns,[user.id]);
+  await authority.tickResponsive();assert.equal(turns.length,1);
+});
 test('purchase replay, malicious prices, arbitrary rewards, future revisions and prototype actions are rejected',async t=>{
   const {service,authority,user,lease,send}=await fixture(t);
   const initial=send('state'),npc=authority.runtimes.get(user.id).engine.catalog().towns[initial.game.status.map].npcs.find(n=>n.type==='shop');

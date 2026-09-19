@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {performance} from 'node:perf_hooks';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {HeadlessGame} from './game-engine.mjs';
 import {ApiError} from './service.mjs';
 
@@ -17,19 +18,34 @@ export class AuthoritativeGame {
       account_id TEXT NOT NULL,request_id TEXT NOT NULL,payload_hash TEXT NOT NULL,created_at INTEGER NOT NULL,
       PRIMARY KEY(account_id,request_id));`);
     this.cleanup=setInterval(()=>this.evict(),30000);this.cleanup.unref();
-    if(autoTick){this.timer=setInterval(()=>this.tick(),1000);this.timer.unref();}
+    if(autoTick){this.timer=setInterval(()=>void this.tickResponsive(),1000);this.timer.unref();}
   }
   row(user){const row=this.db.prepare('SELECT data,revision FROM saves WHERE account_id=?').get(user.id);return {...row,values:JSON.parse(row.data)};}
   evict(){for(const [id,r]of this.runtimes)if(this.clock()-r.lastSeen>this.idleMs){r.engine.close();this.runtimes.delete(id);}}
   drop(id){const r=this.runtimes.get(id);if(r){r.engine.close();this.runtimes.delete(id);}}
-  close(){clearInterval(this.cleanup);clearInterval(this.timer);for(const id of this.runtimes.keys())this.drop(id);}
+  close(){this.closed=true;clearInterval(this.cleanup);clearInterval(this.timer);for(const id of this.runtimes.keys())this.drop(id);}
+  tickRuntime(id,r){
+    if(this.runtimes.get(id)!==r)return;
+    try{const lease=this.db.prepare('SELECT token FROM leases WHERE account_id=?').get(id);if(lease?.token!==r.lease){this.drop(id);return;}
+      this.service.transaction(()=>this.advance(r.user,r));
+    }catch(error){console.error('[game-tick]',id,error.message);this.drop(id);}
+  }
   tick(){
     this.evict();
-    for(const [id,r]of this.runtimes){
-      try{const lease=this.db.prepare('SELECT token FROM leases WHERE account_id=?').get(id);if(lease?.token!==r.lease){this.drop(id);continue;}
-        this.service.transaction(()=>this.advance(r.user,r));
-      }catch(error){console.error('[game-tick]',id,error.message);this.drop(id);}
-    }
+    for(const [id,r]of this.runtimes)this.tickRuntime(id,r);
+  }
+  async tickResponsive(){
+    if(this.ticking||this.closed)return;
+    this.ticking=true;
+    try{
+      this.evict();
+      for(const [id,r]of [...this.runtimes]){
+        if(this.closed)break;
+        this.tickRuntime(id,r);
+        // Keep each character atomic while letting HTTP and battle streams run between characters.
+        await yieldTurn();
+      }
+    }finally{this.ticking=false;}
   }
   commit(user,r){
     const before=this.row(user);
@@ -51,23 +67,29 @@ export class AuthoritativeGame {
     const raw=row.values[slotKey(r.slot)],local=r.engine.snapshot();
     requireValue(raw&&epoch(this.service.catalog.unwrap(raw))===epoch(local),'角色已刪除或更換，請重新選角',409);
     const doc=this.service.catalog.unwrap(raw);
-    r.engine.setValues(row.values);r.engine.adopt(doc);r.revision=row.revision;
+    r.engine.setValues(row.values);r.engine.adopt(doc);r.revision=row.revision;r.inputRevision=row.revision;
   }
   advance(user,r){
     this.reconcile(user,r);
     const now=this.clock(),elapsed=Math.max(0,Math.min(now-r.anchor,this.idleMs)),ticks=Math.floor(elapsed/100);
     // Preserve fractional time, but never bank disconnected time or accept client clocks.
     if(now-r.lastSeen>this.idleMs)r.anchor=now;
-    else if(ticks){r.anchor+=ticks*100;r.engine.setWorldSettings(this.service.world?.state());r.engine.refreshGm();if(!r.paused)r.engine.step(ticks);}
-    this.commit(user,r);
+    else if(ticks){r.anchor+=ticks*100;r.engine.setWorldSettings(this.service.world?.state());r.engine.refreshGm();if(!r.paused)r.engine.step(ticks);this.commit(user,r);}
   }
-  response(user,r,cursor){return {ok:true,authoritative:true,snapshot:this.service.bootstrap(user),game:r?{slot:r.slot,epoch:epoch(r.engine.snapshot()),view:r.engine.view(),status:r.engine.status(),logs:r.engine.logs.slice(-100),paused:r.paused,battle:cursor===false?undefined:r.engine.battle?.(cursor)}:null};}
+  response(user,r,cursor,compact=false){
+    const snapshot=this.service.bootstrap(user);
+    return {ok:true,authoritative:true,snapshot,game:r?{slot:r.slot,epoch:epoch(this.service.catalog.unwrap(snapshot.values[slotKey(r.slot)])),
+      // Browsers already receive this character in snapshot.values. CLI clients retain their existing response.
+      ...(compact?{}:{view:r.engine.view(),status:r.engine.status()}),logs:r.engine.logs.slice(-100),paused:r.paused,battle:cursor===false?undefined:r.engine.battle?.(cursor)}:null};
+  }
   handle(user,body){
     requireValue(body&&typeof body==='object'&&!Array.isArray(body),'指令格式不正確');
     const {lease,op='state',slot,requestId,args={}}=body;
     requireValue(['state','select','create','delete','leave','pause','resume','action'].includes(op),'不支援的遊戲指令');
-    requireValue(Object.keys(body).every(k=>['lease','op','slot','epoch','revision','requestId','args'].includes(k)),'不接受客戶端進度或時間數值');
+    requireValue(Object.keys(body).every(k=>['lease','op','slot','epoch','revision','requestId','args','client'].includes(k)),'不接受客戶端進度或時間數值');
+    requireValue(body.client===undefined||body.client==='browser','不支援的回應格式');
     requireValue(args&&typeof args==='object'&&!Array.isArray(args)&&JSON.stringify(args).length<32000,'操作內容過大');
+    const compact=body.client==='browser',cursor=op==='state'?(args.presentation??false):(compact?false:undefined);
     const mutation=op!=='state';
     if(mutation){requireValue(typeof requestId==='string'&&/^[\w-]{20,80}$/.test(requestId),'缺少指令識別碼');requireValue(Number.isSafeInteger(body.revision)&&body.revision>=0,'版本不正確');}
     let r=this.runtimes.get(user.id);
@@ -76,8 +98,14 @@ export class AuthoritativeGame {
     if(r&&r.lease!==lease){this.drop(user.id);r=null;}
     const payloadHash=mutation?digest({op,slot:slot??null,epoch:body.epoch??null,args}):null;
     const prior=mutation&&this.db.prepare('SELECT payload_hash FROM game_requests WHERE account_id=? AND request_id=?').get(user.id,requestId);
-    if(prior){requireValue(prior.payload_hash===payloadHash,'同一識別碼不能重用於不同指令',409);if(r)this.reconcile(user,r);return {...this.response(user,r),replayed:true};}
-    if(mutation&&body.revision!==this.row(user).revision)throw new ApiError(409,'雲端角色已有更新，請重試',{snapshot:this.service.bootstrap(user)});
+    if(prior){requireValue(prior.payload_hash===payloadHash,'同一識別碼不能重用於不同指令',409);if(r)this.reconcile(user,r);return {...this.response(user,r,cursor,compact),replayed:true};}
+    if(mutation){
+      const latest=this.row(user).revision;
+      // Combat checkpoints do not invalidate an intent. Another command or external writer still does.
+      const liveIntent=['action','pause','resume','leave'].includes(op)&&r&&slot===r.slot&&body.epoch===epoch(r.engine.snapshot());
+      const combatOnly=liveIntent&&r.revision===latest&&body.revision>=r.inputRevision&&body.revision<=latest;
+      if(body.revision!==latest&&!combatOnly)throw new ApiError(409,'雲端角色已有更新，請重試',{snapshot:this.service.bootstrap(user)});
+    }
     if(['select','create','delete'].includes(op))requireValue(Number.isInteger(slot)&&slot>=1&&slot<=8,'角色欄位須為 1～8');
     if(['action','pause','resume','leave'].includes(op)){
       requireValue(r,'請先選擇角色',409);
@@ -86,7 +114,7 @@ export class AuthoritativeGame {
     // Advance valid elapsed combat independently of whether the following action succeeds.
     if(r){this.service.transaction(()=>this.advance(user,r));r.lastSeen=this.clock();}
     // CLI controllers need settled state only; browsers explicitly request the animation stream.
-    if(op==='state')return this.response(user,r,args.presentation??false);
+    if(op==='state')return this.response(user,r,cursor,compact);
     try{return this.service.transaction(()=>{
       if(op==='create'||op==='select'){
         const row=this.row(user),raw=row.values[slotKey(slot)];
@@ -95,7 +123,7 @@ export class AuthoritativeGame {
         if(!r||r.slot!==slot||op==='create'){
           this.drop(user.id);this.evict();requireValue(this.runtimes.size<this.maxRuntimes,'遊戲伺服器忙碌，請稍後再試',503);
           const engine=new this.Engine({values:row.values,slot});
-          r={engine,slot,lease,user:{id:user.id,username:user.username,role:user.role},revision:row.revision,anchor:this.clock(),lastSeen:this.clock(),paused:false};this.runtimes.set(user.id,r);
+          r={engine,slot,lease,user:{id:user.id,username:user.username,role:user.role},revision:row.revision,inputRevision:row.revision,anchor:this.clock(),lastSeen:this.clock(),paused:false};this.runtimes.set(user.id,r);
           engine.setWorldSettings(this.service.world?.state());
           if(op==='create'){
             requireValue(Object.keys(args).every(k=>['classId','name','allocation','gender','classicMode'].includes(k)),'創角只接受職業、名稱與配點');
@@ -119,8 +147,9 @@ export class AuthoritativeGame {
         r.engine.action(args.name,args.params);this.commit(user,r);
       }
       this.db.prepare('INSERT INTO game_requests VALUES(?,?,?,?)').run(user.id,requestId,payloadHash,Date.now());
+      if(r)r.inputRevision=r.revision;
       // Retain request IDs for the account lifetime: delayed retries cannot spend twice.
-      return this.response(user,r);
+      return this.response(user,r,cursor,compact);
     });}catch(error){
       // Roll back both SQLite and the in-memory simulation. An invalid click must
       // not leave half-spent items, nor disconnect a valid paused character.
@@ -128,7 +157,7 @@ export class AuthoritativeGame {
       const row=this.row(user);
       if(failed&&row.values[slotKey(failed.slot)]){
         const engine=new this.Engine({values:row.values,slot:failed.slot});
-        try{engine.setWorldSettings(this.service.world?.state());engine.load(failed.slot);this.runtimes.set(user.id,{...failed,engine,revision:row.revision,anchor:this.clock(),lastSeen:this.clock()});}catch{engine.close();}
+        try{engine.setWorldSettings(this.service.world?.state());engine.load(failed.slot);this.runtimes.set(user.id,{...failed,engine,revision:row.revision,inputRevision:row.revision,anchor:this.clock(),lastSeen:this.clock()});}catch{engine.close();}
       }
       if(error instanceof ApiError)throw error;throw new ApiError(400,error.message||'操作無法完成');
     }

@@ -7,10 +7,28 @@ import {AuthoritativeGame} from '../server/authoritative-game.mjs';
 import {loadCatalog} from '../server/catalog.mjs';
 import {HeadlessGame} from '../cli/engine.mjs';
 import {BattleTimeline} from '../online/battle-timeline.js';
+import {JSDOM} from 'jsdom';
 
 const source=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
 const catalog=loadCatalog(new URL('../',import.meta.url));
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('browser transport aborts stalled reads, bounds network waits and clears its timeout',async t=>{
+  const dom=new JSDOM('<script id="cloud-boot" type="application/json">{"values":{},"revision":0,"csrf":"test"}</script>',{url:'http://localhost/',runScripts:'outside-only'}),w=dom.window;
+  t.after(()=>w.close());
+  let timer,cleared=0;
+  w.setTimeout=(fn,ms)=>{assert.equal(ms,15000);timer=fn;return 1;};w.clearTimeout=()=>cleared++;
+  w.fetch=async(url,{signal})=>new Promise((resolve,reject)=>{
+    if(signal.aborted)reject(signal.reason);else signal.addEventListener('abort',()=>reject(signal.reason),{once:true});
+  });
+  w.eval(source('online/bootstrap.js'));
+  const controller=new w.AbortController(),cancelled=w.CloudStore.request('/api/game',{op:'state'},{signal:controller.signal});
+  controller.abort();await assert.rejects(cancelled,e=>e.name==='AbortError');assert.equal(cleared,1);
+  const timeout=w.CloudStore.request('/api/game',{op:'state'});timer();
+  await assert.rejects(timeout,e=>e.name==='TimeoutError');assert.equal(cleared,2);
+  w.fetch=async()=>({ok:true,json:async()=>({ok:true})});
+  assert.equal((await w.CloudStore.request('/api/game',{op:'state'})).ok,true);assert.equal(cleared,3);
+});
 async function fixture(t){
   const service=new GameService(':memory:',catalog),authority=new AuthoritativeGame(service,{autoTick:false});
   const user=await service.register('client_qa','isolated-client-password-2026'),lease=randomUUID();service.acquireLease(user,lease);
@@ -57,6 +75,29 @@ test('web retries one server-issued purchase and loading a battle never sends an
   engine.run('document.getElementById("game-screen").classList.add("hidden");');w.loadGame();await w.CloudStore.flush();
   assert.equal(engine.run('mapState.current'),'training');
   assert.ok(!requests.slice(before).some(r=>r.body?.args?.name==='travel'));
+});
+
+test('an interaction interrupts a slow read-only poll without cancelling a write or publishing a cancellation error',async t=>{
+  const {w,engine,requests}=await fixture(t),original=w.CloudStore.request;
+  let waiting=false,aborted=false,releaseWrite;
+  w.CloudStore.request=async(url,body,options={})=>{
+    if(body?.op==='state'){
+      waiting=true;
+      return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>{aborted=true;reject(options.signal.reason);},{once:true}));
+    }
+    const result=await original(url,body,options);
+    if(body?.args?.name==='settings')await new Promise(resolve=>{releaseWrite=resolve;});
+    return result;
+  };
+  const read=w.CloudStore.flush();await settle();assert.ok(waiting);
+  const first=w.CloudStore.action('settings',{values:{'set-hp-pot':'65'}});await settle();
+  assert.ok(aborted);assert.equal(typeof releaseWrite,'function','write starts before the stale poll completes');
+  const count=requests.length;
+  const second=w.CloudStore.action('settings',{values:{'set-hp-pot':'55'}});await settle();
+  assert.equal(requests.length,count,'writes remain ordered and cannot cancel an in-flight purchase/action');
+  w.CloudStore.request=original;releaseWrite();await Promise.all([read,first,second]);
+  assert.equal(engine.run('player.config.setHpPot'),'55');
+  assert.equal(w.document.querySelector('.cloud-save').classList.contains('cloud-error'),false);
 });
 
 test('editing auto-sell exceptions survives server updates and saves as a validated intent',async t=>{

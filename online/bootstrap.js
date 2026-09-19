@@ -22,10 +22,15 @@
       this.revision=snapshot.revision;
     },
     reset(snapshot){ values=Object.assign(Object.create(null),snapshot.values);dirty=Object.create(null);this.revision=snapshot.revision; },
-    async request(url,body){
+    async request(url,body,{signal}={}){
+      const controller=new AbortController(),cancel=()=>controller.abort(signal.reason);
+      if(signal?.aborted)cancel();else signal?.addEventListener('abort',cancel,{once:true});
+      const timeout=setTimeout(()=>controller.abort(new DOMException('伺服器連線逾時，請稍後重試','TimeoutError')),15000);
+      try{
       const response=await fetch(url,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',
-        headers:body===undefined?{}:{'Content-Type':'application/json','X-CSRF-Token':boot.csrf},body:body===undefined?undefined:JSON.stringify(body)});
+        headers:body===undefined?{}:{'Content-Type':'application/json','X-CSRF-Token':boot.csrf},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});
       const data=await response.json();if(!response.ok){const error=new Error(data.error||'伺服器連線失敗');error.status=response.status;error.data=data;throw error;}return data;
+      }finally{clearTimeout(timeout);signal?.removeEventListener('abort',cancel);}
     }
   };
 })();

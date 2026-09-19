@@ -13,7 +13,7 @@ function start(){
   toolbar.querySelector('[data-gm]').hidden=cloud.boot.user.role!=='gm';document.body.append(toolbar);
   const status=toolbar.querySelector('.cloud-save');
   let active=null,queue=Promise.resolve(),pending=0,lastLog=0,logEpoch=null,offset=cloud.boot.serverTime-Date.now(),stopped=false;
-  let npcId=null;
+  let npcId=null,pollController=null;
   const load=window.loadGame,leave=window.returnToCharacterSelect;
   const showError=error=>{status.textContent=error.message;status.classList.add('cloud-error');if(error.status===401||error.status===423){cloud.ready=false;stopped=true;block(error.message,true);}else if(typeof logSys==='function')logSys(escape(error.message));};
   const escape=text=>String(text).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -57,7 +57,7 @@ function start(){
       const initial=!active||active.epoch!==result.game.epoch||document.getElementById('game-screen').classList.contains('hidden');
       active={slot:result.game.slot,epoch:result.game.epoch};
       if(logEpoch!==active.epoch){lastLog=0;logEpoch=active.epoch;}
-      render(result.game.view,initial,result.game.battle);
+      render(result.game.view||docAt(active.slot),initial,result.game.battle);
       feed.open(active);
       if((result.game.logs?.at(-1)?.id||0)<lastLog)lastLog=0;
       for(const entry of result.game.logs||[])if(entry.id>lastLog){
@@ -70,12 +70,13 @@ function start(){
     cloud.reset(snapshot);status.textContent='伺服器已結算 · '+new Date(snapshot.serverTime).toLocaleTimeString('zh-TW');status.classList.remove('cloud-error');
   }
   cloud.reconcile=adopt;cloud.adoptNames=adopt;
-  async function request(op,args={},target=active){
+  async function request(op,args={},target=active,signal){
     if(!cloud.ready)throw new Error('請先完成伺服器連線');
-    const body={lease:cloud.lease,op,args:op==='state'?{...args,presentation:feed.healthy()?false:battle.cursor()}:args,...(target?{slot:target.slot,epoch:target.epoch}:{}),...(op==='state'?{}:{requestId:crypto.randomUUID(),revision:cloud.revision})};
+    const body={client:'browser',lease:cloud.lease,op,args:op==='state'?{...args,presentation:feed.healthy()?false:battle.cursor()}:args,...(target?{slot:target.slot,epoch:target.epoch}:{}),...(op==='state'?{}:{requestId:crypto.randomUUID(),revision:cloud.revision})};
     for(let attempt=0;attempt<3;attempt++)try{
-      const result=await cloud.request('/api/game',body);adopt(result);return result;
+      const result=await cloud.request('/api/game',body,{signal});if(signal?.aborted)throw signal.reason;adopt(result);return result;
     }catch(error){
+      if(signal?.aborted)throw error;
       if(error.status===409&&error.data?.snapshot){adopt(error.data);body.revision=cloud.revision;continue;}
       // A retry always carries the same ID: a lost response cannot repeat a purchase.
       if(!error.status&&attempt<2){await new Promise(r=>setTimeout(r,500));continue;}
@@ -84,10 +85,17 @@ function start(){
     throw new Error('角色狀態正在更新，請稍後重試');
   }
   function enqueue(fn){pending++;const p=queue.then(fn);queue=p.catch(showError).finally(()=>pending--);return p;}
-  const action=(name,params={})=>{const target=active&&{...active};return enqueue(()=>request('action',{name,params},target));};
+  function command(fn){pollController?.abort();return enqueue(fn);}
+  const action=(name,params={})=>{const target=active&&{...active};return command(()=>request('action',{name,params},target));};
   cloud.action=action;
   const fire=(name,params)=>{void action(name,params).catch(()=>{});};
-  async function poll(){if(!cloud.ready||stopped||cloud.marketPending||cloud.shopPending)return;const result=await request('state');if(active&&!result.game)await request('select',{},active);}
+  async function poll(){
+    if(!cloud.ready||stopped||cloud.marketPending||cloud.shopPending)return;
+    const controller=new AbortController();pollController=controller;
+    try{const result=await request('state',{},active,controller.signal);if(active&&!result.game)await request('select',{},active);}
+    catch(error){if(!controller.signal.aborted)throw error;}
+    finally{if(pollController===controller)pollController=null;}
+  }
   cloud.flush=()=>enqueue(poll);
   function block(message,takeover=false){
     let e=document.getElementById('cloud-block');if(!e){e=document.createElement('div');e.id='cloud-block';document.body.append(e);}
@@ -101,10 +109,10 @@ function start(){
   window.startGame=()=>{
     if(!updateCreationName())return;
     const target={slot:currentSlot},args={classId:curCreate.cls,name:document.getElementById('creation-name').value.trim(),gender:curCreate.rawCls?.startsWith('f_')?'female':'male',classicMode:!!document.getElementById('create-classic-toggle')?.checked,allocation:Object.fromEntries(['str','dex','con','int','wis','cha'].map(k=>[k,curCreate[k]]))};
-    void enqueue(()=>request('create',args,target)).catch(()=>{});
+    void command(()=>request('create',args,target)).catch(()=>{});
   };
-  window.loadGame=()=>{const target={slot:currentSlot,epoch:roleEpoch(docAt(currentSlot))};void enqueue(()=>request('select',{},target)).catch(()=>{});};
-  window.returnToCharacterSelect=()=>{void enqueue(async()=>{if(active)await request('leave');active=null;feed.close();battle.clear();leave();renderLoadSelect();}).catch(()=>{});return true;};
+  window.loadGame=()=>{const target={slot:currentSlot,epoch:roleEpoch(docAt(currentSlot))};void command(()=>request('select',{},target)).catch(()=>{});};
+  window.returnToCharacterSelect=()=>{void command(async()=>{if(active)await request('leave');active=null;feed.close();battle.clear();leave();renderLoadSelect();}).catch(()=>{});return true;};
   window.loadDeleteSelected=()=>{const slot=_loadSelectedSlot,doc=docAt(slot);if(!doc)return;const name=doc.p.name||'未命名';if(prompt(`請輸入角色名稱「${name}」確認刪除：`)!==name||!confirm('確定永久刪除此角色？'))return;void enqueue(async()=>{await request('delete',{name},{slot,epoch:roleEpoch(doc)});active=null;renderLoadSelect();}).catch(()=>{});};
   window.importSave=()=>alert('線上角色由伺服器保存，無法匯入本機存檔。');
   window.changeMap=()=>fire('travel',{mapId:document.getElementById('map-select').value});
