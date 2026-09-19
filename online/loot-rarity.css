@@ -1,0 +1,7 @@
+.loot-name-legend { color: #f0a020; font-weight: 700; }
+.loot-name-relic { color: #4cc9f0; font-weight: 700; }
+.loot-name-rare { color: #d8b4fe; font-weight: 700; }
+#sys-log .sys-item-gain .sys-drop-rare-rate { color: #d8b4fe !important; text-shadow: 0 0 5px #a855f766 !important; }
+.loot-color-key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; line-height: 1.6; }
+#cloud-chat .cloud-messages .cloud-loot-message { padding: 8px; border-left: 2px solid currentColor; background: #121923; overflow-wrap: anywhere; }
+#cloud-chat .cloud-messages .cloud-loot-message strong { color: inherit; }

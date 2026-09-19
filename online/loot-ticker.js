@@ -13,9 +13,9 @@ export function startLootTicker(cloud,canPoll){
   const phone=matchMedia('(max-width: 768px), (max-height: 520px) and (pointer: coarse)');
   function placeBanner(){if(phone.matches)game.insertBefore(banner,center);else center.prepend(banner);}
   phone.addEventListener('change',placeBanner);placeBanner();
-  const queue=[];let cursor=cloud.boot.lootBroadcastCursor||0,busy=false,active=false,timer,generation=0;
+  const queue=[];let cursor=cloud.boot.lootBroadcastCursor||0,busy=false,active=false,timer,generation=0,policyGeneration=cloud.boot.worldSettings?.lootBroadcast?.generation||0;
   function resizeBanner(change){
-    const follow=['combat-log','sys-log'].map(id=>document.getElementById(id)).filter(el=>el.clientHeight>0&&el.scrollHeight-el.scrollTop-el.clientHeight<24);
+    const follow=['combat-log','sys-log'].map(id=>document.getElementById(id)).filter(el=>el&&el.clientHeight>0&&el.scrollHeight-el.scrollTop-el.clientHeight<24);
     change();
     requestAnimationFrame(()=>{
       for(const log of follow){
@@ -29,8 +29,7 @@ export function startLootTicker(cloud,canPoll){
   function next(){
     if(active||!queue.length)return;
     const event=queue.shift();active=true;const ticket=++generation;
-    const tier=event.rarity==='relic'?'遺物':'傳說';
-    const line=`恭喜 ${event.name} 在 ${event.mapName} 擊敗 ${event.monster}，獲得【${tier}】${event.itemName}${event.quantity>1?' ×'+event.quantity:''}！`;
+    const line=GameLootRarity.message(event);
     banner.dataset.rarity=event.rarity;text.textContent=line;banner.title=line;status.textContent=line;
     text.style.animation='none';resizeBanner(()=>{banner.hidden=false;game.classList.add('has-loot-ticker');});
     requestAnimationFrame(()=>{
@@ -45,11 +44,12 @@ export function startLootTicker(cloud,canPoll){
   }
   close.onclick=finish;text.addEventListener('animationend',finish);
   async function poll(){
-    if(busy||!canPoll()||document.hidden||game.classList.contains('hidden')||queue.length>=100)return;
+    if(busy||!canPoll()||document.hidden||game.classList.contains('hidden'))return;
     busy=true;
     try{
       const data=await cloud.request('/api/loot-broadcasts?after='+cursor);
-      for(const event of data.events||[])if(event.id>cursor){queue.push(event);cursor=event.id;}
+      if(data.enabled===false||policyGeneration!==(data.generation||0)){queue.length=0;finish();policyGeneration=data.generation||0;}
+      for(const event of data.events||[])if(data.enabled!==false&&event.id>cursor){if(queue.length<100)queue.push(event);cursor=event.id;}
       cursor=Math.max(cursor,data.cursor||0);next();
     }catch{/* The next poll resumes at the same cursor after reconnecting. */}
     finally{busy=false;}

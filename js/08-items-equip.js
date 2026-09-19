@@ -154,22 +154,22 @@ function gainItem(id, cnt=1, silent=false, forceNormal=false, affixOld=false, de
 
     // 紀錄這次產生的物品屬性
     let itemInfo = { id: id, cnt: cnt, en: _tEn, bless: bless, anc: anc, attr: attr, seteff: seteff };
-    // Only monster-earned legendary/relic equipment creates a world drop receipt.
+    // Only monster-earned special or very-low-rate equipment creates a world drop receipt.
     // The server resolves names and rarity from its catalog and deduplicates the sequence on sync.
-    if (_lootMobInfo && d && (d.legend || d.relic) && ['wpn', 'arm', 'acc'].includes(d.type) && !d.isArrow) {
+    let dropRarity = _lootMobInfo ? gmLootRarity(id, _lootMobInfo.n) : GameLootRarity.classify(d);
+    if (_lootMobInfo && dropRarity) {
         player._rareLootSeq = (Number.isSafeInteger(player._rareLootSeq) ? player._rareLootSeq : 0) + 1;
         if (!Array.isArray(player._rareLootEvents)) player._rareLootEvents = [];
-        player._rareLootEvents.push({seq: player._rareLootSeq, itemId: id, monster: _lootMobInfo.n, mapId: mapState.current, quantity: cnt, bless: bless, anc: anc});
+        player._rareLootEvents.push({seq: player._rareLootSeq, itemId: id, monster: _lootMobInfo.n, mapId: mapState.current, quantity: cnt, bless: bless, anc: anc, at: Date.now()});
         if (player._rareLootEvents.length > 64) player._rareLootEvents.splice(0, player._rareLootEvents.length - 64);
     }
     
     if (!silent && d) {
-        // ✦ v3.6.69 物品日誌亮點：只有「傳說」與「遺物」才加亮點提示（傳說＝琥珀橘 c-legend／遺物＝海藍 c-relic）。
-        //   ⚠️ 一般掉落刻意維持 sys-item-gain 的統一米色（css 有 `#sys-log .sys-item-gain *` 的 !important 全域壓色），
-        //      因此稀有名稱必須另掛 sys-drop-rare 才不被壓成同色 —— 加 class 後務必實機量 computed 色。
-        let _rare = d.relic ? 'relic' : (d.legend ? 'legend' : '');
+        // Equip-only rarity colors override the system log's uniform beige rule.
+        // Legendary/relic use their own tier; other low-rate monster equipment is purple.
+        let _rare = dropRarity;
         let _nameHtml = _rare
-            ? `<span class="sys-drop-rare sys-drop-${_rare}">✦ ${getItemFullName(itemInfo)}</span>`
+            ? `<span class="sys-drop-rare sys-drop-${_rare === 'rare' ? 'rare-rate' : _rare}" title="${GameLootRarity.labels[_rare]}">✦ ${getItemFullName(itemInfo)}</span>`
             : `<span class="font-bold">${getItemFullName(itemInfo)}</span>`;
         // 🐾 擊殺掉落來源怪物存在時→「怪名 給你 物品名 。」；其餘來源(商店/製作/NPC 兌換)維持「獲得物品:」
         if (_lootMobInfo) {

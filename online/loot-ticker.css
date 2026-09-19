@@ -1,6 +1,7 @@
 #loot-ticker[hidden] { display: none !important; }
 #loot-ticker { flex: 0 0 44px; min-width: 0; height: 44px; display: flex; align-items: center; gap: 8px; overflow: hidden; border: 1px solid #a57937; border-radius: 6px; color: #ffe2a5; background: linear-gradient(100deg,#392c1b,#1b202c); box-shadow: inset 0 0 12px #d9a33b18; }
 #loot-ticker[data-rarity=relic] { border-color: #4eacc4; color: #a6e8ff; background: linear-gradient(100deg,#153741,#182331); }
+#loot-ticker[data-rarity=rare] { border-color: #aa83cb; color: #e2c3ff; background: linear-gradient(100deg,#342040,#182331); }
 #loot-ticker > strong { flex-shrink: 0; padding-left: 10px; font-size: 13px; }
 .loot-ticker-viewport { flex: 1; min-width: 0; overflow: hidden; }
 .loot-ticker-text { display: inline-block; white-space: nowrap; font-size: 14px; line-height: 24px; }

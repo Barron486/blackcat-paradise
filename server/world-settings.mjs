@@ -1,7 +1,9 @@
 import {ApiError} from './service.mjs';
+import '../js/loot-rarity.js';
 
 const check=(ok,message,status=400)=>{if(!ok)throw new ApiError(status,message);};
-const defaults=()=>({revision:0,goldMultiplier:1,expMultiplier:1,dropMultiplier:1,showDropRates:false,maps:{},drops:{}});
+const broadcastDefaults=()=>({enabled:true,rarities:[...GameLootRarity.types],generation:0,cursor:0,startedAt:0});
+const defaults=()=>({revision:0,goldMultiplier:1,expMultiplier:1,dropMultiplier:1,showDropRates:false,lootBroadcast:broadcastDefaults(),maps:{},drops:{}});
 export class WorldSettingsService {
   constructor(service){
     this.service=service;this.db=service.db;
@@ -13,7 +15,7 @@ export class WorldSettingsService {
     this.db.prepare('INSERT OR IGNORE INTO world_settings VALUES(1,?)').run(JSON.stringify(defaults()));
     service.world=this;
   }
-  state(){return JSON.parse(this.db.prepare('SELECT data FROM world_settings WHERE id=1').get().data);}
+  state(){const saved=JSON.parse(this.db.prepare('SELECT data FROM world_settings WHERE id=1').get().data);return {...defaults(),...saved,lootBroadcast:{...broadcastDefaults(),...saved.lootBroadcast}};}
   admin(user){this.service.gm(user);return {settings:this.state(),maps:this.catalog.maps,monsterCount:this.catalog.monsters.length,dropCount:this.catalog.drops.length,location:this.location(user,false),history:this.history()};}
   location(user,required=true){
     const lease=this.db.prepare('SELECT slot,expires_at FROM leases WHERE account_id=?').get(user.id);
@@ -42,6 +44,11 @@ export class WorldSettingsService {
     if(body.type==='global'){
       for(const key of ['goldMultiplier','expMultiplier','dropMultiplier']) {check(typeof body[key]==='number'&&Number.isFinite(body[key])&&body[key]>=0&&body[key]<=1000,'倍率須為 0～1000');command[key]=body[key];}
       check(typeof body.showDropRates==='boolean','掉落率顯示設定須為勾選值');command.showDropRates=body.showDropRates;
+    }else if(body.type==='broadcast'){
+      check(typeof body.enabled==='boolean','廣播開關須為勾選值');
+      check(Array.isArray(body.rarities)&&body.rarities.every(r=>GameLootRarity.types.includes(r)),'廣播範圍不正確');
+      command.enabled=body.enabled;command.rarities=GameLootRarity.types.filter(r=>body.rarities.includes(r));
+      check(!command.enabled||command.rarities.length>0,'啟用廣播時請至少選擇一種裝備');
     }else if(body.type==='map'){
       check(this.maps.has(body.mapId),'找不到地圖');check(typeof body.open==='boolean','地圖開放設定不正確');
       check(Number.isInteger(body.minLevel)&&body.minLevel>=1&&body.minLevel<=100,'進入等級須為 1～100');
@@ -58,6 +65,7 @@ export class WorldSettingsService {
       const s=this.state();check(body.revision===s.revision,'設定已被其他 GM 修改，請重新整理後再送出',409);
       const before=JSON.stringify(s);
       if(command.type==='global')for(const key of ['goldMultiplier','expMultiplier','dropMultiplier','showDropRates'])s[key]=command[key];
+      if(command.type==='broadcast')s.lootBroadcast={enabled:command.enabled,rarities:command.rarities,generation:s.lootBroadcast.generation+1,cursor:this.service.lootBroadcasts?.latestId()||0,startedAt:Date.now()};
       if(command.type==='map')s.maps[command.mapId]={open:command.open,minLevel:command.minLevel};
       if(command.type==='drop'){if(command.rate===null)delete s.drops[command.key];else s.drops[command.key]=command.rate;}
       s.revision++;const after=JSON.stringify(s);

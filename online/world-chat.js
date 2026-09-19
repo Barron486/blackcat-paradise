@@ -34,7 +34,7 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
   const buttons = [...chat.querySelectorAll('[data-pane]')];
   const opener = toolbar.querySelector('[data-chat]'), onlineButton = toolbar.querySelector('[data-online]');
   const list = chat.querySelector('.cloud-messages'), errorBox = chat.querySelector('.cloud-chat-error');
-  let pane = 'players', lastChatId = -1, worldBusy = false, presenceBusy = false, follow = true;
+  let pane = 'players', lastChatId = '', worldBusy = false, presenceBusy = false, follow = true;
   function select(next) {
     pane = next;errorBox.textContent = '';
     for (const button of buttons) {
@@ -93,14 +93,19 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
     worldBusy = true;
     try {
       const data = await cloud.request('/api/world');
-      const last = data.messages.at(-1)?.id || 0;
+      const messages=[...data.messages.map(m=>({...m,rowId:'chat:'+m.id})),...(data.lootBroadcasts||[]).map(m=>({...m,rowId:'loot:'+m.id,loot:true}))].sort((a,b)=>a.at-b.at||a.rowId.localeCompare(b.rowId)).slice(-160);
+      const last = messages.map(m=>m.rowId).join('|');
       if (last === lastChatId) return;
       const previousTop = list.scrollTop, previousHeight = list.scrollHeight;
-      const droppedFirst = list.firstElementChild && !data.messages.some(m => String(m.id) === list.firstElementChild.dataset.id);
+      const droppedFirst = list.firstElementChild && !messages.some(m => m.rowId === list.firstElementChild.dataset.id);
       lastChatId = last;list.replaceChildren();
-      for (const m of data.messages) {
+      for (const m of messages) {
         const line = document.createElement('p'), name = document.createElement('strong'), time = document.createElement('small');
-        line.dataset.id = String(m.id);
+        line.dataset.id = m.rowId;
+        if(m.loot){
+          line.className='cloud-loot-message loot-name-'+(GameLootRarity.types.includes(m.rarity)?m.rarity:'rare');
+          name.textContent='稀有掉落　';line.append(name,document.createTextNode(GameLootRarity.message(m)));list.append(line);continue;
+        }
         name.textContent = (m.displayName || m.username) + '　';name.title = m.displayName || m.username;
         time.textContent = new Date(m.at).toLocaleTimeString('zh-TW');line.append(time);
         line.append(name, document.createTextNode(m.text));list.append(line);

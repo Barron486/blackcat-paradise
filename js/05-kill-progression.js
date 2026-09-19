@@ -231,6 +231,8 @@ function renderAuditDrops(el) {
             <button onclick="toggleAuditView()" class="btn px-3 py-1 text-xs bg-indigo-900 border-indigo-600 text-indigo-200 font-bold">統計表</button>
         </div>
         <div class="text-slate-400 text-xs">${gmWorld.showDropRates?'機率為單次基礎掉率 × 世界倍率；隊伍、裝備及任務條件另計。互斥掉落池超過 100% 時按權重分配。':'目前地圖出沒的怪物與其掉落物品。'}</div>
+        <div class="loot-color-key"><span class="loot-name-legend">● 傳說裝備</span><span class="loot-name-relic">● 遺物裝備</span><span class="loot-name-rare">● 極低掉率裝備</span></div>
+        <div class="text-slate-400 text-xs">僅裝備標色；傳說／遺物優先，其餘依該怪物設定基礎掉率 ≤ 0.01% 標為紫色。</div>
         ${body}
     </div>`;
 }

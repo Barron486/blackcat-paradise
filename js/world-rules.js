@@ -105,6 +105,23 @@ function gmBuildWorldCatalog() {
     return {maps:[...maps.values()],monsters:[...monsters.values()],drops:[...rows.values()]};
 }
 var gmWorldCatalogCache;
+var gmLootSourcesCache;
+function gmLootRarity(itemId, monster) {
+    const item = DB.items[itemId], special = GameLootRarity.classify(item);
+    if (special || !item || !['wpn','arm','acc'].includes(item.type) || item.isArrow) return special;
+    if (!gmWorldCatalogCache) gmWorldCatalogCache = gmBuildWorldCatalog();
+    if (!gmLootSourcesCache) {
+        gmLootSourcesCache = new Map();
+        for (const row of gmWorldCatalogCache.drops) {
+            const key = JSON.stringify([row.monster,row.itemId]);
+            if (!gmLootSourcesCache.has(key)) gmLootSourcesCache.set(key,[]);
+            gmLootSourcesCache.get(key).push(row);
+        }
+    }
+    // Use this monster's configured base rates, independent of temporary reward bonuses.
+    const rows = gmLootSourcesCache.get(JSON.stringify([monster,itemId])) || [];
+    return GameLootRarity.classify(item, Math.max(0,...rows.map(r=>gmWorld.drops[r.key]??r.baseRate)));
+}
 function gmMonsterDropHtml(name) {
     if(!gmWorldCatalogCache)gmWorldCatalogCache=gmBuildWorldCatalog();
     const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -121,7 +138,8 @@ function gmMonsterDropHtml(name) {
     }).map(r=>{
         let rate=gmDropChance(r.source,name,r.itemId,r.baseRate)*100;
         if(r.group){const total=gmWorldCatalogCache.drops.filter(x=>x.monster===name&&x.group===r.group).reduce((n,x)=>n+gmDropChance(x.source,name,x.itemId,x.baseRate),0);if(total>1)rate/=total;}
-        return '<span title="'+(gmWorld.showDropRates?escape(r.condition):'')+'">'+escape(r.itemName)+(gmWorld.showDropRates?' <b>'+Number(rate.toFixed(8))+'%</b>'+(r.condition?' <small>（'+escape(r.condition)+'）</small>':''):'')+'</span>';
+        const rarity=gmLootRarity(r.itemId,name),label=GameLootRarity.labels[rarity];
+        return '<span'+(rarity?' class="loot-name-'+rarity+'"':'')+' title="'+escape([label,gmWorld.showDropRates?r.condition:''].filter(Boolean).join(' · '))+'">'+escape(r.itemName)+(gmWorld.showDropRates?' <b>'+Number(rate.toFixed(8))+'%</b>'+(r.condition?' <small>（'+escape(r.condition)+'）</small>':''):'')+'</span>';
     }).join('、')||'（無掉落物）';
 }
 if(typeof window!=='undefined' && window.CloudStore?.boot?.worldSettings) gmSetWorld(window.CloudStore.boot.worldSettings);
