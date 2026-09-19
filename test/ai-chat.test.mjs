@@ -256,3 +256,39 @@ test('intentional silence consumes one attempt, stores usage and is idempotent w
   assert.equal(service.messages().length,0);assert.equal(ai.counts().attempts,1);assert.equal(ai.counts().sent,0);assert.equal(ai.counts().inputTokens,100);
   assert.equal(ai.state().last_error,null);
 });
+
+test('near-duplicate completions from another speaker are skipped once, billed in usage and expire after the memory window',async t=>{
+  const {ai,service,token,update,advance}=await fixture(t);update();
+  const first=ai.claim(token).job;
+  ai.complete(token,{jobId:first.id,leaseToken:first.leaseToken,text:'哈？你這招是從哪學的？'});
+  advance(90000);const second=ai.claim(token).job;
+  const body={jobId:second.id,leaseToken:second.leaseToken,text:'隱身斗篷？你這招是從哪學的？',usage:{input_tokens:70,output_tokens:20}};
+  assert.equal(ai.complete(token,body).reason,'repeated');
+  assert.equal(ai.complete(token,body).replayed,true);
+  assert.equal(service.messages().length,1);assert.equal(ai.counts().attempts,2);assert.equal(ai.counts().sent,1);assert.equal(ai.counts().inputTokens,70);
+  assert.equal(ai.state().last_error,null);
+  advance(31*60000);const next=ai.claim(token).job;
+  assert.ok(ai.complete(token,{...body,jobId:next.id,leaseToken:next.leaseToken}).id);
+});
+
+test('own dialogue memory survives a busy channel and prompts distinguish self from other characters',async t=>{
+  const {ai,service,token,update,advance,a,b,gm}=await fixture(t);update({ambientChat:false,speakers:[b.id]});
+  service.chat(gm,'chat_mage，隱身斗篷！！');const first=ai.claim(token).job;
+  ai.complete(token,{jobId:first.id,leaseToken:first.leaseToken,text:'哈？你這招是從哪學的？'});
+  advance(6*60000);
+  for(let i=0;i<85;i++)service.db.prepare('INSERT INTO chat(account_id,text,created_at) VALUES(?,?,?)').run(a.id,`頻道其他話題 ${i}`,ai.now());
+  service.db.prepare('INSERT INTO chat(account_id,text,created_at) VALUES(?,?,?)').run(gm.id,'chat_mage，裝備是要學什麼',ai.now());
+  const second=ai.claim(token).job;assert.ok(second);
+  const context=JSON.parse(second.prompt.split('\n').at(-1));
+  assert.deepEqual(context.ownRecent,['哈？你這招是從哪學的？']);assert.equal(context.recent.length,24);
+  assert.equal(context.replyTo.text,'chat_mage，裝備是要學什麼');
+  assert.match(second.prompt,/承認誤解/);assert.ok(context.recent.every(m=>m.speaker==='player'));
+});
+
+test('a copied player message is not published and the consumed reply is not regenerated',async t=>{
+ const {ai,service,token,update,advance,gm}=await fixture(t);update({ambientChat:false});
+ const text='打了一整晚都沒掉，真的快沒耐心了';service.chat(gm,text);
+ const job=ai.claim(token).job,body={jobId:job.id,leaseToken:job.leaseToken,text};
+ assert.equal(ai.complete(token,body).reason,'echoed');assert.equal(ai.complete(token,body).replayed,true);
+ assert.equal(service.messages().length,1);advance(31000);assert.equal(ai.claim(token).job,null);
+});
