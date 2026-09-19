@@ -18,6 +18,7 @@
     <link rel="stylesheet" href="css/floating-ui.css?v=v3.5.100-audit-tail">
     <link rel="stylesheet" href="css/tailwind-built.css"><!-- 🔧 預編譯 Tailwind（取代執行期 JIT tailwind.js）：只含實際用到的 class，省 407KB runtime + 移除持續掃描 DOM 的成本。置於 style.css 之後以保留原 cascade（utility 平手時勝過自訂 class，與舊 JIT 注入順序一致） -->
     <link rel="stylesheet" href="/online/status.css">
+    <link rel="stylesheet" href="/online/potion-rules.css">
 </head>
 <body class="h-screen w-screen overflow-hidden">
 
@@ -419,19 +420,27 @@
                             <input type="range" id="set-bgm-vol" min="0" max="100" value="35" step="5" class="flex-1 max-w-[150px]" oninput="try{setBgmVol(this.value)}catch(e){}" title="音樂音量">
                         </div>
                     </div>
-                    <div class="bg-slate-800 p-3 rounded-lg border border-slate-700">
-                        <div class="flex flex-col gap-2">
-                            <div class="flex justify-between items-center">
-                            <select id="set-pot" class="bg-slate-900 border border-slate-600 text-red-300 px-2 py-1 rounded text-sm w-28 outline-none" onchange="this.classList.remove('text-red-300', 'text-orange-300', 'text-white'); this.classList.add(this.value === 'potion_heal' ? 'text-red-300' : (this.value === 'potion_strong' ? 'text-orange-300' : 'text-white'));">
-                            <option value="potion_heal" class="text-red-300">紅色藥水</option>
-                            <option value="potion_strong" class="text-orange-300">橙色藥水</option>
-                            <option value="potion_ult" class="text-white">白色藥水</option>
-                        </select>
-                        <span class="text-sm">HP &lt; <input type="number" id="set-hp-pot" value="70" class="w-14 bg-slate-900 border border-slate-600 text-center text-white rounded">%</span>
-                    </div>
-                            <label class="cursor-pointer flex items-center gap-2 mt-1 border-t border-slate-700 pt-2"><input type="checkbox" id="set-auto-buy-pot" class="w-4 h-4"><span class="text-sm text-slate-300">藥水不足自動買至100</span></label>
+                    <section id="potion-rules" class="bg-slate-800 p-3 rounded-lg border border-slate-700" aria-labelledby="potion-rules-title">
+                        <h3 id="potion-rules-title">自動喝水・三條規則</h3>
+                        <div class="potion-rule">
+                            <label class="potion-rule-toggle"><input type="checkbox" id="set-pot-on" checked onchange="updateAutoPotionSettings()">規則 1</label>
+                            <select id="set-pot" aria-label="規則 1 藥水" class="text-red-300" onchange="updateAutoPotionSettings()"><option value="potion_heal">紅色藥水</option><option value="potion_strong">橙色藥水</option><option value="potion_ult">白色藥水</option></select>
+                            <label class="potion-rule-threshold">HP ≤ <input type="number" id="set-hp-pot" min="0" max="100" value="70" inputmode="numeric" aria-label="規則 1 血量百分比" onchange="updateAutoPotionSettings()">%</label>
                         </div>
-                    </div>
+                        <div class="potion-rule">
+                            <label class="potion-rule-toggle"><input type="checkbox" id="set-pot-2-on" onchange="updateAutoPotionSettings()">規則 2</label>
+                            <select id="set-pot-2" aria-label="規則 2 藥水" class="text-orange-300" onchange="updateAutoPotionSettings()"><option value="potion_heal">紅色藥水</option><option value="potion_strong" selected>橙色藥水</option><option value="potion_ult">白色藥水</option></select>
+                            <label class="potion-rule-threshold">HP ≤ <input type="number" id="set-hp-pot-2" min="0" max="100" value="50" inputmode="numeric" aria-label="規則 2 血量百分比" onchange="updateAutoPotionSettings()">%</label>
+                        </div>
+                        <div class="potion-rule">
+                            <label class="potion-rule-toggle"><input type="checkbox" id="set-pot-3-on" onchange="updateAutoPotionSettings()">規則 3</label>
+                            <select id="set-pot-3" aria-label="規則 3 藥水" class="text-white" onchange="updateAutoPotionSettings()"><option value="potion_heal">紅色藥水</option><option value="potion_strong">橙色藥水</option><option value="potion_ult" selected>白色藥水</option></select>
+                            <label class="potion-rule-threshold">HP ≤ <input type="number" id="set-hp-pot-3" min="0" max="100" value="30" inputmode="numeric" aria-label="規則 3 血量百分比" onchange="updateAutoPotionSettings()">%</label>
+                        </div>
+                        <p class="potion-rule-help">優先使用符合條件中血量門檻最低的規則；門檻相同時依規則順序。共用 1 秒冷卻，每次只喝一瓶。取消勾選或設為 0% 可停用。</p>
+                        <label class="potion-buy-toggle"><input type="checkbox" id="set-auto-buy-pot" onchange="updateAutoPotionSettings()"><span>藥水不足自動買至 100 瓶</span></label>
+                        <p class="potion-rule-help">缺藥時先嘗試補貨；未啟用補貨或金幣不足時，改用下一條符合的規則。設定會自動儲存。</p>
+                    </section>
                     
                     <div class="bg-slate-800 p-3 rounded-lg border border-slate-700">
                         <div class="text-sm text-slate-400 mb-3 border-b border-slate-700 pb-1">自動施放設定</div>

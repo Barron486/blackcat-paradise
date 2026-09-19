@@ -1434,7 +1434,7 @@ function startGame() {
 //   不還原的話：saveGame 會用「上一個角色留在畫面上的設定」重建新角色的 player.config
 //   （藥水種類/HP%、攻擊技與 MP%、治癒技與 HP%、消耗HP技能門檻、各卷軸勾選…）。
 //   於本檔求值當下擷取——index.html 的設定面板 markup 在 <script> 標籤之前，此時取到的就是 HTML 預設值。
-const CONFIG_DOM_IDS = ['set-pot', 'set-hp-pot', 'set-auto-buy-pot', 'set-mp-atk', 'sel-atk-skill', 'set-mp-heal', 'sel-heal-skill',
+const CONFIG_DOM_IDS = ['set-pot', 'set-hp-pot', 'set-pot-on', 'set-pot-2', 'set-hp-pot-2', 'set-pot-2-on', 'set-pot-3', 'set-hp-pot-3', 'set-pot-3-on', 'set-auto-buy-pot', 'set-mp-atk', 'sel-atk-skill', 'set-mp-heal', 'sel-heal-skill',
     'set-hp-skill', 'set-hp-convert', 'sel-convert-skill', 'set-haste', 'set-brave', 'set-blue', 'set-cautious',
     'set-elfcookie', 'set-poly', 'set-magicbarrier', 'set-teleport', 'set-auto-buy-arrow'];
 const CONFIG_DOM_DEFAULTS = (function () {
@@ -1448,12 +1448,7 @@ function resetConfigDomToDefaults() {
         if (!el || CONFIG_DOM_DEFAULTS[id] === undefined) return;
         if (el.type === 'checkbox') el.checked = CONFIG_DOM_DEFAULTS[id]; else el.value = CONFIG_DOM_DEFAULTS[id];
     });
-    // 藥水下拉的文字顏色由 onchange 維護，程式化賦值不會觸發 → 比照 loadGame 自行補上
-    let ps = document.getElementById('set-pot');
-    if (ps) {
-        ps.classList.remove('text-red-300', 'text-orange-300', 'text-white');
-        ps.classList.add(ps.value === 'potion_heal' ? 'text-red-300' : (ps.value === 'potion_strong' ? 'text-orange-300' : 'text-white'));
-    }
+    restoreAutoPotionRules({potionRules:readAutoPotionRules()});
     // 動態產生的法術 Buff 勾選列（上一角色的技能）：全部取消；新角色的清單稍後由 renderSkillSelects 重建
     try { document.querySelectorAll('#auto-buff-skills input[type="checkbox"]').forEach(c => { c.checked = false; }); } catch (e) {}
 }
@@ -1557,6 +1552,7 @@ function saveGame() {
     player.config = {
         setPot: document.getElementById('set-pot').value,
         setHpPot: document.getElementById('set-hp-pot').value,
+        potionRules: readAutoPotionRules(),
         setAutoBuyPot: document.getElementById('set-auto-buy-pot').checked,
         selAtkSkill: document.getElementById('sel-atk-skill').value,
         setMpAtk: document.getElementById('set-mp-atk').value,
@@ -1909,18 +1905,12 @@ function loadGame() {
         renderSkillSelects();
         renderMobs();
         
+        // 每次換角色都還原三條規則；舊單條設定只遷移至規則 1。
+        restoreAutoPotionRules(player.config||{});
         // 載入自動化設定 (如果有存過的話)
         if (player.config) {
             let c = player.config;
             
-            // 藥水設定與顏色變更
-            if (c.setPot) {
-                let potSel = document.getElementById('set-pot');
-                potSel.value = c.setPot;
-                potSel.classList.remove('text-red-300', 'text-orange-300', 'text-white');
-                potSel.classList.add(c.setPot === 'potion_heal' ? 'text-red-300' : (c.setPot === 'potion_strong' ? 'text-orange-300' : 'text-white'));
-            }
-            if (c.setHpPot) document.getElementById('set-hp-pot').value = c.setHpPot;
             if (c.setAutoBuyPot !== undefined) document.getElementById('set-auto-buy-pot').checked = c.setAutoBuyPot;
             
             // 施法設定

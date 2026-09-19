@@ -984,32 +984,68 @@ function applyTeamHot(skId, sk, dStats, caster) {
     try { if (typeof healingSpellCasterMult === 'function') _hm = Math.max(0, Number(healingSpellCasterMult(sk, caster)) || 1); } catch (e) {}
     player.hots[skId] = { skId: skId, healDice: sk.healDice, healBase: sk.healBase, valDice: sk.valDice, magicDmg: mDmg, spCoef: 1 + (3 * mDmg / 32), interval: sk.hot.interval, ticksLeft: sk.hot.ticks, cd: sk.hot.interval, skName: sk.n, msg: sk.msg, healMult: _hm };
 }
+const AUTO_POTION_DEFAULTS = [
+    {enabled:true,potion:'potion_heal',hpPercent:70},
+    {enabled:false,potion:'potion_strong',hpPercent:50},
+    {enabled:false,potion:'potion_ult',hpPercent:30}
+];
+function normalizeAutoPotionRules(config = {}) {
+    const saved=Array.isArray(config.potionRules)?config.potionRules:[{enabled:true,potion:config.setPot,hpPercent:config.setHpPot}];
+    return AUTO_POTION_DEFAULTS.map((fallback,index)=>{
+        const rule=saved[index]||{},hp=Number(rule.hpPercent??fallback.hpPercent);
+        return {enabled:typeof rule.enabled==='boolean'?rule.enabled:fallback.enabled,
+            potion:AUTO_POTION_DEFAULTS.some(r=>r.potion===rule.potion)?rule.potion:fallback.potion,
+            hpPercent:Number.isFinite(hp)?Math.max(0,Math.min(100,hp)):fallback.hpPercent};
+    });
+}
+function autoPotionRuleIds(index) {
+    const suffix=index?'-'+(index+1):'';
+    return {enabled:'set-pot'+suffix+'-on',potion:'set-pot'+suffix,hp:'set-hp-pot'+suffix};
+}
+function readAutoPotionRules() {
+    return normalizeAutoPotionRules({potionRules:AUTO_POTION_DEFAULTS.map((fallback,index)=>{
+        const ids=autoPotionRuleIds(index);
+        return {enabled:document.getElementById(ids.enabled)?.checked??fallback.enabled,
+            potion:document.getElementById(ids.potion)?.value??fallback.potion,
+            hpPercent:document.getElementById(ids.hp)?.value??fallback.hpPercent};
+    })});
+}
+function restoreAutoPotionRules(config) {
+    normalizeAutoPotionRules(config).forEach((rule,index)=>{
+        const ids=autoPotionRuleIds(index),enabled=document.getElementById(ids.enabled),select=document.getElementById(ids.potion),hp=document.getElementById(ids.hp);
+        if(enabled)enabled.checked=rule.enabled;
+        if(hp)hp.value=rule.hpPercent;
+        if(select){select.value=rule.potion;select.classList.remove('text-red-300','text-orange-300','text-white');select.classList.add(rule.potion==='potion_heal'?'text-red-300':rule.potion==='potion_strong'?'text-orange-300':'text-white');}
+    });
+}
+function updateAutoPotionSettings() {
+    restoreAutoPotionRules({potionRules:readAutoPotionRules()});
+    if(typeof _uiConfigReady!=='undefined'&&_uiConfigReady)saveGame();
+}
+function tryAutoHealingPotion(hpPct) {
+    if(!player||player.dead||player.hp<=0||player.hp>=player.mhp||player.cds.pot>0||!Number.isFinite(hpPct))return;
+    if((typeof pvpArenaPotionBlocked==='function'&&pvpArenaPotionBlocked())||inAbsBarrier())return;
+    const rules=readAutoPotionRules().map((rule,index)=>({...rule,index})).filter(rule=>rule.enabled&&rule.hpPercent>0&&hpPct<=rule.hpPercent).sort((a,b)=>a.hpPercent-b.hpPercent||a.index-b.index);
+    const tried=new Set(),autoBuy=document.getElementById('set-auto-buy-pot').checked;
+    for(const rule of rules){
+        const potId=rule.potion;if(tried.has(potId))continue;tried.add(potId);
+        let item=player.inv.find(i=>i.id===potId&&i.cnt>0);
+        if(!item&&autoBuy){
+            const needed=100,unitPrice=shopPrice(DB.items[potId].p);
+            if(Number.isFinite(unitPrice)&&unitPrice>0&&player.gold>=needed*unitPrice){
+                player.gold-=needed*unitPrice;gainItem(potId,needed,true,true);
+                logSys(`自動消耗 ${needed*unitPrice} 金幣購買了 ${needed} 瓶${DB.items[potId].n}。`);
+                item=player.inv.find(i=>i.id===potId&&i.cnt>0);
+            }
+        }
+        if(item){useItem(item.uid,true);return;}
+    }
+}
 function autoActions() {
     let hpPct = (player.hp / player.mhp) * 100;
     let mpPct = (player.mp / player.mmp) * 100;
-    
-    let potId = document.getElementById('set-pot').value;
-    let potThr = parseInt(document.getElementById('set-hp-pot').value) || 0;
-    
-    let _duelNoPot = (typeof pvpArenaPotionBlocked === 'function') && pvpArenaPotionBlocked();   // 🚫 v3.7.17 決鬥中禁治癒藥水（連「自動購買」一併跳過，免得在場上狂買卻喝不到）
-    if (!_duelNoPot && hpPct <= potThr && player.cds.pot <= 0) {
-        let item = player.inv.find(i => i.id === potId);
-        if (item) useItem(item.uid, true);
-        else if (document.getElementById('set-auto-buy-pot').checked) {
-            // 自動補貨至100瓶 (三種治癒藥水皆適用)
-            let current = player.inv.find(i => i.id === potId);
-            let count = current ? current.cnt : 0;
-            let needed = 100 - count;
-            let unitPrice = shopPrice(DB.items[potId].p);   // 攻城獲勝 8 折亦適用
-            if (needed > 0 && player.gold >= needed * unitPrice) {
-                player.gold -= needed * unitPrice;
-                gainItem(potId, needed, true, true);
-                logSys(`自動消耗 ${needed * unitPrice} 金幣購買了 ${needed} 瓶${DB.items[potId].n}。`);
-                let fresh = player.inv.find(i => i.id === potId);
-                if(fresh) useItem(fresh.uid, true);
-            }
-        }
-    }
+
+    tryAutoHealingPotion(hpPct);
     
     const buffs = [   // 🗑️ v3.5.87 刪除六筆 buyId 欄位：v3.3.15「自動購買併入自動使用」時對應 DOM id 已移除·欄位零讀取（自動補購改由缺貨自動買一瓶邏輯處理）
         { id: 'set-haste', pot: 'potion_haste', b: 'haste' },

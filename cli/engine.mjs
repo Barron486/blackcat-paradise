@@ -7,7 +7,7 @@ const ROOT = new URL('../', import.meta.url);
 const HTML = readFileSync(new URL('index.html', ROOT), 'utf8');
 const SCRIPTS = [...HTML.matchAll(/<script\b[^>]*\bsrc=["'](js\/[^"'?]+)(?:\?[^"']*)?["'][^>]*>/g)].map(m => ({name:m[1],code:readFileSync(new URL(m[1], ROOT),'utf8')}));
 const plain = value => JSON.parse(JSON.stringify(value));
-const settings = new Set(['set-pot','set-hp-pot','set-auto-buy-pot','set-mp-atk','sel-atk-skill','set-mp-heal','sel-heal-skill','set-hp-skill','set-hp-convert','sel-convert-skill','set-haste','set-brave','set-blue','set-cautious','set-elfcookie','set-poly','set-magicbarrier','set-teleport','set-auto-buy-arrow']);
+const settings = new Set(['set-pot','set-hp-pot','set-pot-on','set-pot-2','set-hp-pot-2','set-pot-2-on','set-pot-3','set-hp-pot-3','set-pot-3-on','set-auto-buy-pot','set-mp-atk','sel-atk-skill','set-mp-heal','sel-heal-skill','set-hp-skill','set-hp-convert','sel-convert-skill','set-haste','set-brave','set-blue','set-cautious','set-elfcookie','set-poly','set-magicbarrier','set-teleport','set-auto-buy-arrow']);
 const visualFunctions = ['updateUI','renderMobs','renderTabs','renderStatusEffects','renderTownNPCs','applyAreaBackground','applyElfBorder','applyDollCursor','applySherineTheme','renderLoadSelect','updateLoadInfo','updateCreateUI','updateCreationChoiceButtons','setCreationClassAnimation','stopCreationFrameSfx','playSelfFx','playHitFx','playMobFx','playSkillFx','playSfx','applyCombatFilter','initCombatLogLock','initSysLogLock','_initTabGuard','renderSummonPanel','renderPetPanel','renderMercPanel'];
 
 /** Runs the unmodified browser rules in an isolated DOM, with explicit clock ownership. */

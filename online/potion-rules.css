@@ -1,0 +1,14 @@
+#potion-rules{min-width:0;color:#e2e8f0}
+#potion-rules h3{margin:0 0 10px;font-size:15px;font-weight:700;color:#fde68a}
+#potion-rules .potion-rule{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:8px 0;padding:10px;background:#0f172acc;border:1px solid #475569;border-radius:8px}
+#potion-rules .potion-rule-toggle{grid-column:1/-1;display:flex;align-items:center;gap:8px;min-height:36px;font-weight:700;font-size:14px;cursor:pointer}
+#potion-rules input[type=checkbox]{width:22px;height:22px;flex:0 0 22px;accent-color:#d6aa58}
+#potion-rules select,#potion-rules input[type=number]{min-height:44px;min-width:0;background:#020617;border:1px solid #64748b;border-radius:6px;padding:6px;font-size:14px}
+#potion-rules select{width:100%}
+#potion-rules .potion-rule-threshold{display:flex;align-items:center;gap:4px;font-size:13px;white-space:nowrap}
+#potion-rules input[type=number]{width:58px;text-align:center;color:#fff}
+#potion-rules .potion-rule:has(.potion-rule-toggle input:not(:checked)){border-style:dashed;border-color:#334155}
+#potion-rules .potion-rule:has(.potion-rule-toggle input:not(:checked)) .potion-rule-toggle{color:#94a3b8}
+#potion-rules .potion-rule-help{margin:8px 0 0;font-size:12px;line-height:1.65;color:#94a3b8}
+#potion-rules .potion-buy-toggle{display:flex;align-items:center;gap:8px;min-height:44px;margin-top:12px;padding-top:8px;border-top:1px solid #475569;font-size:14px;cursor:pointer}
+@media(max-width:768px){#potion-rules .potion-rule-toggle{min-height:44px}}
