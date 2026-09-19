@@ -8,6 +8,7 @@ import {fullStatusBuffIds} from '../shared/full-status.js';
 import { itemGrantRules, rollWishes } from './item-rules.mjs';
 import {characterName,onlineCharacters} from './characters.mjs';
 import {PresenceService} from './presence.mjs';
+import {SaveGuard} from './save-guard.mjs';
 
 const scrypt = promisify(scryptCallback);
 const hash = s => createHash('sha256').update(s).digest('hex');
@@ -50,6 +51,7 @@ export class GameService {
     `);
     if(!this.db.prepare('PRAGMA table_info(chat)').all().some(c=>c.name==='character_name'))this.db.exec('ALTER TABLE chat ADD COLUMN character_name TEXT');
     this.presence=new PresenceService(this);
+    this.saveGuard=new SaveGuard(this);
     // Keep past character identities after deletion so exported characters cannot be cloned or restored as new ones.
     for(const row of this.db.prepare('SELECT account_id,data FROM saves').all())for(const [key,raw]of Object.entries(JSON.parse(row.data))){
       if(!SLOT.test(key))continue;
@@ -133,7 +135,7 @@ export class GameService {
   sync(user, id, revision, changes, presence = {}) {
     requireValue(Number.isSafeInteger(revision) && revision>=0, '存檔版本不正確');
     requireValue(changes && typeof changes==='object' && !Array.isArray(changes) && Object.keys(changes).length<=300, '存檔更新格式不正確');
-    return this.transaction(() => {
+    try { return this.transaction(() => {
       this.checkLease(user,id);
       const row=this.db.prepare('SELECT * FROM saves WHERE account_id=?').get(user.id);
       if (revision!==row.revision) throw new ApiError(409,'雲端存檔已有更新',{snapshot:this.bootstrap(user),effects:this.effects(user,revision)});
@@ -148,6 +150,7 @@ export class GameService {
           requireValue(doc?.p && CLASSES.includes(doc.p.cls) && Array.isArray(doc.p.inv) && doc.p.inv.length<=20000 && Number.isInteger(doc.p.lv) && doc.p.lv>=1 && doc.p.lv<=100,'角色資料格式不正確');
           if(values[key]) {
             const prior=this.catalog.unwrap(values[key]);
+            if(this.saveGuard.validate(key,prior,doc))value=this.catalog.wrap(doc);
             this.market?.guard(user,key,prior,doc);
             requireValue((prior.p._roleEpoch||prior.p.enSeed)===(doc.p._roleEpoch||doc.p.enSeed),'禁止以匯入存檔替換角色',403);
             requireValue(prior.p.cls===doc.p.cls&&prior.p.avatar===doc.p.avatar&&prior.p.enSeed===doc.p.enSeed&&!!prior.p.classicMode===!!doc.p.classicMode,'角色職業與身分不可透過存檔修改',403);
@@ -164,6 +167,7 @@ export class GameService {
               }
             }
           } else {
+            this.saveGuard.validate(key,null,doc);
             const epoch=doc.p._roleEpoch||doc.p.enSeed;
             requireValue(typeof epoch==='string'&&epoch.length>0&&epoch.length<=200,'新角色識別碼不正確');
             requireValue(!this.db.prepare('SELECT 1 FROM character_epochs WHERE epoch=?').get(epoch),'禁止複製角色或重新匯入已刪除角色',403);
@@ -186,7 +190,7 @@ export class GameService {
       this.db.prepare('UPDATE leases SET display_name=?,slot=?,map_name=? WHERE account_id=?').run(
         displayName,activeSlot,String(presence.map||'角色選擇').slice(0,60),user.id);
       return { revision:next,serverTime:Date.now(),ok:true,worldSettings:this.world?.state() };
-    });
+    }); } catch(error) { this.saveGuard.record(user,error);throw error; }
   }
   players(user) {
     this.gm(user);

@@ -130,6 +130,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
           if(route==='/api/gm/ai-chat'&&req.method==='GET')return json(res,200,aiChat.status(user));
           if(route==='/api/gm/players') return json(res,200,{players:service.players(user)});
           if(route==='/api/gm/audit') return json(res,200,{entries:service.audit(user)});
+          if(route==='/api/gm/save-security') return json(res,200,{entries:service.saveGuard.history(user)});
           if(route==='/api/gm/catalog') {
             const params=new URL(req.url,base).searchParams,q=(params.get('q')||'').toLowerCase().slice(0,80),type=params.get('type');
             const items=Object.entries(catalog.items).filter(([id,item])=>(!q||(id+' '+item.n).toLowerCase().includes(q))&&(!type||item.type===type));
@@ -155,7 +156,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
         const boot=service.bootstrap(user);
         const html=readFileSync(new URL('index.html',ROOT),'utf8').replace('</head>',
           `<script id="cloud-boot" type="application/json">${escapedJson(boot)}</script><script src="/online/bootstrap.js"></script><link rel="stylesheet" href="/online/cloud.css"><link rel="stylesheet" href="/online/mobile.css"></head>`)
-          .replace('</body>','<script type="module" src="/online/bridge.js?v=role-slot-20260919"></script><script type="module" src="/online/mobile.js"></script><script type="module" src="/online/shop.js"></script><script type="module" src="/online/market.js"></script></body>');
+          .replace('</body>','<script type="module" src="/online/bridge.js?v=save-guard-20260919"></script><script type="module" src="/online/mobile.js"></script><script type="module" src="/online/shop.js"></script><script type="module" src="/online/market.js"></script></body>');
         res.writeHead(200,{'Content-Type':MIME['.html'],'Cache-Control':'no-store'});return res.end(req.method==='HEAD'?undefined:html);
       }
       if(route==='/gm') service.gm(user);

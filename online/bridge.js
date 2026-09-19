@@ -13,7 +13,7 @@ function startOnline(){
   const status=ui.querySelector('.cloud-save');
   const syncWarning=document.createElement('div');syncWarning.id='cloud-sync-warning';syncWarning.hidden=true;
   syncWarning.innerHTML='<span role="alert"></span>';document.body.append(syncWarning);
-  let busy=false, stopped=false, offset=cloud.boot.serverTime-Date.now();
+  let busy=false, stopped=false, discardRejected=false, offset=cloud.boot.serverTime-Date.now();
   cloud.serverNow = () => Date.now() + offset;
   function activeCharacter(){return typeof _roleRuntimeActive==='function'?_roleRuntimeActive():typeof player!=='undefined'&&!!player?.cls;}
   function message(text,error=false){
@@ -96,6 +96,13 @@ function startOnline(){
       message('伺服器忙碌，稍後同步',true);
     }catch(error){
       message(error.message,true);
+      if(error.data?.saveRejected){
+        stopped=true;cloud.ready=false;if(typeof state!=='undefined')state.running=false;
+        if(typeof stopGameTimers==='function')stopGameTimers();
+        showBlock(error.message);
+        const retry=document.getElementById('cloud-block').querySelector('button');retry.textContent='重新載入雲端存檔';retry.onclick=()=>{discardRejected=true;location.reload();};
+        syncWarning.querySelector('span').textContent=error.message;
+      }
       if(error.status===401||error.status===423){stopped=true;if(typeof state!=='undefined')state.running=false;showBlock(error.message,true);}
     }finally{busy=false;}
   }
@@ -149,5 +156,5 @@ function startOnline(){
   setInterval(()=>{if(activeCharacter()&&(player._gmBuffs||player._shopBuffs)){refreshGmBuffs(player,Date.now()+offset);if(typeof calcStats==='function')calcStats();}},1000);
   setInterval(()=>{if(cloud.ready&&!stopped&&activeCharacter()&&!player.dead)saveGame();},15000);
   document.addEventListener('visibilitychange',()=>{if(document.hidden)void sync();else{void sync();void world();}});
-  window.addEventListener('beforeunload',event=>{capture();if(Object.keys(cloud.pending()).length){event.preventDefault();event.returnValue='';}});
+  window.addEventListener('beforeunload',event=>{if(discardRejected)return;capture();if(Object.keys(cloud.pending()).length){event.preventDefault();event.returnValue='';}});
 }

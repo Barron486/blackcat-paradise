@@ -116,6 +116,13 @@ async function refreshAudit(){
     title.textContent=`#${entry.seq}　${labels[entry.command.action]}　·　${entry.result.characterCount} 個角色`;
     reason.textContent=entry.command.reason;meta.textContent=`操作者 ${entry.actor} · ${scopeNames[entry.command.scope]}${entry.command.itemId?' · '+entry.command.itemId+' × '+entry.command.quantity:''}`;time.textContent=new Date(entry.at).toLocaleString('zh-TW');body.append(title,reason,meta);article.append(body,time);$('audit-list').append(article);
   }
+  const security=await api('/api/gm/save-security');$('save-security-list').replaceChildren();
+  if(!security.entries.length){const empty=document.createElement('p');empty.className='muted';empty.textContent='尚無存檔驗證拒絕紀錄。';$('save-security-list').append(empty);}
+  const reasons={forged_gm_state:'偽造 GM 狀態',forged_gm_sequence:'偽造 GM 指令序號',forged_market_sequence:'偽造交易序號',forged_gm_death:'修改 GM 死亡狀態',forged_gm_buff:'修改 GM 增益',invalid_starting_items:'新角色攜帶非初始道具',invalid_starting_progress:'新角色進度不合法',invalid_starting_stats:'新角色配點不合法',unknown_item:'未知道具',duplicate_item:'重複道具識別碼',invalid_enchantment:'強化超過上限',invalid_quantity:'道具數量不合法',invalid_panacea:'萬能藥資料不合法',invalid_gold:'金幣資料不合法',invalid_exp:'經驗資料不合法'};
+  for(const entry of security.entries){
+    const article=document.createElement('article');article.className='audit-entry';const body=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('p'),time=document.createElement('time');
+    title.textContent=`${entry.account} · 角色欄位 ${entry.slotKey.slice(-1)}`;detail.textContent=reasons[entry.code]||'角色數值不符合規則（'+entry.code+'）';time.textContent=new Date(entry.at).toLocaleString('zh-TW');body.append(title,detail);article.append(body,time);$('save-security-list').append(article);
+  }
 }
 $('audit-refresh').onclick=()=>refreshAudit().catch(e=>notify(e.message,true));
 (async()=>{try{const data=await api('/api/me');me=data.user;csrf=data.csrf;if(me.role!=='gm')throw new Error('這個帳號沒有 GM 權限');$('gm-account').textContent='♛ '+me.username;await refreshPlayers();if(typeof window.initAiChat==='function')window.initAiChat({api,notify});if(typeof window.initDiamondAdmin==='function')window.initDiamondAdmin({api,notify});if(typeof window.initWorldAdmin==='function')window.initWorldAdmin({api,notify});}catch(e){notify(e.message,true);}})();

@@ -59,7 +59,7 @@ test('stale saves cannot resurrect escrow; market effects preserve earned experi
  assert.equal(local.p.exp,42);assert.equal(local.p.gold,1019);assert.equal(local.p.inv.length,1);
  service.sync(seller,seller.lease,result.snapshot.revision,{[key]:JSON.stringify(local)});assert.equal(get(seller).exp,42);
  const forged=structuredClone(local);forged.p._marketSeq=99999;
- assert.throws(()=>service.sync(seller,seller.lease,args(seller).revision,{[key]:JSON.stringify(forged)}),e=>e.status===409);
+ assert.throws(()=>service.sync(seller,seller.lease,args(seller).revision,{[key]:JSON.stringify(forged)}),e=>e.status===403&&e.details.code==='forged_market_sequence');
 });
 test('only one buyer can complete a listing; failed purchases and cancellations roll back',async t=>{
  const {market,commerce,seller,buyer,other,args,get,list}=await fixture(t),listing=list('gold',200);

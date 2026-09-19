@@ -15,7 +15,7 @@ const {JSDOM}=createRequire(new URL('../cli/package.json',import.meta.url))('jsd
 const source=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
 const settle=()=>new Promise(r=>setImmediate(r));
 const password='character-social-test-2026!',key='lineage_idle_save_1';
-const catalog={version:'test',wrap:JSON.stringify,unwrap:JSON.parse,skills:{},items:{sword:{n:'測試劍',d:'測試武器',type:'wpn'}},world:{maps:[{id:'training',name:'新兵修練場'}],drops:[],monsters:[]}};
+const catalog={version:'test',wrap:JSON.stringify,unwrap:JSON.parse,skills:{},items:{sword:{n:'測試劍',d:'測試武器',type:'wpn'},'PRIVATE-BAG':{n:'私人背包物品',type:'item'}},world:{maps:[{id:'training',name:'新兵修練場'}],drops:[],monsters:[]}};
 const character=name=>({p:{cls:'elf',name,lv:1,hp:160,mhp:300,mp:60,mmp:90,alignmentValue:12345,eq:{wpn:{id:'sword',uid:'PRIVATE-UID',en:7,bless:true},shield:null},inv:[{id:'PRIVATE-BAG',cnt:99}],gold:1000,_roleEpoch:randomUUID()},ms:{current:'training'}});
 function seed(service,user,doc=character('角色甲')){const lease=randomUUID();service.acquireLease(user,lease);service.sync(user,lease,0,{[key]:JSON.stringify(doc)},{slot:1});doc.p.lv=37;doc.p.gold=888888;service.db.prepare('UPDATE saves SET data=? WHERE account_id=?').run(JSON.stringify({[key]:JSON.stringify(doc)}),user.id);return {lease,doc};}
 async function fixture(t,filename=':memory:'){
