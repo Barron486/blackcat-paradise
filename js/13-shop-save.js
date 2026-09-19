@@ -369,6 +369,12 @@ const ROLE_SESSION_REGISTRY_KEY = 'fb5_active_role_sessions_v1';
 const ROLE_DELETED_GUARD_KEY = 'fb5_deleted_role_guards_v1';
 const ROLE_SESSION_TTL_MS = 90000;   // ⏱️ v3.6.97 8秒→90秒：背景分頁計時器被 Chrome 節流到每分鐘一拍，8 秒會把「還開著的隱藏分頁」誤判成離線（掛機中徽章誤亮＋刪角保護空窗）；正常關頁走 pagehide/beforeunload 立即除名，不受 TTL 影響
 const _roleSessionId = 'rs_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+let _roleRuntimeSlot = null, _roleRuntimePlayer = null;
+function _roleBindRuntime(){ _roleRuntimeSlot = currentSlot; _roleRuntimePlayer = player; }
+function _roleRuntimeActive(){
+    const screen = document.getElementById('game-screen');
+    return !!(player && player.cls && _roleRuntimePlayer === player && _roleRuntimeSlot === currentSlot && screen && !screen.classList.contains('hidden'));
+}
 function _roleEpoch(){ return 're_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2); }
 function _roleFingerprint(p){
     if(!p || !p.cls) return '';
@@ -423,6 +429,7 @@ function _roleMarkDeleted(fp){
     return _roleWriteObject(ROLE_DELETED_GUARD_KEY, guards);
 }
 function _roleSaveAllowed(){
+    if(!_roleRuntimeActive()) return false;
     let fp = _roleFingerprint(player);
     if(!fp) return false;
     let guards = _roleReadObject(ROLE_DELETED_GUARD_KEY);
@@ -859,6 +866,8 @@ function loadBackToMenu(){
 function returnToCharacterSelect(){
     if(typeof player === 'undefined' || !player || !player.cls) return false;
     _flushSaveNow();   // 🗑️ v3.7.94 原本走 js/27 的 offlinePrepareCharacterSelect（存檔＋寫離線快照）；離線掛機移除後只留最終存檔
+    // The selection cursor may now move to another slot; retained runtime data must stop saving.
+    _roleRuntimeSlot = null; _roleRuntimePlayer = null;
 
     if(typeof stopGameTimers === 'function') stopGameTimers();
     if(typeof state !== 'undefined' && state) state.running = false;
@@ -1420,6 +1429,7 @@ function startGame() {
     _uiConfigReady = true;   // 🛡️ 審計#1：新角色 UI 已重設為預設（563 行）＝當下 DOM 即正確 config
     changeMap(true);
 
+    _roleBindRuntime();
     state.running = true;
     _roleSessionHeartbeat();   // 立即登記，不等待第一個 2 秒心跳，避免剛進遊戲就被另一分頁刪除
     state.ticks = 0;   // 🔧 新角色從 0 tick 開始（避免承接前一場的計時）
@@ -1524,6 +1534,7 @@ function _mercMonotonicExpGuard() {
     } catch (e) {}
 }
 function saveGame() {
+    if(!_roleRuntimeActive()) return false;
     // 死亡狀態不寫檔：避免把 player.dead=true 存進去，導致下次讀檔卡在死亡狀態而不出怪。
     // 死亡期間沒有可保存的進度，保留上一份「存活」存檔即可。
     if (player && player.dead) return false;
@@ -1959,6 +1970,7 @@ function loadGame() {
         try { if (typeof _renderAutoSellBtn === 'function') _renderAutoSellBtn(); } catch (e) {}   // 🗑️ 還原「自動賣出」按鈕點亮/變暗狀態（player.autoSellOn）
         _uiConfigReady = true;   // 🛡️ 審計#1：config→DOM 還原完成，此後 saveGame 才可用 DOM 重建 config
 
+        _roleBindRuntime();
         state.running = true;
         _roleSessionHeartbeat();   // 立即登記，不等待第一個 2 秒心跳
         // 自然恢復（每 16 秒）已由主迴圈 tick() 內的 state.ticks % 160 統一驅動，不再額外 setInterval。

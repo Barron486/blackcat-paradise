@@ -15,19 +15,20 @@ function startOnline(){
   syncWarning.innerHTML='<span role="alert"></span>';document.body.append(syncWarning);
   let busy=false, stopped=false, offset=cloud.boot.serverTime-Date.now();
   cloud.serverNow = () => Date.now() + offset;
+  function activeCharacter(){return typeof _roleRuntimeActive==='function'?_roleRuntimeActive():typeof player!=='undefined'&&!!player?.cls;}
   function message(text,error=false){
     status.textContent=text;status.title=text;status.classList.toggle('cloud-error',error);
     syncWarning.hidden=!error;
     syncWarning.querySelector('span').textContent=error?'雲端尚未同步：'+text+'。請保留此分頁，避免遺失進度。':'';
   }
   function capture(){
-    if(typeof player==='undefined'||!player?.cls||typeof saveStateJson!=='function')return;
+    if(!activeCharacter()||typeof saveStateJson!=='function')return;
     if(typeof _roleSaveAllowed==='function'&&!_roleSaveAllowed())return;
     if(player.dead&&!player._gmDead)return;
     cloud.set('lineage_idle_save_'+currentSlot,_saveWrap(saveStateJson()));
   }
   function refresh(){
-    if(typeof player==='undefined'||!player?.cls)return;
+    if(!activeCharacter())return;
     if(typeof gmApplyTeleport==='function')gmApplyTeleport();
     refreshGmBuffs(player,Date.now()+offset);
     if(player._gmDead){
@@ -48,7 +49,7 @@ function startOnline(){
     for(const effect of effects){
       const raw=cloud.get(effect.key);
       if(raw){const unwrapped=_saveUnwrap(raw);if(unwrapped.ok){const doc=JSON.parse(unwrapped.payload);if(applyEffect(doc,effect,Date.now()+offset))cloud.set(effect.key,_saveWrap(JSON.stringify(doc)));}}
-      if(typeof player!=='undefined'&&player?.cls&&effect.key==='lineage_idle_save_'+currentSlot){
+      if(activeCharacter()&&effect.key==='lineage_idle_save_'+currentSlot){
         if(applyEffect({p:player},effect,Date.now()+offset)){
           if(effect.action==='revive'){
             state.running=true;
@@ -84,7 +85,7 @@ function startOnline(){
         capture();const changes=cloud.pending();
         try{
           const result=await cloud.request('/api/sync',{lease:cloud.lease,revision:cloud.revision,changes,
-            presence:typeof player!=='undefined'&&player?.cls?{name:player.name||cloud.boot.user.username,slot:currentSlot,map:DB.maps[mapState.current]?.n||mapState.current}:{}});
+            presence:activeCharacter()?{name:player.name||cloud.boot.user.username,slot:currentSlot,map:DB.maps[mapState.current]?.n||mapState.current}:{}});
           if(typeof gmSetWorld==='function')gmSetWorld(result.worldSettings);
           cloud.ack(changes,result.revision);offset=result.serverTime-Date.now();message('雲端已同步 · '+new Date().toLocaleTimeString('zh-TW'));return;
         }catch(error){
@@ -111,7 +112,7 @@ function startOnline(){
       await cloud.request('/api/lease',{lease:cloud.lease,takeover});
       if(takeover){
         const snapshot=await cloud.request('/api/bootstrap');cloud.reset(snapshot);offset=snapshot.serverTime-Date.now();
-        if(typeof player!=='undefined'&&player?.cls&&typeof loadGame==='function')loadGame();
+        if(activeCharacter()&&typeof loadGame==='function')loadGame();
       }
       cloud.ready=true;stopped=false;document.getElementById('cloud-block')?.remove();await sync();
     }catch(error){showBlock(error.message,error.status===423);message(error.message,true);}
@@ -122,6 +123,8 @@ function startOnline(){
     const original=window[name];
     window[name]=function(...args){const result=original.apply(this,args);refresh();capture();void sync();return result;};
   }
+  const returnToSelect=window.returnToCharacterSelect;
+  if(returnToSelect)window.returnToCharacterSelect=function(...args){const result=returnToSelect.apply(this,args);if(result)void sync();return result;};
   for(const name of ['revive','reviveInPlace']){
     const original=window[name];
     window[name]=function(...args){
@@ -133,7 +136,7 @@ function startOnline(){
     };
   }
   // Cloud death persists even though the original local save intentionally skips dead characters.
-  ui.querySelector('[data-save]').onclick=async()=>{if(typeof saveGame==='function'&&player?.cls&&!player.dead)saveGame();await sync();};
+  ui.querySelector('[data-save]').onclick=async()=>{if(activeCharacter()&&!player.dead)saveGame();await sync();};
   ui.querySelector('[data-shop]').onclick=()=>cloud.showShop?.();
   ui.querySelector('[data-logout]').onclick=async()=>{
     await sync();if(Object.keys(cloud.pending()).length){message('仍有未同步進度，請完成同步後再登出',true);return;}
@@ -143,8 +146,8 @@ function startOnline(){
   startLootTicker(cloud,()=>cloud.ready&&!stopped);
   showBlock('正在載入帳號的雲端存檔…');void connect();
   setInterval(sync,3000);setInterval(world,4000);
-  setInterval(()=>{if(typeof player!=='undefined'&&(player?._gmBuffs||player?._shopBuffs)){refreshGmBuffs(player,Date.now()+offset);if(typeof calcStats==='function')calcStats();}},1000);
-  setInterval(()=>{if(cloud.ready&&!stopped&&typeof player!=='undefined'&&player?.cls&&!player.dead)saveGame();},15000);
+  setInterval(()=>{if(activeCharacter()&&(player._gmBuffs||player._shopBuffs)){refreshGmBuffs(player,Date.now()+offset);if(typeof calcStats==='function')calcStats();}},1000);
+  setInterval(()=>{if(cloud.ready&&!stopped&&activeCharacter()&&!player.dead)saveGame();},15000);
   document.addEventListener('visibilitychange',()=>{if(document.hidden)void sync();else{void sync();void world();}});
   window.addEventListener('beforeunload',event=>{capture();if(Object.keys(cloud.pending()).length){event.preventDefault();event.returnValue='';}});
 }
