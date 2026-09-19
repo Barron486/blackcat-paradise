@@ -27,6 +27,10 @@ test('server clock owns combat: rapid polls and client ticks cannot mint rewards
   const {send,advance}=await fixture(t);
   send('action',{name:'travel',params:{mapId:'training'}});
   const before=send('state').game.status;
+  assert.equal(send('state').game.battle,undefined,'CLI polling does not download unused animation history');
+  const visual=send('state',{presentation:{stream:null,seq:0}}).game.battle;
+  assert.ok(visual.stream&&visual.frames.length);
+  assert.deepEqual(send('state',{presentation:{stream:visual.stream,seq:visual.seq}}).game.battle.frames,[]);
   for(let i=0;i<20;i++)assert.equal(send('state').game.status.ticks,before.ticks);
   assert.throws(()=>send('state',{}, {ticks:100000,elapsedMs:9999999}),e=>e.status===400);
   advance(10000);const after=send('state').game.status;
