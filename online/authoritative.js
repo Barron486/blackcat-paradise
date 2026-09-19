@@ -165,6 +165,23 @@ function start(){
   window.petGearEquip=(uid,slot,itemUid)=>fire('pet',{operation:'equip',uid,slot,itemUid});window.petGearUnequip=(uid,slot)=>fire('pet',{operation:'unequip',uid,slot});window.petRevive=(uid,method)=>fire('pet',{operation:'revive',uid,method});
   for(const [fn,operation]of [['toggleAlly','toggle'],['dismissAlly','dismiss'],['refreshAllyOnce','refresh']])window[fn]=slot=>fire('mercenary',{operation,slot:Number(slot)});
   window.reviveMercenary=(slot,method)=>fire('mercenary',{operation:'revive',slot:Number(slot),method});
+  const squadPending=new Map();cloud.squadEditing=slot=>squadPending.has(String(slot));
+  for(const [fn,setting,type]of [
+    ['setAllyAtkSkill','attack','skill'],['setAllyHealSkill','heal','skill'],['setAllyConvertSkill','convert','skill'],
+    ['setAllyHealHp','heal-hp','percent'],['setAllyPotHp','potion','percent'],['setAllyHpSkill','hp-skill','percent'],['setAllyCastMp','cast-mp','percent'],['setAllyAutoBuff','auto-buff','toggle'],
+  ])window[fn]=(slot,value,enabled)=>{
+    const ally=_findAlly(slot);if(!ally)return;
+    if(type==='percent'){
+      if(typeof value==='string'&&!value.trim())return; // Keep an unfinished numeric edit until the next digit.
+      value=Number(value);if(!Number.isInteger(value)||value<0||value>100){showError(new Error('隊伍設定請輸入 0～100 的整數百分比'));return;}
+    }
+    const key=String(slot),params={slot:Number(slot),identity:ally.enSeed,setting,...(type==='toggle'?{skillId:value,value:enabled}:{value})};
+    squadPending.set(key,(squadPending.get(key)||0)+1);
+    void action('mercenary-settings',params).catch(()=>{}).finally(()=>{
+      const count=squadPending.get(key)-1;if(count)squadPending.set(key,count);else squadPending.delete(key);
+      syncSquadSettings();
+    });
+  };
   document.addEventListener('change',event=>{const el=event.target;if(!active||!el.id||!(/^(set-|sel-|auto-sk-)/.test(el.id)))return;fire('settings',{values:{[el.id]:el.type==='checkbox'?el.checked:el.value}});});
   toolbar.querySelector('[data-save]').onclick=()=>void cloud.flush().catch(()=>{});
   toolbar.querySelector('[data-shop]').onclick=()=>cloud.showShop?.();

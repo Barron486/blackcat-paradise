@@ -2646,9 +2646,45 @@ function _allyAutoBuffChips(a) {
     let chips = list.map(it => {
         let on = (typeof _mercAutoOn === 'function') ? _mercAutoOn(a, it.sid) : false;
         let name = (it.sid === 'sk_zombie' && a.eq && a.eq.shield && a.eq.shield.id === 'relic_necro_book') ? '骷髏復生' : it.n;
-        return `<label class="flex items-center gap-0.5 px-1 rounded border cursor-pointer" style="border-color:${on ? '#0891b2' : '#475569'};background:${on ? 'rgba(8,145,178,0.18)' : 'rgba(15,23,42,0.4)'};" title="自動維持 ${name}（${it.cat}）"><input type="checkbox" ${on ? 'checked' : ''} onchange="setAllyAutoBuff('${s}','${it.sid}',this.checked)" style="width:11px;height:11px;margin:0;"><span style="color:${on ? '#67e8f9' : '#94a3b8'};">${name}</span></label>`;
+        return `<label class="squad-auto-option" title="自動維持 ${name}（${it.cat}）"><input type="checkbox" data-ally-slot="${s}" data-ally-setting="auto-buff" data-skill-id="${it.sid}" aria-label="${a._allyName} 自動維持 ${name}" ${on ? 'checked' : ''} onchange="setAllyAutoBuff('${s}','${it.sid}',this.checked)"><span>${name}</span></label>`;
     }).join('');
-    return `<div class="flex flex-col gap-0.5" style="margin-top:1px;"><span class="text-cyan-400 font-bold" style="font-size:10px;">自動維持（增益／召喚／回復／淨化）</span><div class="flex flex-wrap gap-1" style="font-size:10px;line-height:1.4;">${chips}</div></div>`;
+    return `<section class="squad-config-section"><h4>自動維持</h4><div class="squad-auto-options">${chips}</div></section>`;
+}
+
+function _squadSkillField(a, kind, label, setting, method, value) {
+    return `<label class="squad-setting-field"><span>${label}</span><select data-ally-slot="${a._slot}" data-ally-setting="${setting}" aria-label="${a._allyName} ${label}" onchange="${method}('${a._slot}',this.value)">${_allySkillOptions(a,kind,value||'')}</select></label>`;
+}
+function _squadPercentField(a, label, setting, method, value, condition, hint) {
+    return `<label class="squad-setting-field"><span>${label}</span><span class="squad-percent-control"><span>${condition}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-ally-slot="${a._slot}" data-ally-setting="${setting}" aria-label="${a._allyName} ${label}" value="${value}" oninput="${method}('${a._slot}',this.value)"><span>%</span></span><small>${hint}</small></label>`;
+}
+function renderAllySettings(a) {
+    return `<section class="squad-config-card" data-ally-card="${a._slot}">
+        <header class="squad-config-heading"><strong>${a._allyName}</strong><span>Lv.${a.lv||1}</span></header>
+        <section class="squad-config-section"><h4>喝水與保護</h4><div class="squad-settings-grid">
+            ${_squadPercentField(a,'喝水門檻','potion','setAllyPotHp',allyPotHpPct(a),'HP 低於','0 = 關閉；使用隊長設定的藥水')}
+            ${_squadPercentField(a,'停止耗血技能','hp-skill','setAllyHpSkill',a._hpSkillPct??a._hpSafePct??0,'HP 低於','0 = 關閉；低血量時改用普攻')}
+        </div></section>
+        <section class="squad-config-section"><h4>攻擊</h4>
+            ${_squadSkillField(a,'atk','攻擊技能','attack','setAllyAtkSkill',a._atkSkill)}
+            ${_squadPercentField(a,'攻擊技能魔量門檻','cast-mp','setAllyCastMp',a._castMpPct??0,'MP 高於','0 = 不限制魔量比例')}
+        </section>
+        <section class="squad-config-section"><h4>治癒</h4>
+            ${_squadSkillField(a,'heal','治癒魔法','heal','setAllyHealSkill',a._healSkill)}
+            ${_squadPercentField(a,'治癒血量門檻','heal-hp','setAllyHealHp',a._healHpPct??70,'HP 低於','隊伍血量低於門檻時施放')}
+        </section>
+        <section class="squad-config-section">${_squadSkillField(a,'convert','轉換技能','convert','setAllyConvertSkill',a._convertSkill)}</section>
+        ${_allyAutoBuffChips(a)}
+    </section>`;
+}
+function syncSquadSettings() {
+    if (_squadTab !== 'skill') return;
+    for (const el of document.querySelectorAll('#squad-tab-skill [data-ally-setting]')) {
+        const a = _findAlly(el.dataset.allySlot);
+        if (!a || el === document.activeElement || window.CloudStore?.squadEditing?.(el.dataset.allySlot)) continue;
+        const fields = {attack:a._atkSkill||'',heal:a._healSkill||'',convert:a._convertSkill||'',potion:allyPotHpPct(a),'hp-skill':a._hpSkillPct??a._hpSafePct??0,'cast-mp':a._castMpPct??0,'heal-hp':a._healHpPct??70};
+        if (el.type === 'checkbox') el.checked = _mercAutoOn(a,el.dataset.skillId);
+        else if (el.value !== String(fields[el.dataset.allySetting])) el.value = String(fields[el.dataset.allySetting]);
+    }
 }
 
 function renderSquadPanel() {
@@ -2710,27 +2746,11 @@ function renderSquadPanel() {
     }
     if (sigSkill !== _squadSigSkill) {
         _squadSigSkill = sigSkill;
-        document.getElementById('squad-tab-skill').innerHTML = allies.map(a => {
-            let s = a._slot;
-            let hpPct = (a._healHpPct != null) ? a._healHpPct : 70;
-            let potPct = (a._potHpPct != null) ? a._potHpPct : ((a._hpSafePct != null) ? a._hpSafePct : 0);
-            let skillPct = (a._hpSkillPct != null) ? a._hpSkillPct : ((a._hpSafePct != null) ? a._hpSafePct : 0);
-            let mpPct = (a._castMpPct != null) ? a._castMpPct : 0;   // 🆕 v2.6.27 施法MP門檻
-            return `<div class="bg-slate-800/60 border border-slate-600 rounded p-2 flex flex-col gap-1">
-                <div class="text-sm font-bold text-amber-200">${a._allyName} <span class="text-slate-500 text-xs">Lv.${a.lv || 1}</span></div>
-                <div class="flex items-center gap-1 text-xs"><span class="text-cyan-400 font-bold shrink-0" style="width:3rem;">攻擊技能</span><select class="flex-1 min-w-0 bg-slate-900 border border-slate-600 text-cyan-300 px-1 py-1 rounded text-xs outline-none" onchange="setAllyAtkSkill('${s}', this.value)">${_allySkillOptions(a, 'atk', a._atkSkill || '')}</select><span class="shrink-0 flex items-center text-blue-300 whitespace-nowrap" title="MP％ 高於此值才施放攻擊技（0 = 不限）。">MP&gt;<input type="number" min="0" max="100" value="${mpPct}" class="w-10 bg-slate-900 border border-blue-700 text-center text-white rounded" onchange="setAllyCastMp('${s}', this.value)">%</span></div>
-                <div class="flex items-center gap-1 text-xs"><span class="text-green-400 font-bold shrink-0" style="width:3rem;">治癒魔法</span><select class="flex-1 min-w-0 bg-slate-900 border border-slate-600 text-green-300 px-1 py-1 rounded text-xs outline-none" onchange="setAllyHealSkill('${s}', this.value)">${_allySkillOptions(a, 'heal', a._healSkill || '')}</select><span class="shrink-0 flex items-center text-green-300 whitespace-nowrap" title="HP％ 低於此值才施放治癒。">HP&lt;<input type="number" min="0" max="100" value="${hpPct}" class="w-10 bg-slate-900 border border-green-700 text-center text-white rounded" onchange="setAllyHealHp('${s}', this.value)">%</span></div>
-                <div class="flex items-center gap-1 text-xs"><span class="text-purple-400 font-bold shrink-0" style="width:3rem;">轉換技能</span><select class="flex-1 min-w-0 bg-slate-900 border border-slate-600 text-purple-300 px-1 py-1 rounded text-xs outline-none" onchange="setAllyConvertSkill('${s}', this.value)">${_allySkillOptions(a, 'convert', a._convertSkill || '')}</select></div>
-                <div class="flex items-stretch gap-1 text-xs">
-                    <span class="flex-1 flex items-center justify-center gap-0.5 text-amber-400 bg-slate-900/40 border border-amber-800 rounded py-0.5" title="低於此％時，喝隊長設定的藥水回血。0 = 關閉。">HP&lt;<input type="number" min="0" max="100" value="${potPct}" class="w-10 bg-slate-900 border border-amber-700 text-center text-white rounded" onchange="setAllyPotHp('${s}', this.value)">%喝水</span>
-                    <span class="flex-1 flex items-center justify-center gap-0.5 text-rose-400 bg-slate-900/40 border border-rose-800 rounded py-0.5" title="低於此％時，暫停施放消耗 HP 的技能（龍騎士 HP 技／轉換技能／立方和諧），退回普攻。0 = 關閉。">HP&lt;<input type="number" min="0" max="100" value="${skillPct}" class="w-10 bg-slate-900 border border-rose-700 text-center text-white rounded" onchange="setAllyHpSkill('${s}', this.value)">%停技</span>
-                </div>
-                ${_allyAutoBuffChips(a)}
-            </div>`;
-        }).join('');
+        document.getElementById('squad-tab-skill').innerHTML = '<p class="squad-settings-note">調整後自動保存；重新登入或再次招募同一隊員時沿用。</p>' + allies.map(renderAllySettings).join('');
         _squadRebuilt = true;
     }
     if (_squadRebuilt) switchSquadTab(_squadTab);   // 有任一分頁重建→還原目前分頁與按鈕高亮
+    syncSquadSettings();
     // 每幀更新血/魔/經驗條（不重建 DOM）
     allies.forEach(a => {
         let s = a._slot, el;
@@ -2789,6 +2809,7 @@ function switchSquadTab(t) {
             b.style.color = on ? '#ffffff' : '#cbd5e1';
         }
     });
+    syncSquadSettings();
 }
 
 function _findAlly(slot) { return (player.allies || []).find(a => a && String(a._slot) === String(slot)); }

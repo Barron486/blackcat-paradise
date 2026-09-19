@@ -30,10 +30,16 @@ test('browser transport aborts stalled reads, bounds network waits and clears it
   w.fetch=async()=>({ok:true,json:async()=>({ok:true})});
   assert.equal((await w.CloudStore.request('/api/game',{op:'state'})).ok,true);assert.equal(cleared,3);
 });
-async function fixture(t,character={classId:'mage',name:'伺服器角色',allocation:{int:6,wis:6,con:4}}){
+async function fixture(t,character={classId:'mage',name:'伺服器角色',allocation:{int:6,wis:6,con:4}},companions=[]){
   const service=new GameService(':memory:',catalog),authority=new AuthoritativeGame(service,{autoTick:false});
   const user=await service.register('client_qa','isolated-client-password-2026'),lease=randomUUID();service.acquireLease(user,lease);
-  authority.handle(user,{lease,op:'create',slot:1,revision:0,requestId:randomUUID(),args:character});authority.drop(user.id);
+  authority.handle(user,{lease,op:'create',slot:1,revision:0,requestId:randomUUID(),args:character});
+  for(const [index,companion]of companions.entries()){
+    authority.handle(user,{lease,op:'create',slot:index+2,revision:service.bootstrap(user).revision,requestId:randomUUID(),args:companion});
+    const r=authority.runtimes.get(user.id);r.engine.run("player.lv=40;player.skills=['sk_lightarrow','sk_heal1','sk_shield','sk_mana_drain'];calcStats();");authority.commit(user,r);
+  }
+  if(companions.length)authority.handle(user,{lease,op:'select',slot:1,revision:service.bootstrap(user).revision,epoch:catalog.unwrap(service.bootstrap(user).values.lineage_idle_save_1).p._roleEpoch,requestId:randomUUID()});
+  authority.drop(user.id);
   const engine=new HeadlessGame(),w=engine.window,requests=[];t.after(()=>{engine.close();authority.close();service.close();});
   const boot=w.document.createElement('script');boot.id='cloud-boot';boot.textContent=JSON.stringify(service.bootstrap(user));w.document.body.append(boot);w.eval(source('online/bootstrap.js'));
   let loseNext=false;
@@ -202,4 +208,73 @@ test('three potion settings survive server polling, leaving and re-entering the 
   assert.equal(catalog.unwrap(service.bootstrap(user).values.lineage_idle_save_1).p.config.setHpPot,'65');
   w.returnToCharacterSelect();await w.CloudStore.flush();w.loadGame();await w.CloudStore.flush();
   assert.equal(engine.run('document.getElementById("set-hp-pot").value'),'65');
+});
+
+async function squadFixture(t){
+  const f=await fixture(t,undefined,[{classId:'mage',name:'隊員法師',allocation:{int:6,wis:6,con:4}},{classId:'mage',name:'另一位法師',allocation:{int:6,wis:6,con:4}}]);
+  for(const slot of [2,3])await f.w.CloudStore.action('mercenary',{operation:'toggle',slot});
+  f.w.renderSquadPanel();f.w.switchSquadTab('skill');
+  f.saved=()=>catalog.unwrap(f.service.bootstrap(f.user).values.lineage_idle_save_1).p;
+  f.control=(slot,setting)=>f.w.document.querySelector(`[data-ally-slot="${slot}"][data-ally-setting="${setting}"]`);
+  f.edit=(slot,setting,value)=>{
+    const el=f.control(slot,setting);assert.ok(el,`missing real squad control: ${setting}`);
+    el.value=String(value);f.engine.run(`{const el=document.querySelector(__args);(function(){${el.getAttribute(el.type==='number'?'oninput':'onchange')}}).call(el);}`,`[data-ally-slot="${slot}"][data-ally-setting="${setting}"]`);
+  };
+  return f;
+}
+
+test('squad potion input immediately persists per teammate across polls, reconnect and rehire',async t=>{
+  const f=await squadFixture(t),{w,authority,user,lose,requests}=f;
+  const originalOther=f.saved().allies.find(a=>a._slot==='3'),identity=f.saved().allies.find(a=>a._slot==='2').enSeed;
+  lose();f.edit(2,'potion',73);await w.CloudStore.flush();
+  assert.equal(f.saved().allies.find(a=>a._slot==='2')._potHpPct,73);assert.equal(f.saved().mercPrefs[identity]._potHpPct,73);
+  assert.equal(f.saved().allies.find(a=>a._slot==='3')._potHpPct,originalOther._potHpPct);
+  const edits=requests.filter(r=>r.body?.args?.name==='mercenary-settings');assert.equal(edits.length,2);assert.equal(edits[0].body.requestId,edits[1].body.requestId);
+  await w.CloudStore.flush();assert.equal(f.control(2,'potion').value,'73');
+  w.returnToCharacterSelect();await w.CloudStore.flush();authority.drop(user.id);w.loadGame();await w.CloudStore.flush();
+  assert.equal(f.control(2,'potion').value,'73');
+  await w.CloudStore.action('mercenary',{operation:'refresh',slot:2});
+  await w.CloudStore.action('mercenary',{operation:'dismiss',slot:2});await w.CloudStore.action('mercenary',{operation:'toggle',slot:2});
+  assert.equal(f.saved().allies.find(a=>a._slot==='2')._potHpPct,73);assert.equal(f.control(2,'potion').value,'73');
+  const server=authority.runtimes.get(user.id).engine;
+  const healed=server.run(`(()=>{const ally=_findAlly(2);ally.curHp=Math.floor(ally.mhp/2);ally._potCd=0;const hp=ally.curHp,count=player.inv.find(i=>i.id==='potion_heal').cnt;allyTryPotion(ally);return {beforeHp:hp,afterHp:ally.curHp,consumed:count-player.inv.find(i=>i.id==='potion_heal').cnt};})()`);
+  assert.ok(healed.afterHp>healed.beforeHp,'persisted threshold is used by server potion logic');assert.equal(healed.consumed,1);
+  authority.commit(user,authority.runtimes.get(user.id));await w.CloudStore.flush();
+  f.edit(2,'potion',0);await w.CloudStore.flush();assert.equal(f.saved().mercPrefs[identity]._potHpPct,0,'zero disables potions and is saved');
+});
+
+test('squad skills, HP/MP thresholds and auto buffs save through the actual controls',async t=>{
+  const f=await squadFixture(t),{w}=f,identity=f.saved().allies.find(a=>a._slot==='2').enSeed;
+  for(const [setting,value]of [['attack','sk_lightarrow'],['heal','sk_heal1'],['convert','sk_mana_drain'],['heal-hp',64],['hp-skill',29],['cast-mp',18]])f.edit(2,setting,value);
+  w.setAllyAutoBuff('2','sk_shield',true);await w.CloudStore.flush();
+  const pref=f.saved().mercPrefs[identity];
+  for(const [field,value]of Object.entries({_atkSkill:'sk_lightarrow',_healSkill:'sk_heal1',_convertSkill:'sk_mana_drain',_healHpPct:64,_hpSkillPct:29,_castMpPct:18}))assert.equal(pref[field],value);
+  assert.equal(pref._autoBuff.sk_shield,true);assert.equal(f.control(2,'auto-buff').checked,true);
+  w.setAllyAutoBuff('2','sk_shield',false);f.edit(2,'attack','');await w.CloudStore.flush();
+  assert.equal(f.saved().mercPrefs[identity]._autoBuff.sk_shield,false);assert.equal(f.saved().mercPrefs[identity]._atkSkill,'');
+});
+
+test('a slow squad save never overwrites a later numeric edit or replaces the focused input',async t=>{
+  const f=await squadFixture(t),{w}=f,original=w.CloudStore.request;
+  let release,first=true;
+  w.CloudStore.request=async(url,body,options)=>{
+    const result=await original(url,body,options);
+    if(first&&body?.args?.name==='mercenary-settings'){first=false;await new Promise(resolve=>{release=resolve;});}
+    return result;
+  };
+  const input=f.control(2,'potion');input.focus();f.edit(2,'potion',4);await settle();
+  f.edit(2,'potion',48);input.blur();w.renderSquadPanel();
+  assert.equal(f.control(2,'potion'),input);assert.equal(input.value,'48');assert.equal(typeof release,'function');
+  release();await w.CloudStore.flush();assert.equal(input.value,'48');assert.equal(f.saved().allies.find(a=>a._slot==='2')._potHpPct,48);
+  assert.equal(w.CloudStore.squadEditing('2'),false);
+});
+
+test('server rejects forged squad values, unknown skills, nonmembers and replaced identities',async t=>{
+  const f=await squadFixture(t),{w}=f,identity=f.saved().allies.find(a=>a._slot==='2').enSeed;
+  const original=f.saved().allies.find(a=>a._slot==='2');
+  for(const overrides of [{value:-1},{value:101},{value:1.5},{value:'80'},{slot:8},{slot:1},{identity:'replaced-role'},{setting:'gold',value:999999},{value:80,gold:999999},{setting:'attack',value:'sk_hell_fire'},{setting:'heal',value:'sk_lightarrow'},{setting:'auto-buff',skillId:'sk_lightarrow',value:true},{setting:'auto-buff',skillId:'sk_shield',value:'true'}]){
+    await assert.rejects(w.CloudStore.action('mercenary-settings',{slot:2,identity,setting:'potion',value:80,...overrides}),e=>e.status===400);
+  }
+  await w.CloudStore.flush();assert.equal(f.saved().allies.find(a=>a._slot==='2')._potHpPct,original._potHpPct);
+  assert.equal(w.CloudStore.squadEditing('2'),false);
 });

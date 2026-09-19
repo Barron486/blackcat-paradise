@@ -114,6 +114,28 @@ export function extraAction(game,name,a){
       const confirm=game.window.confirm;game.window.confirm=()=>true;
       try{run(({toggle:'toggleAlly(__args.slot);',dismiss:'dismissAlly(__args.slot);',refresh:'refreshAllyOnce(__args.slot);',revive:'reviveMercenary(__args.slot,__args.method);'})[a.operation]);}finally{game.window.confirm=confirm;}break;
     }
+    case 'mercenary-settings':{
+      keys(a,['slot','identity','setting','value','skillId']);integer(a.slot,1,8);id(a.identity);
+      const rules={attack:['setAllyAtkSkill','atk'],heal:['setAllyHealSkill','heal'],convert:['setAllyConvertSkill','convert'],
+        'heal-hp':['setAllyHealHp'],'potion':['setAllyPotHp'],'hp-skill':['setAllyHpSkill'],'cast-mp':['setAllyCastMp'],'auto-buff':['setAllyAutoBuff']};
+      if(!Object.hasOwn(rules,a.setting))throw new Error('不支援的隊伍設定');
+      run(`{const ally=_findAlly(__args.slot);if(!ally)throw new Error('該角色目前不在隊伍中');
+        if(ally.enSeed!==__args.identity||_slotCharEnSeed(__args.slot)!==__args.identity)throw new Error('隊員資料已變更，請重新開啟隊伍設定');}`);
+      const [method,kind]=rules[a.setting];
+      if(a.setting==='auto-buff'){
+        id(a.skillId);if(typeof a.value!=='boolean')throw new Error('勾選欄位不正確');
+        if(!run('allyAutoCastableSkills(_findAlly(__args.slot)).some(skill=>skill.sid===__args.skillId)'))throw new Error('隊員無法自動維持此技能');
+      }else{
+        if(a.skillId!==undefined)throw new Error('此設定不接受技能識別碼');
+        if(kind){
+          if(typeof a.value!=='string'||a.value.length>160)throw new Error('技能選項不正確');
+          const allowed=run(`(()=>{const select=document.createElement('select');select.innerHTML=_allySkillOptions(_findAlly(__args.slot),__args.kind,'');return [...select.options].some(option=>option.value===__args.value);})()`,{...a,kind});
+          if(!allowed)throw new Error('隊員尚未學會此類技能或屬性不符');
+        }else integer(a.value,0,100);
+      }
+      run(a.setting==='auto-buff'?'setAllyAutoBuff(__args.slot,__args.skillId,__args.value);':'window[__args.method](__args.slot,__args.value);',{...a,method});
+      run('snapshotMercPrefs(_findAlly(__args.slot));');break;
+    }
     case 'auto-sell':{
       keys(a,['rules','enabled','global']);if(typeof a.enabled!=='boolean'||typeof a.global!=='boolean')throw new Error('設定不正確');
       const r=a.rules;if(!r||typeof r!=='object'||Array.isArray(r))throw new Error('規則不正確');

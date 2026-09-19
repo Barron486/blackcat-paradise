@@ -268,6 +268,26 @@
         #squad-panel { min-height: 0; }
         #squad-body { min-height: 0; }
         #squad-tab-team, #squad-tab-skill { min-height: 0; max-height: 46vh; overflow-y: auto; }
+        #squad-panel, #squad-body, #squad-tab-skill { min-width: 0; }
+        #squad-tab-skill { scrollbar-gutter: stable; }
+        #squad-body > div:first-child > button { min-height: 44px; }
+        .squad-settings-note { margin: 0 0 4px; color: #b7c2d3; font-size: 13px; line-height: 1.6; }
+        .squad-config-card { min-width: 0; padding: 12px; border: 1px solid #65523e; border-radius: 8px; background: #161d29; }
+        .squad-config-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 12px; color: #f3d38e; overflow-wrap: anywhere; }
+        .squad-config-heading strong { min-width: 0; font-size: 16px; }
+        .squad-config-heading > span { color: #afbbcf; font-size: 13px; white-space: nowrap; }
+        .squad-config-section { display: grid; gap: 10px; min-width: 0; padding: 12px 0; border-top: 1px solid #344052; }
+        .squad-config-section h4 { margin: 0; color: #e3c187; font-size: 14px; font-weight: 700; }
+        .squad-settings-grid, .squad-auto-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 12px; min-width: 0; }
+        .squad-setting-field { display: grid; gap: 6px; min-width: 0; color: #d7dfec; font-size: 14px; line-height: 1.5; }
+        .squad-setting-field small { color: #a9b7ca; font-size: 12px; overflow-wrap: anywhere; }
+        .squad-setting-field select, .squad-setting-field input { width: 100%; min-width: 0; min-height: 44px; padding: 8px; border: 1px solid #627087; border-radius: 5px; background: #0e1520; color: #f0f4fa; font-size: 16px; box-sizing: border-box; }
+        .squad-setting-field :is(select,input):focus-visible, .squad-auto-option input:focus-visible { outline: 2px solid #e4bb6b; outline-offset: 2px; }
+        .squad-percent-control { display: grid; grid-template-columns: auto minmax(52px,1fr) auto; align-items: center; gap: 8px; min-width: 0; }
+        .squad-percent-control input { text-align: center; }
+        .squad-auto-option { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 44px; padding: 8px; border: 1px solid #475569; border-radius: 5px; color: #b9c5d7; font-size: 14px; line-height: 1.5; cursor: pointer; overflow-wrap: anywhere; }
+        .squad-auto-option:has(input:checked) { background: #143340; border-color: #328a9d; color: #a5e9f3; }
+        .squad-auto-option input { flex: 0 0 20px; width: 20px; height: 20px; margin: 0; accent-color: #35a4b5; }
         .tab-bar .btn { background: linear-gradient(180deg, #352b28 0%, #211d20 48%, #161519 100%); border-color: #765036; color: #e5e1dc; text-shadow: 1px 1px 0 #000; }
         .tab-bar .btn:hover:not(:disabled) { background: linear-gradient(180deg, #49372f 0%, #2d2526 52%, #1b181b 100%); border-color:#a8784d; }
         .tab-bar .btn.active { background: linear-gradient(180deg, #6e4932 0%, #3d2b25 52%, #211a1b 100%); border-color: #c0935d; color:#fff0d8; box-shadow:inset 0 0 7px rgba(210,155,88,.18); }
