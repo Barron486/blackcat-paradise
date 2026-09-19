@@ -111,6 +111,40 @@ test('GM effects survive later combat; reconnect preserves HP, death, encounter 
   assert.throws(()=>send('create',{classId:'elf',name:'覆蓋',allocation:{dex:8}}),e=>e.status===409);
   assert.throws(()=>send('action',{name:'use',params:{uid:'fake'}},{slot:2}),e=>e.status===409);
 });
+test('Isba voyage charges on the server once, survives reconnect and reaches the island through its portal',async t=>{
+  const {send,authority,service,user,lease,advance}=await fixture(t);
+  send('action',{name:'travel',params:{mapId:'town_heine'}});
+  let r=authority.runtimes.get(user.id);r.engine.run('player.gold=200000;');authority.commit(user,r);
+  const initial=send('state'),command={lease,op:'action',slot:1,epoch:initial.game.epoch,revision:initial.snapshot.revision,requestId:randomUUID(),args:{name:'npc-command',params:{npcId:'npc_isba',method:'startOblivion',params:[],fields:{}}}};
+  const result=authority.handle(user,command);assert.equal(result.game.status.map,'oblivion_travel');assert.equal(result.game.status.gold,100000);
+  assert.equal(authority.handle(user,command).replayed,true);assert.equal(authority.handle(user,command).game.status.gold,100000);
+  authority.drop(user.id);const reloaded=send('select',{}, {epoch:initial.game.epoch});
+  assert.equal(reloaded.game.status.map,'oblivion_travel');r=authority.runtimes.get(user.id);assert.equal(r.engine.run('state.oblivion'),'travel');
+  r.engine.run("player.inv.push({id:'scroll_teleport',uid:'voyage-scroll',cnt:2,en:0});");authority.commit(user,r);
+  const teleport=send('action',{name:'teleport',params:{}});assert.equal(teleport.game.status.map,'oblivion_travel');assert.ok(teleport.game.logs.some(l=>/迷霧壓制了傳送/.test(l.message)));
+  assert.equal(teleport.game.status.inventory.find(i=>i.uid==='voyage-scroll').cnt,2);
+  r.engine.run("mapState.mobs[0]={...DB.mobs.obli_portal,id:'obli_portal',uid:'test-portal',curHp:0};killMob(0);settleDeadMobs();");authority.commit(user,r);
+  const island=send('state');assert.equal(island.game.status.map,'oblivion_island');assert.equal(r.engine.run('state.oblivion'),'island');
+  advance(1000);assert.equal(send('state').game.status.map,'oblivion_island');
+  send('action',{name:'return-town',params:{}});assert.equal(r.engine.run('state.oblivion'),null);
+});
+
+test('Isba validates location and preserves gold when fare, status or GM map restrictions prevent sailing',async t=>{
+  const {send,authority,service,user,gm}=await fixture(t);
+  const sail=()=>send('action',{name:'npc-command',params:{npcId:'npc_isba',method:'startOblivion',params:[],fields:{}}});
+  const initial=send('state');assert.throws(sail,e=>e.status===400&&/此地沒有/.test(e.message));
+  send('select',{}, {epoch:initial.game.epoch});send('action',{name:'travel',params:{mapId:'town_heine'}});
+  let blocked=sail();assert.equal(blocked.game.status.gold,1000);assert.equal(blocked.game.status.map,'town_heine');assert.ok(blocked.game.logs.some(l=>/金幣不足/.test(l.message)));
+  const r=authority.runtimes.get(user.id);r.engine.run('player.gold=200000;player.statuses.stun=10;');authority.commit(user,r);
+  blocked=sail();assert.equal(blocked.game.status.gold,200000);assert.equal(blocked.game.status.map,'town_heine');
+  r.engine.run('player.statuses.stun=0;');authority.commit(user,r);
+  for(const rule of [{open:false,minLevel:1},{open:true,minLevel:30}]){
+    service.world.update(gm,{type:'map',mapId:'oblivion_travel',...rule,revision:service.world.state().revision,requestId:randomUUID(),reason:'港口限制驗證'});
+    blocked=sail();assert.equal(blocked.game.status.gold,200000);assert.equal(blocked.game.status.map,'town_heine');
+  }
+  assert.throws(()=>send('action',{name:'travel',params:{mapId:'oblivion_island'}}),e=>e.status===400);
+});
+
 test('server-created roles cannot inherit browser inventory or a deleted epoch',async t=>{
   const {send,service,user}=await fixture(t),old=send('state');
   send('leave');send('create',{classId:'elf',name:'第二角色',allocation:{dex:8}},{slot:2});

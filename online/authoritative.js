@@ -32,6 +32,7 @@ function start(){
     if(initial){currentSlot=active.slot;const travel=window.changeMap;try{window.changeMap=()=>{};load();}finally{window.changeMap=travel;}initCombatLogLock();initSysLogLock();applyCombatFilter();_initTabGuard();}
     const draft=!initial&&_asBackup?{autoSellRules:player.autoSellRules,autoSellOn:player.autoSellOn,autoSellGlobal:player.autoSellGlobal}:null;
     player=view.p;mapState=view.ms;state.ticks=view.ticks;state.running=!player.dead;
+    state.oblivion=(view._serverState||docAt(active.slot)?._serverState)?.oblivion||null;
     if(draft)Object.assign(player,draft);
     calcStats(); // Restore derived helpers (e.g. MP costs), which are not JSON values.
     _roleBindRuntime();

@@ -144,6 +144,7 @@ export class AuthoritativeGame {
       }else if(op==='pause'||op==='resume'){r.paused=op==='pause';r.anchor=this.clock();
       }else if(op==='action'){
         requireValue(typeof args.name==='string'&&args.params&&typeof args.params==='object'&&!Array.isArray(args.params),'操作格式不正確');
+        r.engine.setWorldSettings(this.service.world?.state());
         r.engine.action(args.name,args.params);this.commit(user,r);
       }
       this.db.prepare('INSERT INTO game_requests VALUES(?,?,?,?)').run(user.id,requestId,payloadHash,Date.now());

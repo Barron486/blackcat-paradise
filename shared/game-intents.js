@@ -3,7 +3,7 @@
 export const npcIntents=Object.freeze([
   'ismaelExchange','ismaelMakeCursed','ismaelCursedExchange','ismaelBuyAcc',
   'doBianAttr','doBianUncurse','toggleSherineWorld','toggleSherineMad',
-  'hanAcceptQuest','hanSubmitProof','chooseMastery','startPrideClimb','sanctuaryEnter',
+  'hanAcceptQuest','hanSubmitProof','chooseMastery','startPrideClimb','sanctuaryEnter','startOblivion',
   'arkataBuyback','arkataRedeemItem','trial50Accept','trial50TurnIn','trial50Complete',
   'doIoExchange','doLachesisSplit','doYuriaExchange','shimizheEx','doYuriaHatinExchange','doRedExchange',
   'doDemonKingCraft','doLumielCraft','doMysticWandCraft','doSlayerCraft',

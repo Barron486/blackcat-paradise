@@ -7,6 +7,7 @@ import {AuthoritativeGame} from '../server/authoritative-game.mjs';
 import {loadCatalog} from '../server/catalog.mjs';
 import {HeadlessGame} from '../cli/engine.mjs';
 import {BattleTimeline} from '../online/battle-timeline.js';
+import {npcIntents} from '../shared/game-intents.js';
 import {JSDOM} from 'jsdom';
 
 const source=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
@@ -46,7 +47,7 @@ async function fixture(t){
     }
     throw new Error('Unexpected route '+url);
   };
-  w.startWorldChat=()=>({refresh:()=>{}});w.startLootTicker=()=>{};w.npcIntents=[];
+  w.startWorldChat=()=>({refresh:()=>{}});w.startLootTicker=()=>{};w.npcIntents=npcIntents;
   w.BattleTimeline=BattleTimeline;
   w.eval(source('online/battle-playback.js').replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,''));
   w.eval(source('online/battle-feed.js').replace(/^export /gm,''));
@@ -56,6 +57,25 @@ async function fixture(t){
   w.loadGame();await w.CloudStore.flush();
   return {w,engine,service,user,authority,requests,lose:()=>{loseNext=true;}};
 }
+test('harbour button starts the server voyage once and keeps island controls correct after polling and reloading',async t=>{
+  const {w,engine,authority,user,requests,lose}=await fixture(t),r=authority.runtimes.get(user.id);
+  r.engine.action('travel',{mapId:'town_heine'});r.engine.run('player.gold=200000;');authority.commit(user,r);
+  await w.CloudStore.flush();w.interactNPC('npc_isba','town_heine');
+  assert.match(w.document.getElementById('interaction-content').textContent,/前往遺忘之島/);
+  lose();w.startOblivion();assert.equal(engine.run('player.gold'),200000,'browser does not deduct the fare locally');
+  await w.CloudStore.flush();
+  const commands=requests.filter(r=>r.body?.args?.params?.method==='startOblivion');assert.equal(commands.length,2);
+  assert.equal(commands[0].body.requestId,commands[1].body.requestId);
+  assert.equal(engine.run('mapState.current'),'oblivion_travel');assert.equal(engine.run('player.gold'),100000);assert.equal(engine.run('state.oblivion'),'travel');
+  assert.equal(w.document.getElementById('pride-floor-indicator').textContent,'遺忘之島途中');
+  assert.ok(w.document.getElementById('map-category').classList.contains('hidden'));
+  await w.CloudStore.flush();assert.equal(engine.run('mapState.current'),'oblivion_travel');
+  engine.run('document.getElementById("game-screen").classList.add("hidden");');w.loadGame();await w.CloudStore.flush();
+  assert.equal(engine.run('state.oblivion'),'travel');assert.equal(engine.run('player.gold'),100000);
+  w.returnToTown();await w.CloudStore.flush();assert.equal(engine.run('state.oblivion'),null);
+  assert.equal(w.document.getElementById('map-category').classList.contains('hidden'),false);
+});
+
 test('web renderer never uploads tampered values or runs local combat; MP helpers survive snapshots',async t=>{
   const {w,engine,service,user,requests}=await fixture(t);
   engine.run('player.gold=99999999;player.lv=99;state.ticks=9999999;tick();');
