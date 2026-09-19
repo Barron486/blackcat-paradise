@@ -61,7 +61,16 @@ export function extraAction(game,name,a){
       keys(a,['index','uid']);if(a.uid!==undefined)id(a.uid);else integer(a.index,0,9);
       run(`{const index=__args.uid!==undefined?mapState.mobs.findIndex(m=>m&&String(m.uid)===__args.uid):__args.index;const mob=mapState.mobs[index];if(!mob||mob._dead||mob.curHp<=0)throw new Error('目標已離場，請選擇目前的怪物');mapState.targetIdx=index;}`);break;
     case 'bonus':keys(a,['stat']);stat(a.stat);run('adjBonusStat(__args.stat);');break;
-    case 'element':keys(a,['element']);if(!['fire','water','wind','earth'].includes(a.element))throw new Error('屬性不正確');run(`if(player.cls!=='elf'||!DB.towns[mapState.current])throw new Error('請回村選擇妖精屬性');chooseElfElement(__args.element);`);break;
+    case 'element':{
+      keys(a,['element']);if(!['fire','water','wind','earth'].includes(a.element))throw new Error('屬性不正確');
+      run(`if(player.cls!=='elf')throw new Error('只有妖精能夠選擇屬性');
+        if(!DB.towns[mapState.current]?.npcs?.some(n=>n.id==='npc_elion'))throw new Error('請前往妖精森林與艾莉溫對話');
+        if(player.lv<30)throw new Error('需要達到 Lv 30 才能選擇屬性');
+        if(player.elfEle&&player.elfEle!==__args.element&&player.gold<ELF_SWITCH_COST)throw new Error('金幣不足，無法轉換屬性');`);
+      // The player confirms in the browser; a headless dialog must not cancel the intent.
+      const confirm=game.window.confirm;game.window.confirm=()=>true;
+      try{run('chooseElfElement(__args.element);');}finally{game.window.confirm=confirm;}break;
+    }
     case 'respec':{
       keys(a,['allocation']);if(!a.allocation||Object.keys(a.allocation).length!==6)throw new Error('配點不完整');
       for(const [s,v]of Object.entries(a.allocation)){stat(s);integer(v,0,60);}

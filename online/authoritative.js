@@ -128,13 +128,26 @@ function start(){
   window.runQuickJunk=type=>fire('quick-junk',{type,uids:Object.keys(quickJunk[type].sel).filter(k=>quickJunk[type].sel[k])});
   window.runQuickEnhance=type=>fire('quick-enhance',{type,uids:Object.keys(quickEnh[type].sel).filter(k=>quickEnh[type].sel[k]),goal:Number(document.getElementById('qe-target-'+type)?.value)||quickEnh[type].target,blessed:!!quickEnh[type].useBless});
   window.manualCast=skillId=>fire('cast',{skillId});window.castSkill=skillId=>{fire('cast',{skillId});return true;};
-  window.adjBonusStat=stat=>fire('bonus',{stat});window.chooseElfElement=element=>fire('element',{element});
+  window.adjBonusStat=stat=>fire('bonus',{stat});
+  window.chooseElfElement=element=>{
+    if(!Object.hasOwn(ELF_ELE,element)||player.elfEle===element)return;
+    if(player.elfEle&&!confirm(`確定花費 ${ELF_SWITCH_COST.toLocaleString()} 金幣將屬性轉換為「${ELF_ELE[element].name}」？`))return;
+    void action('element',{element}).then(()=>{
+      applyElfBorder();renderSkillSelects();
+      if(npcId==='npc_elion'&&mapState.current==='town_elf')renderElionUI(document.getElementById('interaction-content'));
+    }).catch(()=>{});
+  };
   const originalInteract=window.interactNPC;window.interactNPC=(id,town)=>{npcId=id;return originalInteract(id,town);};
   for(const method of npcIntents)window[method]=(...params)=>{
     const fields={};for(const el of document.querySelectorAll('#interaction-content input[id],#interaction-content select[id]'))if(!el.disabled&&!el.readOnly&&['number','checkbox','select-one'].includes(el.type))fields[el.id]=el.type==='checkbox'?el.checked:el.value;
     void action('npc-command',{npcId,method,params,fields}).then(()=>{if(DB.towns[mapState.current])originalInteract(npcId,mapState.current);}).catch(()=>{});
   };
-  window.buyItem=(itemId,qty)=>fire('shop',{itemId,qty,npcId});
+  window.buyItem=(itemId,qty=1)=>{
+    // Quantity inputs return strings; skillbook buttons omit the single-item quantity.
+    const quantity=typeof qty==='string'?Number(qty):qty;
+    if(!Number.isInteger(quantity)||quantity<1||quantity>10000){showError(new Error('請輸入 1～10000 的整數購買數量'));return;}
+    fire('shop',{itemId,qty:quantity,npcId});
+  };
   window.doCraft=(id,index)=>fire('craft',{npcId:id,index,qty:Math.max(1,Number(document.getElementById(`craft-qty-${id}-${index}`)?.value)||1)});
   window.executeEnhance=(scrollUid,uid,equipped)=>fire('enhance',{uid,equipped:!!equipped,scrollId:player.inv.find(i=>i.uid===scrollUid)?.id});
   window.doEnhance=(uid,equipped=true)=>fire('enhance',{uid,equipped,scrollId:activeScroll?.id});

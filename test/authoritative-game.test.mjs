@@ -14,13 +14,13 @@ import {CommerceService} from '../server/commerce.mjs';
 import {MarketService} from '../server/market.mjs';
 
 const catalog=loadCatalog(new URL('../',import.meta.url)),password='server-authority-test-2026!';
-async function fixture(t){
+async function fixture(t,character={classId:'knight',name:'伺服器騎士',allocation:{str:2,con:6}}){
   const service=new GameService(':memory:',catalog);new WorldSettingsService(service);new LootBroadcastService(service);
   let now=0;const authority=new AuthoritativeGame(service,{clock:()=>now,idleMs:30000,autoTick:false});t.after(()=>{authority.close();service.close();});
   const gm=await service.register('authority_gm',password,{initialGm:true}),user=await service.register('authority_player',password),lease=randomUUID();service.acquireLease(user,lease);
   let result;
   const send=(op,args={},extra={})=>{const b={lease,op,args,...(op==='state'?{}:{slot:1,epoch:result?.game?.epoch,revision:service.bootstrap(user).revision,requestId:randomUUID()}),...extra};result=authority.handle(user,b);return result;};
-  send('create',{classId:'knight',name:'伺服器騎士',allocation:{str:2,con:6}});
+  send('create',character);
   return {service,authority,user,gm,lease,send,advance:ms=>now+=ms};
 }
 test('server clock owns combat: rapid polls and client ticks cannot mint rewards',async t=>{
@@ -143,6 +143,26 @@ test('Isba validates location and preserves gold when fare, status or GM map res
     blocked=sail();assert.equal(blocked.game.status.gold,200000);assert.equal(blocked.game.status.map,'town_heine');
   }
   assert.throws(()=>send('action',{name:'travel',params:{mapId:'oblivion_island'}}),e=>e.status===400);
+});
+
+test('element conversion enforces Elion location, level, profession and funds on the server',async t=>{
+  const {send,authority,user}=await fixture(t,{classId:'elf',name:'屬性測試妖精',allocation:{dex:8}});
+  const change=element=>send('action',{name:'element',params:{element}});
+  send('action',{name:'travel',params:{mapId:'town_elf'}});
+  assert.throws(()=>change('wind'),/Lv 30/);
+  let r=authority.runtimes.get(user.id);r.engine.run('player.lv=30;player.gold=500000;');authority.commit(user,r);
+  change('wind');assert.equal(r.engine.snapshot().p.gold,500000);assert.equal(r.engine.snapshot().p.elfEle,'wind');
+  change('water');assert.equal(r.engine.snapshot().p.gold,0);assert.equal(r.engine.snapshot().p.elfEle,'water');
+  change('water');assert.equal(r.engine.snapshot().p.gold,0,'selecting the current element does not charge');
+  assert.throws(()=>change('fire'),/金幣不足/);
+  assert.throws(()=>change('unknown'),/屬性不正確/);
+  r=authority.runtimes.get(user.id);r.engine.run('player.gold=500000;');authority.commit(user,r);
+  send('action',{name:'travel',params:{mapId:'town_talking'}});
+  assert.throws(()=>change('earth'),/艾莉溫/);
+  send('action',{name:'travel',params:{mapId:'town_elf'}});
+  r=authority.runtimes.get(user.id);r.engine.run("player.cls='mage';");authority.commit(user,r);
+  assert.throws(()=>change('earth'),/只有妖精/);
+  const saved=send('state').game.view.p;assert.equal(saved.gold,500000);assert.equal(saved.elfEle,'water');
 });
 
 test('server-created roles cannot inherit browser inventory or a deleted epoch',async t=>{

@@ -30,10 +30,10 @@ test('browser transport aborts stalled reads, bounds network waits and clears it
   w.fetch=async()=>({ok:true,json:async()=>({ok:true})});
   assert.equal((await w.CloudStore.request('/api/game',{op:'state'})).ok,true);assert.equal(cleared,3);
 });
-async function fixture(t){
+async function fixture(t,character={classId:'mage',name:'伺服器角色',allocation:{int:6,wis:6,con:4}}){
   const service=new GameService(':memory:',catalog),authority=new AuthoritativeGame(service,{autoTick:false});
   const user=await service.register('client_qa','isolated-client-password-2026'),lease=randomUUID();service.acquireLease(user,lease);
-  authority.handle(user,{lease,op:'create',slot:1,revision:0,requestId:randomUUID(),args:{classId:'mage',name:'伺服器角色',allocation:{int:6,wis:6,con:4}}});authority.drop(user.id);
+  authority.handle(user,{lease,op:'create',slot:1,revision:0,requestId:randomUUID(),args:character});authority.drop(user.id);
   const engine=new HeadlessGame(),w=engine.window,requests=[];t.after(()=>{engine.close();authority.close();service.close();});
   const boot=w.document.createElement('script');boot.id='cloud-boot';boot.textContent=JSON.stringify(service.bootstrap(user));w.document.body.append(boot);w.eval(source('online/bootstrap.js'));
   let loseNext=false;
@@ -87,14 +87,82 @@ test('web renderer never uploads tampered values or runs local combat; MP helper
 });
 test('web retries one server-issued purchase and loading a battle never sends an implicit home teleport',async t=>{
   const {w,engine,authority,user,requests,lose}=await fixture(t);
-  const npc=authority.runtimes.get(user.id).engine.catalog().towns.town_talking.npcs.find(n=>n.type==='shop');
-  lose();await w.CloudStore.action('shop',{npcId:npc.id,itemId:'potion_heal',qty:1});
+  const server=authority.runtimes.get(user.id).engine,npc=server.catalog().towns.town_talking.npcs.find(n=>n.type==='shop');
+  const beforeBuy=server.snapshot().p,price=server.shopInventory(npc.id).find(i=>i.id==='potion_heal').price;
+  const count=p=>p.inv.filter(i=>i.id==='potion_heal').reduce((n,i)=>n+i.cnt,0);
+  w.interactNPC(npc.id,'town_talking');
+  w.document.getElementById('shop-qty-potion_heal').value='3';
+  const buy=w.document.getElementById('shop-qty-potion_heal').parentElement.querySelector('button');
+  lose();engine.run(buy.getAttribute('onclick'));await w.CloudStore.flush();
   const buys=requests.filter(r=>r.body?.args?.name==='shop');assert.equal(buys.length,2);assert.equal(buys[0].body.requestId,buys[1].body.requestId);
+  assert.equal(buys[0].body.args.params.qty,3);
+  assert.equal(server.snapshot().p.gold,beforeBuy.gold-price*3);assert.equal(count(server.snapshot().p),count(beforeBuy)+3);
+  assert.equal(engine.run('player.gold'),beforeBuy.gold-price*3);
   await w.CloudStore.action('travel',{mapId:'training'});const before=requests.length;
   // Re-entering the selected character exercises the original loader's changeMap(true).
   engine.run('document.getElementById("game-screen").classList.add("hidden");');w.loadGame();await w.CloudStore.flush();
   assert.equal(engine.run('mapState.current'),'training');
   assert.ok(!requests.slice(before).some(r=>r.body?.args?.name==='travel'));
+});
+
+test('shop buttons buy arrow bundles and a single skillbook with server-calculated prices',async t=>{
+  const {w,engine,authority,user,requests}=await fixture(t),r=authority.runtimes.get(user.id),server=r.engine;
+  server.run('player.gold=1000000;');authority.commit(user,r);await w.CloudStore.flush();
+  const npcs=server.catalog().towns.town_talking.npcs,npc=npcs.find(n=>n.type==='shop');
+  w.interactNPC(npc.id,'town_talking');
+  const count=id=>server.snapshot().p.inv.filter(i=>i.id===id).reduce((n,i)=>n+i.cnt,0);
+  const arrowCount=count('wpn_5'),gold=server.snapshot().p.gold,price=server.shopInventory(npc.id).find(i=>i.id==='wpn_5').price;
+  const qty=w.document.getElementById('shop-qty-wpn_5');qty.value='2';
+  engine.run(qty.parentElement.querySelector('button').getAttribute('onclick'));await w.CloudStore.flush();
+  assert.equal(count('wpn_5'),arrowCount+2000);assert.equal(server.snapshot().p.gold,gold-price*2);
+  const merchant=npcs.find(n=>n.type==='skill'&&server.shopInventory(n.id).some(i=>server.catalog().items[i.id].type==='skillbk'));
+  assert.ok(merchant,'a real skillbook merchant is available in the starting town');
+  const book=server.shopInventory(merchant.id).find(i=>server.catalog().items[i.id].type==='skillbk');
+  w.interactNPC(merchant.id,'town_talking');
+  const button=[...w.document.querySelectorAll('#shop-items-list button')].find(b=>b.getAttribute('onclick')===`buyItem('${book.id}')`);
+  assert.ok(button,'skillbooks have a single-purchase button without a quantity argument');
+  const beforeBook=count(book.id),beforeGold=server.snapshot().p.gold;
+  engine.run(button.getAttribute('onclick'));await w.CloudStore.flush();
+  assert.equal(requests.filter(r=>r.body?.args?.name==='shop').at(-1).body.args.params.qty,1);
+  assert.equal(count(book.id),beforeBook+1);assert.equal(server.snapshot().p.gold,beforeGold-book.price);
+  assert.equal(engine.run('player.gold'),beforeGold-book.price);
+});
+
+test('invalid shop quantities never send a purchase or spend gold',async t=>{
+  const {w,authority,user,requests}=await fixture(t),server=authority.runtimes.get(user.id).engine;
+  const npc=server.catalog().towns.town_talking.npcs.find(n=>n.type==='shop');w.interactNPC(npc.id,'town_talking');
+  const before=server.snapshot().p;
+  for(const qty of ['', ' ', 'abc', '0', '-1', '1.5', '10001', NaN, Infinity, null, true, []]){
+    w.buyItem('potion_heal',qty);
+    assert.match(w.document.querySelector('.cloud-save').textContent,/請輸入 1～10000 的整數購買數量/);
+  }
+  await w.CloudStore.flush();
+  assert.equal(requests.filter(r=>r.body?.args?.name==='shop').length,0);
+  assert.equal(server.snapshot().p.gold,before.gold);assert.deepEqual(server.snapshot().p.inv,before.inv);
+});
+
+test('Elion buttons confirm paid element changes, refresh the menu and retry without a second fee',async t=>{
+  const {w,engine,authority,user,requests,lose}=await fixture(t,{classId:'elf',name:'屬性測試妖精',allocation:{dex:8}}),r=authority.runtimes.get(user.id);
+  r.engine.action('travel',{mapId:'town_elf'});r.engine.run('player.lv=30;player.gold=1000000;');authority.commit(user,r);await w.CloudStore.flush();
+  w.interactNPC('npc_elion','town_elf');
+  const panel=w.document.getElementById('interaction-content');
+  const click=element=>engine.run([...panel.querySelectorAll('button')].find(b=>b.getAttribute('onclick')===`chooseElfElement('${element}')`).getAttribute('onclick'));
+  let confirmation='';w.confirm=message=>{confirmation=message;return false;};
+  click('wind');await w.CloudStore.flush();assert.equal(confirmation,'','initial selection is free');
+  assert.equal(r.engine.snapshot().p.elfEle,'wind');assert.equal(r.engine.snapshot().p.gold,1000000);
+  assert.match(panel.textContent,/目前屬性：風屬性/);
+  const before=requests.filter(r=>r.body?.args?.name==='element').length;
+  click('water');await w.CloudStore.flush();assert.match(confirmation,/500,000.*水/);
+  assert.equal(requests.filter(r=>r.body?.args?.name==='element').length,before,'cancelling never sends the paid action');
+  assert.equal(r.engine.snapshot().p.elfEle,'wind');
+  w.confirm=()=>true;lose();click('water');await w.CloudStore.flush();
+  const changes=requests.filter(r=>r.body?.args?.name==='element').slice(before);
+  assert.equal(changes.length,2);assert.equal(changes[0].body.requestId,changes[1].body.requestId);
+  assert.equal(r.engine.snapshot().p.elfEle,'water');assert.equal(r.engine.snapshot().p.gold,500000);
+  assert.equal(engine.run('player.elfEle'),'water');assert.match(panel.textContent,/目前屬性：水屬性/);assert.match(panel.textContent,/目前持有 500,000/);
+  assert.equal(panel.querySelector('[onclick="chooseElfElement(\'water\')"]').disabled,true);
+  w.returnToCharacterSelect();await w.CloudStore.flush();w.loadGame();await w.CloudStore.flush();
+  assert.equal(engine.run('player.elfEle'),'water');assert.equal(engine.run('player.gold'),500000);
 });
 
 test('an interaction interrupts a slow read-only poll without cancelling a write or publishing a cancellation error',async t=>{
