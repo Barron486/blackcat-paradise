@@ -1,13 +1,14 @@
 import {randomBytes, scrypt as scryptCallback, timingSafeEqual, createHash} from 'node:crypto';
 import {promisify} from 'node:util';
 import {ApiError} from './service.mjs';
+import {applyShopBuffEffect,fullStatusBuffIds,refreshTimedBuffs} from '../shared/full-status.js';
 const scrypt=promisify(scryptCallback);
 const check=(value,message,status=400)=>{if(!value)throw new ApiError(status,message);};
-const products={rename_card:{id:'rename_card',name:'更名卡',price:3000,column:'rename_cards'},password_card:{id:'password_card',name:'更改密碼卡',price:500,column:'password_cards'}};
+const products={rename_card:{id:'rename_card',name:'更名卡',price:3000,column:'rename_cards'},password_card:{id:'password_card',name:'更改密碼卡',price:500,column:'password_cards'},full_status:{id:'full_status',name:'全狀態',price:300,durationSeconds:3600}};
 const MAX_BALANCE=2_000_000_000;
 export class CommerceService {
   constructor(service){
-    this.service=service;this.db=service.db;
+    this.service=service;this.db=service.db;service.commerce=this;
     this.db.exec(`CREATE TABLE IF NOT EXISTS wallets(account_id TEXT PRIMARY KEY REFERENCES accounts(id),diamonds INTEGER NOT NULL DEFAULT 0 CHECK(diamonds>=0),rename_cards INTEGER NOT NULL DEFAULT 0 CHECK(rename_cards>=0),password_cards INTEGER NOT NULL DEFAULT 0 CHECK(password_cards>=0));
       CREATE TABLE IF NOT EXISTS commerce_operations(actor_id TEXT NOT NULL REFERENCES accounts(id),request_id TEXT NOT NULL,fingerprint TEXT NOT NULL,result TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(actor_id,request_id));
       CREATE TABLE IF NOT EXISTS wallet_ledger(id INTEGER PRIMARY KEY AUTOINCREMENT,account_id TEXT NOT NULL REFERENCES accounts(id),actor_id TEXT NOT NULL REFERENCES accounts(id),kind TEXT NOT NULL,diamonds INTEGER NOT NULL,rename_cards INTEGER NOT NULL,password_cards INTEGER NOT NULL,balance INTEGER NOT NULL,note TEXT NOT NULL,created_at INTEGER NOT NULL);`);
@@ -22,9 +23,9 @@ export class CommerceService {
     const characters=[];
     for(const [key,raw]of Object.entries(save.values))if(/^lineage_idle_save_[1-8]$/.test(key)){
       const p=this.service.catalog.unwrap(raw).p;
-      characters.push({slot:Number(key.slice(-1)),name:p.name||'未命名',epoch:p._roleEpoch||p.enSeed,cls:p.cls,level:p.lv});
+      characters.push({slot:Number(key.slice(-1)),name:p.name||'未命名',epoch:p._roleEpoch||p.enSeed,cls:p.cls,level:p.lv,fullStatusExpiresAt:p._shopBuffs?.expiresAt||0});
     }
-    return {wallet:this.wallet(user.id),products:Object.values(products).map(({column,...p})=>p),characters,history:this.history(user.id)};
+    return {wallet:this.wallet(user.id),products:Object.values(products).map(({column,...p})=>p),characters,history:this.history(user.id),serverTime:Date.now()};
   }
   history(accountId){
     return this.db.prepare('SELECT l.id,l.kind,l.diamonds,l.rename_cards AS renameCards,l.password_cards AS passwordCards,l.balance,l.note,l.created_at AS at,a.username AS actor FROM wallet_ledger l JOIN accounts a ON a.id=l.actor_id WHERE l.account_id=? ORDER BY l.id DESC LIMIT 30').all(accountId);
@@ -62,11 +63,46 @@ export class CommerceService {
   buy(user,body){
     const product=Object.hasOwn(products,body.productId)?products[body.productId]:null;
     check(product,'找不到商品');
+    if(product.id==='full_status')return this.buyFullStatus(user,body,product);
     return this.operation(user,body.requestId,{kind:'buy',productId:product.id},()=>{
       check(this.wallet(user.id).diamonds>=product.price,'藍鑽不足，請聯絡 GM 儲值',409);
       this.db.prepare(`UPDATE wallets SET diamonds=diamonds-?,${product.column}=${product.column}+1 WHERE account_id=?`).run(product.price,user.id);
       return {ok:true,wallet:this.entry(user.id,user.id,'purchase',-product.price,product.id==='rename_card'?1:0,product.id==='password_card'?1:0,`購買${product.name}`)};
     });
+  }
+  buyFullStatus(user,body,product){
+    check(Number.isInteger(body.slot)&&body.slot>=1&&body.slot<=8,'請選擇自己的角色');
+    check(typeof body.epoch==='string'&&body.epoch.length>0,'角色識別碼不正確');
+    const result=this.operation(user,body.requestId,{kind:'buy',productId:product.id,slot:body.slot,epoch:body.epoch},()=>{
+      this.service.checkLease(user,body.lease);
+      const snapshot=this.service.bootstrap(user),key='lineage_idle_save_'+body.slot;
+      check(snapshot.values[key],'此欄位沒有角色',404);
+      const doc=this.service.catalog.unwrap(snapshot.values[key]);
+      check((doc.p._roleEpoch||doc.p.enSeed)===body.epoch,'角色已更換，請重新開啟商店',409);
+      check(this.wallet(user.id).diamonds>=product.price,'藍鑽不足，請聯絡 GM 儲值',409);
+      const now=Date.now(),expiresAt=Math.max(now,doc.p._shopBuffs?.expiresAt||0)+product.durationSeconds*1000;
+      check(Number.isSafeInteger(expiresAt),'效果時間已超過上限',409);
+      this.db.prepare('UPDATE wallets SET diamonds=diamonds-? WHERE account_id=?').run(product.price,user.id);
+      this.entry(user.id,user.id,'purchase',-product.price,0,0,`購買${product.name}（${doc.p.name||'未命名'}，1 小時）`);
+      const purchaseSeq=this.db.prepare('SELECT MAX(id) AS id FROM wallet_ledger WHERE account_id=?').get(user.id).id;
+      // seq=0 keeps pre-upgrade clients from treating a shop receipt as a GM command.
+      const effect={action:'shop_buff',seq:0,purchaseSeq,epoch:body.epoch,expiresAt,buffs:fullStatusBuffIds(this.service.catalog.skills)};
+      check(applyShopBuffEffect(doc,effect,now),'角色狀態序號不正確',409);
+      snapshot.values[key]=this.service.catalog.wrap(doc);
+      this.db.prepare('UPDATE saves SET data=?,revision=revision+1,updated_at=? WHERE account_id=?').run(JSON.stringify(snapshot.values),now,user.id);
+      this.db.prepare('INSERT INTO gm_effects(account_id,revision,save_key,payload) VALUES(?,?,?,?)').run(user.id,snapshot.revision+1,key,JSON.stringify(effect));
+      return {ok:true,slot:body.slot,expiresAt,fromRevision:snapshot.revision};
+    });
+    // A retry can follow other purchases or GM commands; never return an old snapshot.
+    return {...result,wallet:this.wallet(user.id),snapshot:this.service.bootstrap(user),effects:this.service.effects(user,result.fromRevision)};
+  }
+  restoreBuffs(prior,doc){
+    const p=doc.p,old=prior.p;
+    if(!old._shopBuffSeq&&!p._shopBuffSeq&&!old._shopBuffs&&!p._shopBuffs)return false;
+    if(old._shopBuffSeq)p._shopBuffSeq=old._shopBuffSeq;else delete p._shopBuffSeq;
+    if(old._shopBuffs)p._shopBuffs=structuredClone(old._shopBuffs);else delete p._shopBuffs;
+    refreshTimedBuffs(p);
+    return true;
   }
   rename(user,body){
     check(Number.isInteger(body.slot)&&body.slot>=1&&body.slot<=8,'角色欄位不正確');

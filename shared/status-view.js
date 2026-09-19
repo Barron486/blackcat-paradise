@@ -102,7 +102,7 @@ export function formatRemaining(seconds) {
 }
 export function collectStatuses(p, {skills = {}, lures = {}, auraIds = [], icons = {}, debuffIcons = {}, now = Date.now(), ticks = 0, polyDescription = ''} = {}) {
   if (!p) return [];
-  const rows = [], buffs = p.buffs || {}, gmIds = new Set(p._gmBuffs?.ids || []);
+  const rows = [], buffs = p.buffs || {}, gmIds = new Set(p._gmBuffs?.ids || []), shopIds = new Set(p._shopBuffs?.ids || []);
   function add(id, name, description, seconds, kind = 'buff', source = '自身', icon = '') {
     if (seconds !== null && (!Number.isFinite(seconds) || seconds <= 0)) return;
     rows.push({id, name, description, seconds, kind, source, icon});
@@ -114,10 +114,12 @@ export function collectStatuses(p, {skills = {}, lures = {}, auraIds = [], icons
       const active = id === 'sk_charm' ? p.charmed : (p._summonV2Sk === id ? p.summonsV2?.some(s => s && s.curHp > 0) : p.summon?.skId === id);
       if (!active) continue;
     }
-    const seconds = gmIds.has(id) ? (p._gmBuffs.expiresAt - now) / 1000 : raw;
+    const gmSeconds=gmIds.has(id)?(p._gmBuffs.expiresAt-now)/1000:0,shopSeconds=shopIds.has(id)?(p._shopBuffs.expiresAt-now)/1000:0;
+    const seconds = gmIds.has(id)||shopIds.has(id) ? Math.max(gmSeconds,shopSeconds) : raw;
     const name = sk?.n || lures[id]?.n || basics[id]?.[0] || id;
     const description = sk ? describeSkill(id, sk, p) : lures[id] ? '期間擊殺對應動物即可捕獲為寵物。' : basics[id]?.[1] || '效果持續中；此狀態尚無詳細說明。';
-    add(`buff:${id}`, name, description, seconds, 'buff', gmIds.has(id) ? 'GM 賦予' : '自身', icons[id] || (lures[id] ? '誘捕' : ''));
+    const source=shopSeconds>0&&gmSeconds>0?'藍鑽商店／GM 賦予':shopSeconds>0?'藍鑽商店':gmIds.has(id)?'GM 賦予':'自身';
+    add(`buff:${id}`, name, description, seconds, 'buff', source, icons[id] || (lures[id] ? '誘捕' : ''));
   }
   for (const [id, raw] of Object.entries(p.statuses || {})) {
     if (companions.has(id) || typeof raw !== 'number' || raw <= 0) continue;

@@ -56,8 +56,9 @@ function startOnline(){
             document.getElementById('btn-revive-inplace')?.classList.add('hidden');
           }
           refresh();capture();
-          if(typeof logSys==='function')logSys(`<span class="text-amber-300">${effect.action==='market'?'交易':'GM 指令'} #${effect.seq} 已套用。</span>`);
-          message(`已收到${effect.action==='market'?'交易':' GM 指令'} #${effect.seq}`);
+          const source=effect.action==='market'?'交易':effect.action==='shop_buff'?'藍鑽全狀態':'GM 指令';
+          if(typeof logSys==='function')logSys(`<span class="text-amber-300">${source} #${effect.purchaseSeq||effect.seq} 已套用。</span>`);
+          message(`已收到${source} #${effect.purchaseSeq||effect.seq}`);
         }
       }
     }
@@ -76,7 +77,7 @@ function startOnline(){
   cloud.reconcile=reconcile;
   cloud.flush=async()=>{for(let i=0;busy&&i<300;i++)await new Promise(r=>setTimeout(r,50));await sync();if(stopped||!cloud.ready||Object.keys(cloud.pending()).length)throw new Error('請先完成雲端同步，再進行此操作');};
   async function sync(){
-    if(busy||stopped||!cloud.ready||cloud.marketPending)return;
+    if(busy||stopped||!cloud.ready||cloud.marketPending||cloud.shopPending)return;
     busy=true;
     try{
       for(let attempt=0;attempt<3;attempt++){
@@ -142,7 +143,7 @@ function startOnline(){
   startLootTicker(cloud,()=>cloud.ready&&!stopped);
   showBlock('正在載入帳號的雲端存檔…');void connect();
   setInterval(sync,3000);setInterval(world,4000);
-  setInterval(()=>{if(typeof player!=='undefined'&&player?._gmBuffs){refreshGmBuffs(player,Date.now()+offset);if(typeof calcStats==='function')calcStats();}},1000);
+  setInterval(()=>{if(typeof player!=='undefined'&&(player?._gmBuffs||player?._shopBuffs)){refreshGmBuffs(player,Date.now()+offset);if(typeof calcStats==='function')calcStats();}},1000);
   setInterval(()=>{if(cloud.ready&&!stopped&&typeof player!=='undefined'&&player?.cls&&!player.dead)saveGame();},15000);
   document.addEventListener('visibilitychange',()=>{if(document.hidden)void sync();else{void sync();void world();}});
   window.addEventListener('beforeunload',event=>{capture();if(Object.keys(cloud.pending()).length){event.preventDefault();event.returnValue='';}});

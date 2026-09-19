@@ -44,6 +44,15 @@ function client() {
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('paid buffs reconcile into the live character without replacing unsaved progress or GM sequence',async()=>{
+ const {context,player,cloud,timers}=client();await settle();player.exp=123;player._gmSeq=50;
+ const now=Date.now(),effect={action:'shop_buff',seq:0,purchaseSeq:1,epoch:'epoch',expiresAt:now+3600000,buffs:['haste'],key:'lineage_idle_save_1'};
+ cloud.reconcile({snapshot:{revision:5,serverTime:now,values:{lineage_idle_save_1:JSON.stringify({p:{...player,exp:1}})}},effects:[effect]});
+ assert.equal(player.exp,123);assert.equal(player._gmSeq,50);assert.equal(player._shopBuffSeq,1);assert.ok(player.buffs.haste>3590);
+ player._shopBuffs.expiresAt=now-10000;timers.find(t=>t.ms===1000).fn();assert.equal(player.buffs.haste,0);assert.equal(player._shopBuffs,undefined);
+ assert.equal(context.state.running,true);
+});
+
 test('manual revival keeps upstream eligibility checks and resumes GM-stopped combat',async()=>{
   const {context,player}=client();await settle();
   player.dead=true;player._gmDead=true;context.state.running=false;

@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { applyEffect } from '../shared/gm-effects.js';
+import {fullStatusBuffIds} from '../shared/full-status.js';
 import { itemGrantRules, rollWishes } from './item-rules.mjs';
 
 const scrypt = promisify(scryptCallback);
@@ -162,10 +163,11 @@ export class GameService {
             const epoch=doc.p._roleEpoch||doc.p.enSeed;
             requireValue(typeof epoch==='string'&&epoch.length>0&&epoch.length<=200,'新角色識別碼不正確');
             requireValue(!this.db.prepare('SELECT 1 FROM character_epochs WHERE epoch=?').get(epoch),'禁止複製角色或重新匯入已刪除角色',403);
-            requireValue(doc.p.lv===1&&(doc.p.exp??0)===0&&(doc.p.gold??1000)===1000&&(doc.ticks??0)===0&&!doc.p._gmSeq&&!doc.p._gmDead&&!doc.p._marketSeq,'新角色必須從初始進度建立，禁止匯入存檔',403);
+            requireValue(doc.p.lv===1&&(doc.p.exp??0)===0&&(doc.p.gold??1000)===1000&&(doc.ticks??0)===0&&!doc.p._gmSeq&&!doc.p._gmDead&&!doc.p._marketSeq&&!doc.p._shopBuffSeq&&!doc.p._shopBuffs,'新角色必須從初始進度建立，禁止匯入存檔',403);
             requireValue(typeof doc.p.name==='string'&&doc.p.name.trim().length>=1&&doc.p.name.length<=12&&!/[<>&"'\x00-\x1f\x7f]/.test(doc.p.name),'角色名稱須為 1～12 個有效字元');
             this.db.prepare('INSERT INTO character_epochs VALUES(?,?,?)').run(epoch,user.id,key);
           }
+          if(values[key]&&this.commerce?.restoreBuffs(this.catalog.unwrap(values[key]),doc))value=this.catalog.wrap(doc);
           this.lootBroadcasts?.record(user,values[key]?this.catalog.unwrap(values[key]):null,doc);
         }
         if(value===null) delete values[key]; else values[key]=value;
@@ -266,8 +268,7 @@ export class GameService {
       requireValue(command.action!=='teleport'||command.mapId===preview.command.mapId,'請先預覽傳送地點',409);
       const targets=this.targets(command), now=Date.now();
       const seq=Number(this.db.prepare('INSERT INTO gm_commands(actor_id,request_id,payload,created_at) VALUES(?,?,?,?)').run(user.id,body.requestId,JSON.stringify(command),now).lastInsertRowid);
-      const buffs=['haste','brave','blue','cautious','elfcookie','shield',...Object.entries(this.catalog.skills)
-        .filter(([,s])=>s.type==='buff'&&!s.summon&&!s.illuSummon&&!s.cube&&!s.awaken&&!s.stormInterval).map(([id])=>id)];
+      const buffs=fullStatusBuffIds(this.catalog.skills);
       for(const target of targets) {
         const revision=target.revision+1;
         for(const {key,doc} of target.chars) {

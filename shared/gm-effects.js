@@ -1,8 +1,10 @@
 // Shared by the server and the live client so an offline grant and a live grant
 // have the same result. Privilege checks always happen in server/service.mjs.
 import {applyMarketEffect} from './market-effects.js';
+import {applyShopBuffEffect,refreshTimedBuffs} from './full-status.js';
 export function applyEffect(doc, effect, now = Date.now()) {
   if(effect.action==='market')return applyMarketEffect(doc,effect);
+  if(effect.action==='shop_buff')return applyShopBuffEffect(doc,effect,now);
   const p = doc?.p;
   if (!p?.cls || (p._roleEpoch || p.enSeed || '') !== effect.epoch) return false;
   if ((p._gmSeq || 0) >= effect.seq) return false;
@@ -27,6 +29,7 @@ export function applyEffect(doc, effect, now = Date.now()) {
     p.buffs ||= {};
     p._gmBuffs = { expiresAt: effect.expiresAt, ids: effect.buffs };
     for (const id of effect.buffs) p.buffs[id] = Math.max(p.buffs[id] || 0, seconds);
+    refreshTimedBuffs(p,now);
   }
   if (effect.action === 'kill') {
     p.hp = 0; p.dead = true; p._gmDead = true;
@@ -40,14 +43,11 @@ export function applyEffect(doc, effect, now = Date.now()) {
   if (effect.action === 'clear_buffs') {
     for (const id of p._gmBuffs?.ids || []) p.buffs[id] = 0;
     delete p._gmBuffs;
+    refreshTimedBuffs(p,now);
   }
   return true;
 }
 
 export function refreshGmBuffs(p, now = Date.now()) {
-  if (!p?._gmBuffs) return;
-  const seconds = Math.max(0, Math.ceil((p._gmBuffs.expiresAt - now) / 1000));
-  p.buffs ||= {};
-  for (const id of p._gmBuffs.ids) p.buffs[id] = seconds;
-  if (!seconds) delete p._gmBuffs;
+  refreshTimedBuffs(p,now);
 }

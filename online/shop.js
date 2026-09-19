@@ -7,7 +7,7 @@ if(cloud){
     <div class="diamond-wallet"><span>帳號藍鑽餘額</span><strong id="diamond-balance">—</strong><span>💎</span></div>
     <p class="diamond-note">藍鑽由帳號內所有角色共用，儲值一律由 GM 發送。需要儲值時，請向 GM 提供登入帳號。</p>
     <p id="diamond-message" role="status" aria-live="polite"></p>
-    <section class="diamond-products" aria-label="商品"><article><h3>更名卡</h3><p>變更一位角色的名稱</p><strong>3,000 藍鑽</strong><button type="button" data-buy="rename_card">購買更名卡</button></article><article><h3>更改密碼卡</h3><p>變更目前帳號的登入密碼</p><strong>500 藍鑽</strong><button type="button" data-buy="password_card">購買密碼卡</button></article></section>
+    <section class="diamond-products" aria-label="商品"><article><h3>更名卡</h3><p>變更一位角色的名稱</p><strong>3,000 藍鑽</strong><button type="button" data-buy="rename_card">購買更名卡</button></article><article><h3>更改密碼卡</h3><p>變更目前帳號的登入密碼</p><strong>500 藍鑽</strong><button type="button" data-buy="password_card">購買密碼卡</button></article><article class="diamond-buff-product"><h3>全狀態</h3><p>選定角色立即獲得全套增益，持續 1 小時。再次購買延長 1 小時，離線照常倒數；可在「狀態」分頁查看能力與時間。</p><strong>300 藍鑽／次</strong><label>套用角色<select id="diamond-buff-slot" aria-label="全狀態套用角色"></select></label><p id="diamond-buff-status"></p><button type="button" data-buy="full_status" disabled>購買全狀態 · 1 小時</button><button type="button" data-buff-retry hidden>確認購買結果／重試</button></article></section>
     <section class="diamond-section"><h3>我的卡片</h3><p id="diamond-cards"></p>
     <form id="diamond-rename"><h4>使用更名卡</h4><label>選擇角色<select name="slot" required></select></label><label>新的角色名稱<input name="name" maxlength="12" required placeholder="1～12 字" autocomplete="off"></label><button type="submit">消耗 1 張更名卡</button></form>
     <form id="diamond-password"><h4>使用更改密碼卡</h4><label>目前密碼<input type="password" name="current" autocomplete="current-password" maxlength="128" required></label><label>新密碼<input type="password" name="next" autocomplete="new-password" minlength="12" maxlength="128" required placeholder="12～128 字"></label><label>再次輸入新密碼<input type="password" name="repeat" autocomplete="new-password" minlength="12" maxlength="128" required></label><p class="diamond-note">成功後會登出所有裝置，請以新密碼重新登入。忘記目前密碼時請聯絡 GM。</p><button type="submit">消耗 1 張密碼卡</button></form></section>
@@ -20,15 +20,25 @@ if(cloud){
     confirmDialog.querySelector('[data-detail]').textContent=text;
     return new Promise(resolve=>{const done=value=>{confirmDialog.close();resolve(value);};confirmDialog.querySelector('[data-cancel]').onclick=()=>done(false);confirmDialog.querySelector('[data-confirm]').onclick=()=>done(true);confirmDialog.oncancel=event=>{event.preventDefault();done(false);};confirmDialog.showModal();});
   }
-  const $=selector=>dialog.querySelector(selector),pending=new Map();let info=null,busy=false;
+  const $=selector=>dialog.querySelector(selector),pending=new Map();let info=null,busy=false,buffPending=null,wasRunning=false,timeOffset=0;
+  function renderBuffTime(){
+    const character=info?.characters.find(c=>String(c.slot)===$('#diamond-buff-slot').value);
+    const seconds=Math.max(0,Math.ceil(((character?.fullStatusExpiresAt||0)-Date.now()-timeOffset)/1000));
+    $('#diamond-buff-status').textContent=!character?'請先建立角色':seconds?`剩餘 ${Math.floor(seconds/3600)} 時 ${Math.floor(seconds%3600/60)} 分 ${seconds%60} 秒`:'目前尚未啟用全狀態';
+  }
   function notice(text,error=false){$('#diamond-message').textContent=text;$('#diamond-message').classList.toggle('error',error);}
   function render(){
     if(!info)return;const w=info.wallet;cloud.diamonds=w.diamonds;
     $('#diamond-balance').textContent=w.diamonds.toLocaleString('zh-TW');
     $('#diamond-cards').textContent=`更名卡 ${w.renameCards} 張 · 更改密碼卡 ${w.passwordCards} 張`;
-    for(const product of info.products){const b=$(`[data-buy="${product.id}"]`);b.disabled=busy||w.diamonds<product.price;}
-    $('#diamond-rename button').disabled=busy||!w.renameCards||!info.characters.length;
-    $('#diamond-password button').disabled=busy||!w.passwordCards;
+    for(const product of info.products){const b=$(`[data-buy="${product.id}"]`);if(b)b.disabled=busy||!!buffPending||w.diamonds<product.price||(product.id==='full_status'&&(!cloud.ready||!info.characters.length));}
+    $('#diamond-rename button').disabled=busy||!!buffPending||!w.renameCards||!info.characters.length;
+    $('#diamond-password button').disabled=busy||!!buffPending||!w.passwordCards;
+    const buffSelect=$('#diamond-buff-slot'),previousBuff=buffSelect.value||(typeof currentSlot!=='undefined'?String(currentSlot):'');buffSelect.replaceChildren();
+    for(const c of info.characters){const option=document.createElement('option');option.value=c.slot;option.textContent=`${c.name} · Lv.${c.level}（角色 ${c.slot}）`;buffSelect.append(option);}
+    if(info.characters.some(c=>String(c.slot)===previousBuff))buffSelect.value=previousBuff;
+    buffSelect.disabled=busy||!!buffPending;renderBuffTime();
+    $('[data-buff-retry]').hidden=!buffPending;$('[data-buff-retry]').disabled=busy;
     const select=$('#diamond-rename select'),previous=select.value;select.replaceChildren();
     for(const c of info.characters){const option=document.createElement('option');option.value=c.slot;option.textContent=`${c.name} · Lv.${c.level}（角色 ${c.slot}）`;select.append(option);}
     if(info.characters.some(c=>String(c.slot)===previous))select.value=previous;
@@ -36,7 +46,7 @@ if(cloud){
     for(const row of info.history){const p=document.createElement('p'),time=document.createElement('small');p.textContent=row.note+(row.diamonds?` · ${row.diamonds>0?'+':''}${row.diamonds.toLocaleString('zh-TW')} 藍鑽`:'');time.textContent=new Date(row.at).toLocaleString('zh-TW');p.append(time);$('#diamond-history').append(p);}
     if(!info.history.length)$('#diamond-history').textContent='尚無交易紀錄';
   }
-  async function refresh(){info=await cloud.request('/api/shop');render();}
+  async function refresh(){info=await cloud.request('/api/shop');timeOffset=(info.serverTime||Date.now())-Date.now();render();}
   async function mutate(path,body){
     const key=path+'|'+JSON.stringify(body);if(!pending.has(key))pending.set(key,crypto.randomUUID());
     try{const result=await cloud.request(path,{...body,requestId:pending.get(key)});pending.delete(key);return result;}
@@ -47,12 +57,43 @@ if(cloud){
     try{if(await work()!==false)await refresh();}catch(error){notice(error.message,true);}
     finally{busy=false;render();}
   }
+  function finishBuffPurchase(){
+    cloud.shopPending=false;buffPending=null;
+    if(typeof state!=='undefined'&&typeof player!=='undefined'&&!player?.dead)state.running=wasRunning;
+  }
+  async function purchaseBuff(character){
+    await perform(async()=>{
+      try{
+        if(!buffPending){
+          wasRunning=typeof state!=='undefined'&&state.running;
+          if(typeof state!=='undefined')state.running=false;
+          try{await cloud.flush();}catch(error){if(typeof state!=='undefined')state.running=wasRunning;throw error;}
+          buffPending={productId:'full_status',slot:character.slot,epoch:character.epoch,lease:cloud.lease,requestId:crypto.randomUUID()};
+          cloud.shopPending=true;
+        }
+        const result=await cloud.request('/api/shop/buy',buffPending);
+        cloud.reconcile(result);cloud.diamonds=result.wallet.diamonds;
+        finishBuffPurchase();notice('全狀態已生效，增加 1 小時。能力與倒數可在「狀態」分頁查看。');
+      }catch(error){
+        if(buffPending&&error.status&&error.status<500){if(error.data?.snapshot)cloud.reconcile(error.data);finishBuffPurchase();}
+        if(buffPending)throw new Error('購買結果尚未確認，已暫停戰鬥。請按「確認購買結果／重試」，不會重複扣款。');
+        throw error;
+      }
+    });
+  }
+  $('#diamond-buff-slot').onchange=renderBuffTime;
+  $('[data-buff-retry]').onclick=()=>purchaseBuff();
   cloud.showShop=async()=>{if(!dialog.open)dialog.showModal();try{await refresh();}catch(error){notice(error.message,true);}};
   $('[data-close]').onclick=()=>dialog.close();
   dialog.addEventListener('close',()=>$('#diamond-password').reset());
   $('[data-refresh]').onclick=()=>refresh().catch(error=>notice(error.message,true));
   for(const button of dialog.querySelectorAll('[data-buy]'))button.onclick=async()=>{
     const product=info?.products.find(p=>p.id===button.dataset.buy);if(!product||busy)return;
+    if(product.id==='full_status'){
+      const character=info.characters.find(c=>String(c.slot)===$('#diamond-buff-slot').value);if(!character||buffPending)return;
+      if(!await confirmChoice(`花費 ${product.price.toLocaleString('zh-TW')} 藍鑽，為「${character.name}」購買全狀態 1 小時？已有時間會延長，離線仍會倒數。`))return;
+      void purchaseBuff(character);return;
+    }
     if(!await confirmChoice(`花費 ${product.price.toLocaleString('zh-TW')} 藍鑽購買 1 張${product.name}？`))return;
     void perform(async()=>{await mutate('/api/shop/buy',{productId:product.id});notice(`已購買 1 張${product.name}。`);});
   };
@@ -85,4 +126,5 @@ if(cloud){
   };
   document.getElementById('st-class')?.setAttribute('title','使用更名卡變更名稱');
   setInterval(()=>{if(dialog.open&&!busy&&!document.hidden)void refresh().catch(()=>{});},10000);
+  setInterval(()=>{if(dialog.open&&!document.hidden)renderBuffTime();},1000);
 }

@@ -1,0 +1,113 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {once} from 'node:events';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {GameService} from '../server/service.mjs';
+import {CommerceService} from '../server/commerce.mjs';
+import {createApp} from '../server/index.mjs';
+import {applyEffect,refreshGmBuffs} from '../shared/gm-effects.js';
+import {HeadlessGame} from '../cli/engine.mjs';
+import {loadCatalog} from '../server/catalog.mjs';
+const key='lineage_idle_save_1',password='shop-buffs-test-only-2026!';
+const catalog={version:'test',items:{},skills:{ordinary:{type:'buff'},summon:{type:'buff',summon:true},cube:{type:'buff',cube:true},awaken:{type:'buff',awaken:true},storm:{type:'buff',stormInterval:1},illusion:{type:'buff',illuSummon:true}},wrap:JSON.stringify,unwrap:JSON.parse};
+const make=()=>({p:{cls:'elf',name:'全狀態測試',lv:1,exp:0,gold:1000,inv:[],buffs:{},_roleEpoch:randomUUID()},ticks:0});
+async function fixture(t){
+ const service=new GameService(':memory:',catalog),shop=new CommerceService(service);t.after(()=>service.close());
+ const gm=await service.register('buff_keeper',password,{initialGm:true}),user=await service.register('buff_player',password),other=await service.register('buff_other',password);
+ const lease=randomUUID(),doc=make();service.acquireLease(user,lease);service.sync(user,lease,0,{[key]:catalog.wrap(doc)});
+ const credit=amount=>shop.grant(gm,{accountId:user.id,amount,reason:'隔離測試',requestId:randomUUID()});
+ const request=()=>({productId:'full_status',slot:1,epoch:doc.p._roleEpoch,lease,requestId:randomUUID()});
+ const saved=()=>catalog.unwrap(service.bootstrap(user).values[key]);
+ return {service,shop,gm,user,other,lease,doc,credit,request,saved};
+}
+test('full status costs server-owned 300 diamonds and grants exactly one hour to one owned character',async t=>{
+ const f=await fixture(t),{service,shop,user,lease,credit,request,saved}=f;credit(600);
+ service.sync(user,lease,1,{lineage_idle_save_2:catalog.wrap(make())});
+ const before=service.bootstrap(user),start=Date.now(),result=shop.buy(user,{...request(),price:1,durationSeconds:999999,buffs:['summon']});
+ assert.equal(result.wallet.diamonds,300);assert.equal(result.wallet.renameCards,0);assert.equal(result.wallet.passwordCards,0);
+ assert.ok(result.expiresAt>=start+3600000&&result.expiresAt<=Date.now()+3600000);
+ assert.equal(result.snapshot.revision,before.revision+1);assert.equal(result.snapshot.values.lineage_idle_save_2,before.values.lineage_idle_save_2);
+ assert.deepEqual(saved().p._shopBuffs.ids,['haste','brave','blue','cautious','elfcookie','shield','ordinary']);
+ assert.equal(saved().p._gmSeq,undefined);assert.equal(saved().p._shopBuffs.expiresAt,result.expiresAt);
+ assert.equal(result.effects.length,1);assert.equal(result.effects[0].action,'shop_buff');assert.equal(result.effects[0].seq,0);
+ assert.equal(shop.history(user.id)[0].diamonds,-300);assert.match(shop.history(user.id)[0].note,/全狀態.*1 小時/);
+ assert.equal(service.db.prepare('SELECT COUNT(*) AS n FROM gm_commands').get().n,0);
+ const product=shop.state(user).products.find(p=>p.id==='full_status');assert.equal(product.price,300);assert.equal(product.durationSeconds,3600);
+});
+test('distinct purchases extend remaining time and retries return current state without a second charge',async t=>{
+ const {shop,user,credit,request,saved}=await fixture(t);credit(900);
+ const firstRequest=request(),first=shop.buy(user,firstRequest),second=shop.buy(user,request());
+ assert.equal(second.expiresAt,first.expiresAt+3600000);assert.equal(second.wallet.diamonds,300);
+ const retry=shop.buy(user,firstRequest);assert.equal(retry.replayed,true);assert.equal(retry.wallet.diamonds,300);
+ assert.equal(retry.snapshot.revision,second.snapshot.revision);assert.deepEqual(retry.snapshot.values,second.snapshot.values);assert.equal(retry.effects.length,2);
+ const stale=structuredClone(saved());assert.equal(applyEffect(stale,retry.effects[0]),false);assert.equal(stale.p._shopBuffs.expiresAt,second.expiresAt);
+ assert.throws(()=>shop.buy(user,{...firstRequest,slot:2}),e=>e.status===409);assert.equal(shop.wallet(user.id).diamonds,300);
+});
+test('invalid ownership, lease, role replacement, insufficient funds and save failures cannot charge diamonds',async t=>{
+ const {service,shop,user,other,lease,credit,request}=await fixture(t);credit(300);
+ for(const body of [{slot:0},{slot:2},{epoch:randomUUID()},{lease:randomUUID()}])assert.throws(()=>shop.buy(user,{...request(),...body}));
+ assert.throws(()=>shop.buy(other,request()));assert.equal(shop.wallet(user.id).diamonds,300);
+ const row=service.bootstrap(user),wrap=service.catalog.wrap;
+ service.catalog={...catalog,wrap:()=>{throw new Error('disk simulation');}};
+ assert.throws(()=>shop.buy(user,request()),/disk simulation/);service.catalog={...catalog,wrap};
+ assert.equal(shop.wallet(user.id).diamonds,300);assert.equal(shop.history(user.id).length,1);assert.equal(service.bootstrap(user).revision,row.revision);
+ const good=shop.buy(user,request());assert.equal(good.wallet.diamonds,0);
+ assert.throws(()=>shop.buy(user,request()),e=>e.status===409);assert.equal(service.bootstrap(user).revision,good.snapshot.revision);
+ service.sync(user,lease,good.snapshot.revision,{[key]:null});
+ assert.throws(()=>shop.buy(user,request()),e=>e.status===404);
+});
+test('canonical paid deadlines survive legacy saves, reject forged metadata and expire across offline time',async t=>{
+ const {service,shop,user,lease,credit,request,saved}=await fixture(t);credit(300);
+ const purchased=shop.buy(user,request()),expiry=purchased.expiresAt;
+ let boot=service.bootstrap(user),p=saved();p.p._shopBuffSeq=999999;p.p._shopBuffs.expiresAt=expiry+86400000;p.p._shopBuffs.ids=['summon'];p.p.exp=10;
+ service.sync(user,lease,boot.revision,{[key]:catalog.wrap(p)});assert.equal(saved().p._shopBuffs.expiresAt,expiry);assert.ok(!saved().p._shopBuffs.ids.includes('summon'));assert.equal(saved().p.exp,10);
+ boot=service.bootstrap(user);p=saved();delete p.p._shopBuffs;delete p.p._shopBuffSeq;p.p.exp=20;
+ service.sync(user,lease,boot.revision,{[key]:catalog.wrap(p)});assert.equal(saved().p._shopBuffs.expiresAt,expiry);assert.equal(saved().p.exp,20);
+ const forged=make();forged.p._shopBuffs={ids:['haste'],expiresAt:expiry};
+ assert.throws(()=>service.sync(user,lease,service.bootstrap(user).revision,{lineage_idle_save_2:catalog.wrap(forged)}),e=>e.status===403);
+ t.mock.method(Date,'now',()=>expiry+1);boot=service.bootstrap(user);p=saved();
+ service.sync(user,lease,boot.revision,{[key]:catalog.wrap(p)});assert.equal(saved().p._shopBuffs,undefined);assert.equal(saved().p.buffs.haste,0);assert.ok(saved().p._shopBuffSeq>0);
+ credit(300);const renewed=shop.buy(user,request());assert.equal(renewed.expiresAt,Date.now()+3600000);
+});
+test('paid buffs coexist with GM buffs, survive GM clearing/death and cannot replay into a new character',()=>{
+ const doc=make(),epoch=doc.p._roleEpoch;
+ applyEffect(doc,{action:'shop_buff',seq:0,purchaseSeq:1,epoch,expiresAt:3601000,buffs:['haste','brave']},1000);
+ applyEffect(doc,{action:'buff_all',seq:1,epoch,expiresAt:7201000,buffs:['haste']},1000);assert.equal(doc.p.buffs.haste,7200);assert.equal(doc.p.buffs.brave,3600);
+ applyEffect(doc,{action:'clear_buffs',seq:2,epoch},1000);assert.equal(doc.p.buffs.haste,3600);
+ applyEffect(doc,{action:'kill',seq:3,epoch},1000);assert.ok(doc.p._shopBuffs);applyEffect(doc,{action:'revive',seq:4,epoch},1000);
+ refreshGmBuffs(doc.p,3601001);assert.equal(doc.p._shopBuffs,undefined);assert.equal(doc.p.buffs.haste,0);
+ assert.equal(applyEffect(doc,{action:'shop_buff',seq:0,purchaseSeq:1,epoch,expiresAt:99999999,buffs:['haste']}),false);
+ assert.equal(applyEffect(make(),{action:'shop_buff',seq:0,purchaseSeq:2,epoch,expiresAt:99999999,buffs:['haste']}),false);
+ applyEffect(doc,{action:'buff_all',seq:5,epoch,expiresAt:7201000,buffs:['haste']},3601001);
+ applyEffect(doc,{action:'shop_buff',seq:0,purchaseSeq:2,epoch,expiresAt:4001000,buffs:['haste']},3601001);
+ refreshGmBuffs(doc.p,4001001);assert.equal(doc.p.buffs.haste,3200);assert.ok(doc.p._gmBuffs);
+});
+test('a real game loads the paid effect, keeps saved progress and expires it after reload',async t=>{
+ const game=new HeadlessGame();t.after(()=>game.close());game.create({classId:'elf',name:'商店妖精',allocation:{dex:8}});
+ const real=loadCatalog(new URL('../',import.meta.url)),service=new GameService(':memory:',real),shop=new CommerceService(service);t.after(()=>service.close());
+ const gm=await service.register('real_keeper',password,{initialGm:true}),user=await service.register('real_player',password),lease=randomUUID();service.acquireLease(user,lease);
+ service.sync(user,lease,0,{[key]:real.wrap(game.snapshot())});shop.grant(gm,{accountId:user.id,amount:300,reason:'測試儲值',requestId:randomUUID()});
+ const purchase=shop.buy(user,{productId:'full_status',slot:1,epoch:game.snapshot().p._roleEpoch,lease,requestId:randomUUID()});
+ game.run('player.exp=123;');game.applyEffects(purchase.effects,purchase.snapshot.serverTime);assert.equal(game.snapshot().p.exp,123);assert.ok(game.snapshot().p.buffs.haste>3590);assert.ok(game.snapshot().p._shopBuffs.ids.length>50);
+ const loaded=new HeadlessGame({values:game.save()});t.after(()=>loaded.close());loaded.load();loaded.refreshGm(purchase.expiresAt-1000);assert.equal(loaded.snapshot().p.buffs.haste,1);
+ loaded.refreshGm(purchase.expiresAt+1);assert.equal(loaded.snapshot().p.buffs.haste,0);assert.equal(loaded.snapshot().p._shopBuffs,undefined);
+});
+test('paid buffs and purchase deduplication survive database restart',async t=>{
+ const dir=mkdtempSync(path.join(tmpdir(),'blackcat-paid-buff-')),file=path.join(dir,'game.sqlite');let service=new GameService(file,catalog),shop=new CommerceService(service);
+ t.after(()=>{service.close();rmSync(dir,{recursive:true,force:true});});
+ const gm=await service.register('persist_buff_gm',password,{initialGm:true}),user=await service.register('persist_buff_player',password),lease=randomUUID(),doc=make();service.acquireLease(user,lease);service.sync(user,lease,0,{[key]:catalog.wrap(doc)});
+ shop.grant(gm,{accountId:user.id,amount:300,reason:'測試儲值',requestId:randomUUID()});const body={productId:'full_status',slot:1,epoch:doc.p._roleEpoch,lease,requestId:randomUUID()},result=shop.buy(user,body);service.close();
+ service=new GameService(file,catalog);shop=new CommerceService(service);const replay=shop.buy(user,body);assert.equal(replay.replayed,true);assert.equal(replay.wallet.diamonds,0);assert.equal(JSON.parse(replay.snapshot.values[key]).p._shopBuffs.expiresAt,result.expiresAt);
+});
+test('HTTP full status requires authentication, CSRF and account lease; expiry is never client supplied',async t=>{
+ const app=createApp({database:':memory:',catalog,publicOrigin:'',publicAliases:[]});app.server.listen(0,'127.0.0.1');await once(app.server,'listening');t.after(async()=>{app.server.closeAllConnections();await new Promise(r=>app.server.close(r));});
+ const gm=await app.service.register('http_buff_gm',password,{initialGm:true}),user=await app.service.register('http_buff_player',password),lease=randomUUID(),doc=make();app.service.acquireLease(user,lease);app.service.sync(user,lease,0,{[key]:catalog.wrap(doc)});
+ app.commerce.grant(gm,{accountId:user.id,amount:300,reason:'測試儲值',requestId:randomUUID()});const session=await app.service.login(user.username,password),base=`http://127.0.0.1:${app.server.address().port}`;
+ const body={productId:'full_status',slot:1,epoch:doc.p._roleEpoch,lease,requestId:randomUUID(),price:0,expiresAt:9999999999999};
+ const request=(cookie,csrf)=>fetch(base+'/api/shop/buy',{method:'POST',headers:{Origin:base,'Content-Type':'application/json',Cookie:cookie,'X-CSRF-Token':csrf},body:JSON.stringify(body)});
+ assert.equal((await request('','')).status,401);assert.equal((await request('idle_session='+session.session,'bad')).status,403);
+ const start=Date.now(),response=await request('idle_session='+session.session,session.csrf);assert.equal(response.status,200);const result=await response.json();assert.equal(result.wallet.diamonds,0);assert.ok(result.expiresAt>=start+3600000&&result.expiresAt<=Date.now()+3600000);
+});

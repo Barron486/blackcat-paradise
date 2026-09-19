@@ -26,6 +26,14 @@ test('all effects are included without requiring an icon, and permanent effects 
   assert.equal(formatRemaining(null),'常駐');
   assert.match(rows.find(r=>r.id==='set:紅獅').description,/傷害減免 \+10/);
 });
+
+test('shop effects expose ability, source and server countdown without losing a longer GM grant',()=>{
+ const p={buffs:{haste:99999},_shopBuffs:{ids:['haste'],expiresAt:10000}};
+ let rows=collectStatuses(p,{now:8000});assert.equal(rows[0].seconds,2);assert.equal(rows[0].source,'藍鑽商店');assert.ok(rows[0].description.length>0);
+ assert.equal(collectStatuses(p,{now:10001}).length,0);
+ p._gmBuffs={ids:['haste'],expiresAt:20000};rows=collectStatuses(p,{now:8000});assert.equal(rows[0].seconds,12);assert.equal(rows[0].source,'藍鑽商店／GM 賦予');
+ rows=collectStatuses(p,{now:10001});assert.equal(rows[0].source,'GM 賦予');assert.equal(p.buffs.haste,99999);
+});
 test('aura duration ignores downed allies and avoids duplicating a personal buff', () => {
   const p={buffs:{},allies:[{buffs:{a:20}},{buffs:{a:40}},{_downed:true,buffs:{a:900}}]};
   assert.equal(collectStatuses(p,{auraIds:['a']})[0].seconds,40);

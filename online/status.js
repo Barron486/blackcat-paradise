@@ -5,7 +5,7 @@ if (panel) {
   panel.innerHTML = `<header class="effects-heading"><div><h2>目前狀態</h2><p>能力效果與剩餘時間</p></div><span id="effects-count">0 個</span></header>
     <div class="effects-tools"><label for="effects-search">搜尋狀態</label><input id="effects-search" type="search" placeholder="搜尋名稱或能力效果" autocomplete="off">
     <div class="effects-filters" role="group" aria-label="狀態分類"><button type="button" data-kind="all" aria-pressed="true">全部</button><button type="button" data-kind="buff" aria-pressed="false">增益</button><button type="button" data-kind="debuff" aria-pressed="false">異常</button><button type="button" data-kind="permanent" aria-pressed="false">常駐</button></div></div>
-    <p class="effects-note">倒數隨遊戲更新；GM 狀態依伺服器時間到期。常駐效果隨裝備條件解除。</p>
+    <p class="effects-note">GM 與藍鑽商店狀態依伺服器時間到期，離線照常倒數；其他倒數隨遊戲更新。常駐效果隨裝備條件解除。</p>
     <div id="effects-list" role="list" aria-label="目前生效的狀態"></div><p id="effects-empty">目前沒有生效中的狀態。</p>`;
   const list = panel.querySelector('#effects-list'), empty = panel.querySelector('#effects-empty');
   const search = panel.querySelector('#effects-search'), count = panel.querySelector('#effects-count');

@@ -211,7 +211,7 @@ export class HeadlessGame {
 
   refreshGm(now = Date.now()) {
     const player = this.run('player');
-    if(player?._gmBuffs) { refreshGmBuffs(player,now); this.run('calcStats();'); }
+    if(player?._gmBuffs||player?._shopBuffs) { refreshGmBuffs(player,now); this.run('calcStats();'); }
   }
 
   close() { this.dom.window.close(); }
