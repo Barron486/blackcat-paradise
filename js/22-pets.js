@@ -1498,7 +1498,7 @@ function _petAnimApply() {
         }
     } catch (e) {}
 }
-setInterval(_petAnimApply, 1000 / PET_ANIM_FPS);
+setInterval(() => _petAnimApply(), 1000 / PET_ANIM_FPS);
 
 // ---------- 十一、舊項圈系統存檔遷移（loadGame 掛點：js/13 呼叫 petMigrateLegacy）----------
 const _PET_LEGACY_COLLARS = { 'new_item_184': '杜賓狗', 'new_item_185': '狼', 'new_item_collar_husky': '哈士奇', 'new_item_238': '牧羊犬', 'new_collar_rabbit': '暴走兔', 'new_collar_fox': '狐狸', 'new_collar_beagle': '小獵犬', 'new_collar_stbernard': '聖伯納犬' };

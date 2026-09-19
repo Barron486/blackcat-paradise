@@ -1,6 +1,7 @@
 import {startLootTicker} from './loot-ticker.js';
 import {startWorldChat} from './world-chat.js?v=presence-20260919';
 import {npcIntents} from '/shared/game-intents.js';
+import {startBattlePlayback} from './battle-playback.js';
 
 const cloud=window.CloudStore;
 if(cloud)start();
@@ -17,12 +18,13 @@ function start(){
   const escape=text=>String(text).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const docAt=slot=>{try{const raw=cloud.get('lineage_idle_save_'+slot),d=_saveUnwrap(raw);return d.ok?JSON.parse(d.payload):null;}catch{return null;}};
   const roleEpoch=doc=>doc?.p?._roleEpoch||doc?.p?.enSeed;
+  const battle=startBattlePlayback();
   // The browser renders snapshots only. Even a modified browser has no progression upload API.
   stopGameTimers();
   for(const name of ['tick','gameLoop','startGameTimers','settleBackgroundMs','queueCatchupMs','_resumeIncrementalBackground'])window[name]=()=>{};
   window.saveGame=()=>true;
   cloud.serverNow=()=>Date.now()+offset;
-  function render(view,initial=false){
+  function render(view,initial=false,packet=null){
     if(!view)return;
     const oldMap=typeof mapState==='undefined'?null:mapState.current;
     if(initial){currentSlot=active.slot;const travel=window.changeMap;try{window.changeMap=()=>{};load();}finally{window.changeMap=travel;}initCombatLogLock();initSysLogLock();applyCombatFilter();_initTabGuard();}
@@ -41,7 +43,9 @@ function start(){
     }
     document.getElementById('btn-revive')?.classList.toggle('hidden',!player.dead);
     document.getElementById('btn-revive-inplace')?.classList.toggle('hidden',!player.dead||!!player._gmDead);
-    updateUI();renderMobs();renderTabs();
+    if(initial||oldMap!==mapState.current)battle.clear();
+    const playing=battle.receive(packet,{reset:initial});
+    updateUI();if(!playing)renderMobs();renderTabs();
   }
   function adopt(result){
     const snapshot=result.snapshot||result;
@@ -51,7 +55,7 @@ function start(){
       const initial=!active||active.epoch!==result.game.epoch||document.getElementById('game-screen').classList.contains('hidden');
       active={slot:result.game.slot,epoch:result.game.epoch};
       if(logEpoch!==active.epoch){lastLog=0;logEpoch=active.epoch;}
-      render(result.game.view,initial);
+      render(result.game.view,initial,result.game.battle);
       if((result.game.logs?.at(-1)?.id||0)<lastLog)lastLog=0;
       for(const entry of result.game.logs||[])if(entry.id>lastLog){
         const message=entry.html||escape(entry.message);
@@ -65,7 +69,7 @@ function start(){
   cloud.reconcile=adopt;cloud.adoptNames=adopt;
   async function request(op,args={},target=active){
     if(!cloud.ready)throw new Error('請先完成伺服器連線');
-    const body={lease:cloud.lease,op,args,...(target?{slot:target.slot,epoch:target.epoch}:{}),...(op==='state'?{}:{requestId:crypto.randomUUID(),revision:cloud.revision})};
+    const body={lease:cloud.lease,op,args:op==='state'?{...args,presentation:battle.cursor()}:args,...(target?{slot:target.slot,epoch:target.epoch}:{}),...(op==='state'?{}:{requestId:crypto.randomUUID(),revision:cloud.revision})};
     for(let attempt=0;attempt<3;attempt++)try{
       const result=await cloud.request('/api/game',body);adopt(result);return result;
     }catch(error){
@@ -97,11 +101,11 @@ function start(){
     void enqueue(()=>request('create',args,target)).catch(()=>{});
   };
   window.loadGame=()=>{const target={slot:currentSlot,epoch:roleEpoch(docAt(currentSlot))};void enqueue(()=>request('select',{},target)).catch(()=>{});};
-  window.returnToCharacterSelect=()=>{void enqueue(async()=>{if(active)await request('leave');active=null;leave();renderLoadSelect();}).catch(()=>{});return true;};
+  window.returnToCharacterSelect=()=>{void enqueue(async()=>{if(active)await request('leave');active=null;battle.clear();leave();renderLoadSelect();}).catch(()=>{});return true;};
   window.loadDeleteSelected=()=>{const slot=_loadSelectedSlot,doc=docAt(slot);if(!doc)return;const name=doc.p.name||'未命名';if(prompt(`請輸入角色名稱「${name}」確認刪除：`)!==name||!confirm('確定永久刪除此角色？'))return;void enqueue(async()=>{await request('delete',{name},{slot,epoch:roleEpoch(doc)});active=null;renderLoadSelect();}).catch(()=>{});};
   window.importSave=()=>alert('線上角色由伺服器保存，無法匯入本機存檔。');
   window.changeMap=()=>fire('travel',{mapId:document.getElementById('map-select').value});
-  window.setTarget=index=>fire('target',{index});
+  window.setTarget=index=>{const uid=battle.target(index)||mapState.mobs[index]?.uid;if(uid)fire('target',{uid:String(uid)});};
   window.returnToTown=()=>fire('return-town');window.playerTeleport=()=>fire('teleport');
   window.revive=()=>fire('revive');window.reviveInPlace=()=>fire('revive-in-place');
   window.equipItem=item=>fire('equip',{uid:item.uid});window.unequipItem=slot=>fire('unequip',{slot});

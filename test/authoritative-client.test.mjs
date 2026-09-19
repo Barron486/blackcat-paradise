@@ -6,6 +6,7 @@ import {GameService} from '../server/service.mjs';
 import {AuthoritativeGame} from '../server/authoritative-game.mjs';
 import {loadCatalog} from '../server/catalog.mjs';
 import {HeadlessGame} from '../cli/engine.mjs';
+import {BattleTimeline} from '../online/battle-timeline.js';
 
 const source=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
 const catalog=loadCatalog(new URL('../',import.meta.url));
@@ -28,6 +29,8 @@ async function fixture(t){
     throw new Error('Unexpected route '+url);
   };
   w.startWorldChat=()=>({refresh:()=>{}});w.startLootTicker=()=>{};w.npcIntents=[];
+  w.BattleTimeline=BattleTimeline;
+  w.eval(source('online/battle-playback.js').replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,''));
   // No retry delay in a unit fixture; DOM and upstream game scripts are real.
   w.setTimeout=fn=>{queueMicrotask(fn);return 1;};
   w.eval(source('online/authoritative.js').replace(/^import[^\n]*\n/gm,''));await settle();

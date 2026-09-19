@@ -57,7 +57,9 @@ export function extraAction(game,name,a){
     }
     case 'teleport':keys(a,[]);run('playerTeleport();');break;
     case 'revive-in-place':keys(a,[]);run(`if(player._gmDead)throw new Error('GM 死亡必須由 GM 復活');reviveInPlace();`);break;
-    case 'target':keys(a,['index']);integer(a.index,0,9);run(`if(!mapState.mobs[__args.index])throw new Error('目標不存在');mapState.targetIdx=__args.index;`);break;
+    case 'target':
+      keys(a,['index','uid']);if(a.uid!==undefined)id(a.uid);else integer(a.index,0,9);
+      run(`{const index=__args.uid!==undefined?mapState.mobs.findIndex(m=>m&&String(m.uid)===__args.uid):__args.index;const mob=mapState.mobs[index];if(!mob||mob._dead||mob.curHp<=0)throw new Error('目標已離場，請選擇目前的怪物');mapState.targetIdx=index;}`);break;
     case 'bonus':keys(a,['stat']);stat(a.stat);run('adjBonusStat(__args.stat);');break;
     case 'element':keys(a,['element']);if(!['fire','water','wind','earth'].includes(a.element))throw new Error('屬性不正確');run(`if(player.cls!=='elf'||!DB.towns[mapState.current])throw new Error('請回村選擇妖精屬性');chooseElfElement(__args.element);`);break;
     case 'respec':{

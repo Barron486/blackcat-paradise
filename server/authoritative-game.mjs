@@ -61,7 +61,7 @@ export class AuthoritativeGame {
     else if(ticks){r.anchor+=ticks*100;r.engine.setWorldSettings(this.service.world?.state());r.engine.refreshGm();if(!r.paused)r.engine.step(ticks);}
     this.commit(user,r);
   }
-  response(user,r){return {ok:true,authoritative:true,snapshot:this.service.bootstrap(user),game:r?{slot:r.slot,epoch:epoch(r.engine.snapshot()),view:r.engine.view(),status:r.engine.status(),logs:r.engine.logs.slice(-100),paused:r.paused}:null};}
+  response(user,r,cursor){return {ok:true,authoritative:true,snapshot:this.service.bootstrap(user),game:r?{slot:r.slot,epoch:epoch(r.engine.snapshot()),view:r.engine.view(),status:r.engine.status(),logs:r.engine.logs.slice(-100),paused:r.paused,battle:r.engine.battle?.(cursor)}:null};}
   handle(user,body){
     requireValue(body&&typeof body==='object'&&!Array.isArray(body),'指令格式不正確');
     const {lease,op='state',slot,requestId,args={}}=body;
@@ -85,7 +85,7 @@ export class AuthoritativeGame {
     }
     // Advance valid elapsed combat independently of whether the following action succeeds.
     if(r){this.service.transaction(()=>this.advance(user,r));r.lastSeen=this.clock();}
-    if(op==='state')return this.response(user,r);
+    if(op==='state')return this.response(user,r,args.presentation);
     try{return this.service.transaction(()=>{
       if(op==='create'||op==='select'){
         const row=this.row(user),raw=row.values[slotKey(slot)];

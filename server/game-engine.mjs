@@ -3,6 +3,7 @@ import vm from 'node:vm';
 import {JSDOM, VirtualConsole} from 'jsdom';
 import {applyEffect, refreshGmBuffs} from '../shared/gm-effects.js';
 import {extraAction} from './game-actions.mjs';
+import {installBattleRecording} from './battle-stream.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const HTML = readFileSync(new URL('index.html', ROOT), 'utf8');
@@ -62,6 +63,7 @@ export class HeadlessGame {
       logCombat = function(message,type){window.__cliLog(type || 'combat',message);};
       wireBuffEnders();
       currentSlot = ${this.slot};`, visualFunctions);
+    installBattleRecording(this);
   }
 
   run(code,args) {
@@ -87,6 +89,7 @@ export class HeadlessGame {
     const raw = `${['female','f'].includes(gender) ? 'f' : 'm'}_${({illusion:'illusionist',dragon:'Dknight'})[classId]||classId}`;
     this.run('document.getElementById("create-classic-toggle").checked=__args.classicMode===true;selectClass(__args.raw); document.getElementById("creation-name").value = __args.name; for(const [key,count] of Object.entries(__args.allocation)) for(let i=0;i<count;i++) adjStat(key,1); startGame();', {raw,allocation:given,name:roleName,classicMode});
     this.save();
+    this.captureBattle();
     return this.status();
   }
 
@@ -100,12 +103,17 @@ export class HeadlessGame {
     this.run('syncMapSelectors();if(DB.towns[mapState.current]&&!player.dead)mercExpClaimPending();');
     // The original loader revives ordinary deaths in town; GM death must remain enforced.
     this.run('gmApplyTeleport(); if(player._gmDead){ player.dead=true; player.hp=0; }');
+    this.captureBattle();
     return this.status();
   }
 
   adopt(doc) {
     this.run('player=__args.p;mapState=__args.ms;if(__args._serverState)Object.assign(state,__args._serverState);state.ticks=__args.ticks||0;state.ff=false;state.ffSmall=false;state.inTick=false;state.running=true;_roleBindRuntime();gmApplyTeleport();calcStats();',plain(doc));
+    this.captureBattle();
   }
+
+  captureBattle(){this.run('window.__captureBattle();');}
+  battle(cursor){return this.battleStream.packet(cursor);}
 
   view() {
     return plain(this.run('({v:SAVE_VERSION,p:player,ms:mapState,ticks:state.ticks,running:state.running})'));
@@ -114,7 +122,7 @@ export class HeadlessGame {
   step(ticks = 1) {
     if(!Number.isInteger(ticks) || ticks < 0 || ticks > 36000) throw new Error('tick 數量須為 0–36000');
     if(!this.run('!!player.cls')) throw new Error('尚未載入角色');
-    this.run('for(let i=0;i<__args;i++){if(player.dead || player._gmDead) break; state.inTick=true; try { tick(); } finally {state.inTick=false;settleDeadMobs();} }',ticks);
+    this.run('for(let i=0;i<__args;i++){if(player.dead || player._gmDead) break; state.inTick=true; try { tick(); } finally {state.inTick=false;settleDeadMobs();window.__captureBattle();} }',ticks);
     return this.status();
   }
 
@@ -194,6 +202,7 @@ export class HeadlessGame {
       default: extraAction(this,name,args);
     }
     this.save();
+    this.captureBattle();
     return this.status();
   }
 
