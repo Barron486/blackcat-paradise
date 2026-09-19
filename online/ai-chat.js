@@ -10,7 +10,7 @@
     root().innerHTML = `<div class="ai-chat-grid">
       <section class="surface ai-chat-main">
         <div class="section-heading"><div><span class="eyebrow">AI WORLD CHAT</span><h2>AI 世界聊天</h2></div><span class="ai-label">✦ AI 發言</span></div>
-        <p class="hint">讓伺服器上的 AI 角色偶爾加入世界聊天。內容由你選擇，發言會清楚標示為 AI。</p>
+        <p class="hint">讓伺服器上的角色偶爾加入世界聊天。內容由你選擇；玩家介面統一顯示角色名稱，模型與生成紀錄保留於本管理台。</p>
         <div class="ai-status-row"><span id="ai-status" class="status-pill">讀取中</span><span id="ai-runtime-summary" class="muted"></span></div>
         <div class="ai-form-grid">
           <label class="toggle-label"><input id="ai-enabled" type="checkbox"><span><strong>啟用 AI 自動聊天</strong><small>依間隔自動發言</small></span></label>

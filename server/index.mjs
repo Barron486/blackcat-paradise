@@ -99,7 +99,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
         if(route==='/api/auth/logout'&&req.method==='POST') {service.logout(session);return json(res,200,{ok:true},{'Set-Cookie':cookie('',true)});}
         if(route==='/api/lease'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.acquireLease(user,b.lease,b.takeover===true));}
         if(route==='/api/sync'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.sync(user,b.lease,b.revision,b.changes,b.presence));}
-        if(route==='/api/world') return json(res,200,{online:service.online(),messages:service.messages()});
+        if(route==='/api/world') return json(res,200,{online:service.online(),messages:service.publicMessages()});
         if(route==='/api/online'&&req.method==='GET') return json(res,200,service.onlineSummary());
         if(route==='/api/chat'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.chat(user,b.text));}
         if(route==='/api/shop'&&req.method==='GET')return json(res,200,commerce.state(user));

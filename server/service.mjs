@@ -333,11 +333,10 @@ export class GameService {
     return this.db.prepare('SELECT a.username,l.display_name AS name,l.map_name AS map,l.slot FROM leases l JOIN accounts a ON a.id=l.account_id WHERE l.expires_at>? ORDER BY a.username').all(Date.now());
   }
   onlineSummary(){
-    const ai=new Set(this.aiChat?.settings().speakers||[]);
     const maps=new Map((this.catalog.world?.maps||[]).map(m=>[m.id,m.name]));
-    // Shared presence must not expose account privileges; GM roles stay in authenticated admin views.
-    const players=this.db.prepare('SELECT a.id,l.display_name AS name,a.username,l.map_name AS map FROM leases l JOIN accounts a ON a.id=l.account_id WHERE l.expires_at>? ORDER BY a.username').all(Date.now()).map(p=>({name:p.name||p.username,map:maps.get(p.map)||p.map||'角色選擇',ai:ai.has(p.id)}));
-    const aiCount=players.filter(p=>p.ai).length;return {total:players.length,players:players.length-aiCount,ai:aiCount,list:players,at:Date.now()};
+    // Public presence lists characters uniformly; roles and automation stay in GM views.
+    const players=this.db.prepare('SELECT l.display_name AS name,a.username,l.map_name AS map FROM leases l JOIN accounts a ON a.id=l.account_id WHERE l.expires_at>? ORDER BY a.username').all(Date.now()).map(p=>({name:p.name||p.username,map:maps.get(p.map)||p.map||'角色選擇'}));
+    return {total:players.length,players:players.length,list:players,at:Date.now()};
   }
   chat(user,text) {
     requireValue(typeof text==='string'&&text.trim().length>0&&text.length<=500,'訊息須為 1～500 字');
@@ -348,4 +347,8 @@ export class GameService {
     return {ok:true};
   }
   messages() { return this.db.prepare('SELECT c.id,a.username,c.text,c.created_at AS at,m.display_name AS displayName,m.model,m.provider FROM chat c JOIN accounts a ON a.id=c.account_id LEFT JOIN ai_chat_messages m ON m.chat_id=c.id ORDER BY c.id DESC LIMIT 80').all().reverse().map(m=>({...m,ai:!!m.model})); }
+  publicMessages() {
+    // Keep provenance for moderation and reply scheduling, outside the player-facing API.
+    return this.messages().map(({id,username,text,at,displayName})=>({id,username,text,at,displayName:displayName||username}));
+  }
 }

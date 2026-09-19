@@ -11,12 +11,12 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
       <button type="button" role="tab" id="chat-tab-online" data-pane="online" aria-controls="chat-pane-online">線上玩家</button>
     </nav>
     <div id="chat-pane-players" class="cloud-chat-pane" role="tabpanel" aria-labelledby="chat-tab-players">
-      <p class="cloud-ai-note">與全服玩家交流；AI 角色的發言附有 AI 標示。</p>
+      <p class="cloud-chat-note">與各地冒險者交流，分享旅途中的見聞。</p>
       <div class="cloud-messages" aria-live="polite" tabindex="0" aria-label="玩家聊天紀錄"></div>
       <form><input aria-label="聊天訊息" maxlength="500" placeholder="和其他冒險者說點什麼…" required><button type="submit">送出</button></form>
     </div>
     <div id="chat-pane-npc" class="cloud-chat-pane" role="tabpanel" aria-labelledby="chat-tab-npc" hidden>
-      <p class="cloud-ai-note">遊戲內 NPC 的對話與服務，集中顯示在這裡。</p>
+      <p class="cloud-chat-note">遊戲內 NPC 的對話與服務，集中顯示在這裡。</p>
     </div>
     <div id="chat-pane-online" class="cloud-chat-pane" role="tabpanel" aria-labelledby="chat-tab-online" hidden>
       <div class="cloud-online-summary"><strong data-count>查詢中…</strong><button type="button" data-refresh>更新</button></div>
@@ -72,16 +72,13 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
     try {
       const data = await cloud.request('/api/online');
       onlineButton.textContent = `線上 ${data.total}`;
-      onlineButton.title = `玩家 ${data.players} · AI 角色 ${data.ai}`;
-      chat.querySelector('[data-count]').textContent = `在線 ${data.total} · 玩家 ${data.players} · AI ${data.ai}`;
+      onlineButton.title = `目前在線 ${data.total} 人`;
+      chat.querySelector('[data-count]').textContent = `在線 ${data.total} 人`;
       const target = chat.querySelector('.cloud-player-list');target.replaceChildren();
       for (const player of data.list) {
         const row = document.createElement('div'), name = document.createElement('strong'), map = document.createElement('small');
         row.className = 'cloud-player';name.textContent = player.name;map.textContent = player.map;
         row.append(name);
-        if (player.ai) {
-          const badge = document.createElement('span');badge.className = 'cloud-ai-badge';badge.textContent = 'AI';row.append(badge);
-        }
         row.append(map);target.append(row);
       }
       if (!data.list.length) target.textContent = '目前沒有在線角色。';
@@ -104,9 +101,8 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
       for (const m of data.messages) {
         const line = document.createElement('p'), name = document.createElement('strong'), time = document.createElement('small');
         line.dataset.id = String(m.id);
-        name.textContent = (m.ai ? (m.displayName || m.username) : m.username) + '　';name.title = m.username;
+        name.textContent = (m.displayName || m.username) + '　';name.title = m.displayName || m.username;
         time.textContent = new Date(m.at).toLocaleTimeString('zh-TW');line.append(time);
-        if (m.ai) { const badge = document.createElement('span');badge.className = 'cloud-ai-badge';badge.textContent = 'AI';badge.title = 'AI 角色 · ' + m.model;line.append(badge); }
         line.append(name, document.createTextNode(m.text));list.append(line);
       }
       list.scrollTop = follow ? list.scrollHeight : droppedFirst ? Math.max(0, previousTop + list.scrollHeight - previousHeight) : previousTop;

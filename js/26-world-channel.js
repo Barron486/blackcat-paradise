@@ -1837,7 +1837,7 @@ function syncNpcLanguageSetting() {
         control.classList.toggle('cursor-pointer', available);
         control.title = !language
             ? '僅限 Idle Lineage 安裝版'
-            : (!available ? '本機 NPC AI 模型未安裝' : (checkbox.checked ? 'NPC AI 對話已開啟' : 'NPC AI 對話已關閉'));
+            : (!available ? 'NPC 自然對話尚未就緒' : (checkbox.checked ? 'NPC 自然對話已開啟' : 'NPC 自然對話已關閉'));
     }
 }
 
