@@ -689,8 +689,18 @@ function tick() {
         let isPureBossMap = PURE_BOSS_MAPS.includes(mapState.current) && !KING_ROOMS[mapState.current];   // 🔧 軍王之室仍屬純BOSS房(免自動瞬移/追蹤)，但四軍王房改用五格
         if(!mapState.spawnAt) mapState.spawnAt = [null, null, null, null, null];
         let nowT = state.ticks;
-        if(KING_ROOMS[mapState.current] && state._kbRespawnAt != null) {
+        if(KING_ROOMS[mapState.current] && mapState._gmRoomEntryPending) {
+            if(gmKingRespawnRemaining()<=0){
+                delete mapState._gmRoomEntryPending;
+                const room=KING_ROOMS[mapState.current];
+                if(room.dual)room.bosses.forEach((id,i)=>spawnMob(i));else [1,0,2].forEach(spawnMob);
+            }
+        } else if(KING_ROOMS[mapState.current] && state._kbRespawnAt != null) {
             // 🔧 軍王之室復活等待中：5 秒內不刷任何怪；時間到則消耗 1 把鑰匙、從頭重生軍王與兩側小怪（背景/離線補跑期間也照常復活）
+            if(Number.isFinite(mapState._gmKingDefeatedAt)&&(gmKingRespawnConfigured()||mapState._gmKingOverrideActive)){
+                mapState._gmKingOverrideActive=true;
+                state._kbRespawnAt=nowT+gmKingRespawnTicks(mapState._gmKingDefeatedAt);
+            }
             if(nowT >= state._kbRespawnAt) { state._kbRespawnAt = null; kbRoomRespawn(); }
         } else if(KING_ROOMS[mapState.current] && KING_ROOMS[mapState.current].dual) {
             // 🏛️ 雙BOSS祭壇：不逐格自動補怪（初次生成於 changeMap；單隻陣亡不補）。防呆：兩隻皆亡卻未標記全滅 → 補標，交由 settleDeadMobs 啟動 5 秒同時復活
@@ -722,6 +732,8 @@ function tick() {
                         delay = Math.max(1, Math.round(delay * npcClanSiegeRespawnMultiplier()));
                     }
                 }
+                const gmDelay=gmFixedRespawnTicks(i);
+                if(gmDelay!==null)mapState.spawnAt[i]=nowT+gmDelay;
                 if(mapState.spawnAt[i] == null) mapState.spawnAt[i] = nowT + delay; // 空格剛出現：排程 delay 後（一般／純BOSS房／軍王之室皆 5 秒）
                 if(nowT >= mapState.spawnAt[i]) {
                     // 🌑 v3.4.18 聖地/崩壞廳 BOSS 復活收費：首次生成免費（入場費已付），之後每次復活扣 1 入場道具；沒道具→傳送出去、停止本輪出怪
@@ -1962,7 +1974,7 @@ function spawnMob(idx) {
         if (mapState.current === 'antharas_lair') _aid = (idx === 1) ? ANTHARAS_AREA_BOSS.antharas_lair : 'ant_earth_wild_dragon';
         else if (idx === 1 && !mapState.mobs.some(m => m && m.boss && !m._dead)) _aid = ANTHARAS_AREA_BOSS[mapState.current];
         if (_aid) {
-            let _ab = DB.mobs[_aid]; if (!_ab) return;
+            let _ab = DB.mobs[_aid]; if (!_ab || !gmCanSpawnMonster(_aid)) return;
             mapState.mobs[idx] = { ..._ab, curHp: _ab.hp, uid: uid(), _born: ++_mobBornSeq, _bornMs: Date.now(), _magCd: {}, justHit: false, st: newMobStatus() };
             gmApplyMonsterStats(mapState.mobs[idx],_aid);
             applySherineBuff(idx);   // 🐉 v3.7.61 初始區域頭目也套用席琳世界，與後續變身階段一致
@@ -1978,7 +1990,7 @@ function spawnMob(idx) {
         let _id;
         if(_kr.dual) { _id = _kr.bosses[idx]; if(!_id) { mapState.mobs[idx] = null; return; } }   // 🏛️ 雙BOSS祭壇：0,1 兩格各一隻BOSS（第三格留空）
         else _id = (idx === 1) ? _kr.boss : _kr.minion;
-        let _b = DB.mobs[_id]; if(!_b) return;
+        let _b = DB.mobs[_id]; if(!_b || !gmCanSpawnMonster(_id) || gmKingRespawnRemaining()>0) return;
         mapState.mobs[idx] = { ..._b, curHp: _b.hp, uid: uid(), _born: ++_mobBornSeq, _bornMs: Date.now(), _magCd: {}, justHit: false, st: newMobStatus() };
         gmApplyMonsterStats(mapState.mobs[idx],_id);
         applySherineBuff(idx);   // 🔮 軍王之室／底比斯歐西里斯祭壇也吃「席琳的世界」強化＋_sherine（與一般出怪一致；不含恩賜 grace；須在 initHardSkin 之前）
@@ -1988,6 +2000,7 @@ function spawnMob(idx) {
     }
     // 🆕 2026-06：後排格(3,4)現在也會 roll 頭目——原本後排不出王，但死亡輸送帶把存活怪往前壓實、空格往後堆→補位幾乎都落在後排、跳過頭目判定而稀釋出王率；故 wantBoss/卡瑞/林德拜爾改成全 5 格皆判定（idx>=3 不再排除頭目）
     let bossInBattle = mapState.mobs.some(m => m && m.boss);
+    pool = pool.filter(gmCanSpawnMonster);
     let bossPool = pool.filter(id => DB.mobs[id] && DB.mobs[id].boss);
     let normalPool = pool.filter(id => DB.mobs[id] && !DB.mobs[id].boss);
     let mobId;
@@ -2082,14 +2095,14 @@ function spawnMob(idx) {
     // 魔物追蹤：在追蹤地圖且追蹤有效期間，每次出怪 50% 固定機率改為被追蹤的怪物（🏺 v3.2.17 裝備 小獵犬的追蹤鼻 → 70%）
     if(player.tracking && player.tracking.until > Date.now() && player.tracking.map === mapState.current
        && DB.maps[mapState.current] && DB.maps[mapState.current].includes(player.tracking.mob)
-       && DB.mobs[player.tracking.mob] && !DB.mobs[player.tracking.mob].boss) {
+       && DB.mobs[player.tracking.mob] && !DB.mobs[player.tracking.mob].boss && gmCanSpawnMonster(player.tracking.mob)) {
         let _trkRate = 0.5;
         try { for (let _k in player.eq) { let _e = player.eq[_k]; if (_e && DB.items[_e.id] && DB.items[_e.id].trackBoost) { _trkRate = 0.7; break; } } } catch (e) {}
         if (Math.random() < _trkRate) mobId = player.tracking.mob;
     }
     // 🔧 卡瑞（BOSS）：身上「同時」攜帶 飛龍的爪子/蜥蜴的角/水晶球/妖魔戰士護身符 時，
     //    於龍之谷地監6樓 1% 機率出現（場上無其他 BOSS 時才出現，且同時最多一隻）
-    if (mapState.current === 'zone_31'
+    if (mapState.current === 'zone_31' && gmCanSpawnMonster('kari')
         && !bossInBattle
         && !mapState.mobs.some(m => m && m.n === '卡瑞')
         && ['item_dragon_claw', 'item_lizard_horn', 'item_crystal_ball', 'item_orc_amulet'].every(q => player.inv.some(i => i.id === q && i.cnt > 0))
@@ -2097,7 +2110,7 @@ function spawnMob(idx) {
         mobId = 'kari';
     }
     // 🔥 50級試煉：大洞穴隱遁者村莊地區 1% 出現「魔族暗殺團」（妖精 stage2 收集密封情報書／法師 stage1 收集間諜報告書）
-    if (mapState.current === 'hidden_cave' && !mapState.mobs.some(m => m && m.n === '魔族暗殺團')
+    if (mapState.current === 'hidden_cave' && gmCanSpawnMonster('demon_assassin') && !mapState.mobs.some(m => m && m.n === '魔族暗殺團')
         && ((player.cls === 'elf' && player.trialStage === 2 && !player.inv.some(i => i.id === 'item_sealed_intel'))
             || (player.cls === 'mage' && player.trialStage === 1 && !player.inv.some(i => i.id === 'item_spy_report')))
         && Math.random() < 0.01) {
@@ -2105,7 +2118,7 @@ function spawnMob(idx) {
     }
     // 🐉 林德拜爾（BOSS）：身上持有任意「幼龍蛋」（頑皮／淘氣）於任一野外地圖時，1% 機率改為刷出林德拜爾
     //    （場上無其他 BOSS 時才出現、同時最多一隻；蛋全數賣出或存入倉庫即不再遭遇）
-    if (!bossInBattle
+    if (!bossInBattle && gmCanSpawnMonster('lindvior')
         && MAP_CATEGORIES.wild.some(m => m.v === mapState.current)
         && !mapState.mobs.some(m => m && m.n === '林德拜爾')
         && player.inv.some(i => (i.id === 'item_dragon_egg' || i.id === 'item_dragon_egg2') && i.cnt > 0)
@@ -2130,7 +2143,7 @@ function spawnMob(idx) {
     }
     if (mapState._trollSpawn && (!DB.mobs[mobId] || !DB.mobs[mobId].trollPlayer)) delete mapState._trollSpawn;
     let base = DB.mobs[mobId];
-    if(!base) return;
+    if(!base || (!mapState._trollSpawn && !gmCanSpawnMonster(mobId))) return;
     mapState.mobs[idx] = { ...base, curHp: base.hp, uid: uid(), _born: ++_mobBornSeq, _magCd: {}, justHit: false, st: newMobStatus(), _bornMs: Date.now() };   // 🏛️ _bornMs：生成時間（長老之室 BOSS 3 分鐘節流用）；_born：出生序（鎖定最早出生用）
     // 弓：場上原本沒有任何敵人時，第一個出現的敵人不論主動/被動，都強制視為被動（搭配弓攻擊3秒延遲，可先手放風箏）
     if(!base.boss && player.eq.wpn && DB.items[player.eq.wpn.id] && DB.items[player.eq.wpn.id].isBow && !mapState.mobs.some((m, j) => m && j !== idx)) {

@@ -1187,6 +1187,7 @@ function changeMap(force) {
     { let _c = mapRegionOf(mapState.current); if(_c) { if(!player.lastMapByCat) player.lastMapByCat = {}; player.lastMapByCat[_c] = mapState.current; } }   // 記住各「地區」分類最後到過的地圖（與下拉同鍵）
     mapState.mobs = [null, null, null, null, null];
     if (typeof _vfxClearAll === 'function') _vfxClearAll();   // 🎚️ v3.0.73 換地圖/回城：清掉上一張地圖尚在播放的死亡殘影等狩獵特效，避免蓋到村莊/新地圖介面
+    delete mapState._gmRoomEntryPending;delete mapState._gmKingDefeatedAt;delete mapState._gmKingOverrideActive;
     state._kbRespawnAt = null;    // 🔧 離開/進入任何地圖即取消軍王之室未完成的復活倒數（避免殘留狀態）
     state._kbVictory = false;     // 🏛️ 進入新地圖一併清除未結算的全滅旗標（避免雙BOSS祭壇殘留誤觸發）
     mapState.forceBoss = false;   // 🔧 傳送戒指的必出BOSS僅在施放傳送的當下有效：換地圖即失效，需再次手動施放傳送術
@@ -1248,7 +1249,10 @@ function changeMap(force) {
         mapState.spawnAt = [t0 + 70, t0 + 50, t0 + 90]; // [左0, 中1, 右2]
         mapState.suppressSiegeBoss = true;   // 初次進場：必定不出現肯特城門/守護塔
         // 🏛️ 雙BOSS祭壇：進場立即生成兩隻BOSS（之後不逐格補怪，兩隻皆亡才會在 15 秒後同時復活）
-        if (KING_ROOMS[mapState.current] && KING_ROOMS[mapState.current].dual) {
+        if (KING_ROOMS[mapState.current] && gmKingRespawnRemaining()>0) {
+            mapState._gmRoomEntryPending=true;
+            logSys('頭目正在重生，約 '+Math.ceil(gmKingRespawnRemaining()/1000)+' 秒後再次出現。');
+        } else if (KING_ROOMS[mapState.current] && KING_ROOMS[mapState.current].dual) {
             KING_ROOMS[mapState.current].bosses.forEach((bid, k) => spawnMob(k));
             mapState.spawnAt = [null, null, null, null, null];
         }

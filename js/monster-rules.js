@@ -1,5 +1,12 @@
 // Shared numeric monster rules. Identity, skill types and progression flags stay read-only.
 globalThis.GameMonsterRules=Object.freeze({
+  respawnFamilies(definitions){
+    const parents=new Map(Object.keys(definitions).map(id=>[id,id]));
+    const root=id=>{while(parents.get(id)!==id)id=parents.get(id);return id;};
+    for(const [id,mob]of Object.entries(definitions))if(parents.has(mob.transformTo))parents.set(root(mob.transformTo),root(id));
+    const groups=new Map();for(const id of parents.keys()){const key=root(id);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(id);}
+    return Object.fromEntries([...groups.values()].flatMap(ids=>{ids.sort();return ids.map(id=>[id,ids]);}));
+  },
   core:Object.freeze({lv:['等級',1,500,1],hp:['HP',1,100000000,1],ac:['AC（越低越強）',-1000,1000,1],mr:['魔防 MR',0,10000,1],hit:['命中',-1000,10000,1],db:['物理附加傷害',0,1000000,1],dr:['傷害減免',0,1000000,1],er:['迴避',0,10000,1],atkSpd:['攻擊間隔（秒，越低越快）',0.1,60,0.1],exp:['基礎經驗',0,100000000,1],goldMin:['金幣下限',0,100000000,1],goldMax:['金幣上限',0,100000000,1],'dmg.0':['物理骰數',1,100,1],'dmg.1':['物理骰面',1,1000000,1]}),
   get(object,path){return path.split('.').reduce((o,k)=>o?.[k],object);},
   fields(base){

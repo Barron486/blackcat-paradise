@@ -126,10 +126,10 @@ export class HeadlessGame {
     return plain(this.run('petsOutList().map(p=>({uid:p.uid,_statuses:p._statuses||{},_hardenDr:p._hardenDr||0,_hardenUntil:p._hardenUntil||0,_reviveGuardUntil:p._reviveGuardUntil||0}))'));
   }
 
-  step(ticks = 1) {
+  step(ticks = 1, endTime = Date.now()) {
     if(!Number.isInteger(ticks) || ticks < 0 || ticks > 36000) throw new Error('tick 數量須為 0–36000');
     if(!this.run('!!player.cls')) throw new Error('尚未載入角色');
-    this.run('for(let i=0;i<__args;i++){if(player.dead || player._gmDead) break; state.inTick=true; try { tick(); } finally {state.inTick=false;settleDeadMobs();pvpServerTick();window.__captureBattle();} }pvpServerTick();',ticks);
+    this.run('try{for(let i=0;i<__args.ticks;i++){if(player.dead || player._gmDead) break;window.__gmRespawnTime=__args.endTime-(__args.ticks-i-1)*100;state.inTick=true;try{tick();}finally{state.inTick=false;settleDeadMobs();pvpServerTick();window.__captureBattle();}}pvpServerTick();}finally{delete window.__gmRespawnTime;}',{ticks,endTime});
     return this.status();
   }
 

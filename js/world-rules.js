@@ -3,8 +3,17 @@ var gmWorld = {revision:0,goldMultiplier:1,expMultiplier:1,dropMultiplier:1,show
 var gmWorldInitialized = false;
 function gmSetWorld(value) {
     if (!value || (gmWorldInitialized && value.revision <= gmWorld.revision)) return;
+    const previous=gmWorld;
     gmWorld = Object.assign({}, gmWorld, value);
     gmWorldInitialized = true;
+    if(typeof player!=='undefined'&&player.cls&&typeof mapState!=='undefined'&&mapState.spawnAt){
+        // Removing a custom timer must not leave the old, potentially hours-long slot deadline behind.
+        mapState.spawnAt.forEach((at,i)=>{
+            const id=gmFixedSpawnId(i);if(!id||mapState.mobs[i])return;
+            const family=gmRespawnFamily(id),had=family.some(key=>previous.monsters?.[key]?.respawnSeconds!=null),killed=player._gmRespawnKills?.[family[0]];
+            if(had&&gmRespawnSeconds(id)===null&&Number.isFinite(killed))mapState.spawnAt[i]=state.ticks+Math.ceil(Math.max(0,killed+5000-gmRespawnNow())/100);
+        });
+    }
     if (typeof player !== 'undefined' && player.cls && typeof syncMapSelectors === 'function') syncMapSelectors();
 }
 function gmDropKey(source, name, item) { return JSON.stringify([source,name,item]); }
@@ -15,12 +24,54 @@ function gmApplyMonsterStats(mob,id) {
     if(['goldMin','goldMax'].some(k=>Object.hasOwn(gmWorld.monsters?.[id]?.values||{},k)))mob._gmGoldOverride=true;
 }
 function gmRecordMonsterKill(mob) {
+    gmRecordRespawnKill(mob);
     const settings=gmWorld.killBroadcast;
     if(!settings?.enabled||mob._pvpDuelFoe)return;
     const id=mob._gmMonsterId||Object.keys(DB.mobs).find(id=>DB.mobs[id].n===mob.n);
     if(!id||!settings.monsters.includes(id))return;
     player._monsterKillSeq=(player._monsterKillSeq||0)+1;
     player._monsterKillEvents=[...(player._monsterKillEvents||[]),{seq:player._monsterKillSeq,monsterId:id,mapId:mapState.current,at:Date.now()}].slice(-64);
+}
+var gmRespawnFamilies;
+function gmRespawnFamily(id) { return (gmRespawnFamilies || (gmRespawnFamilies=GameMonsterRules.respawnFamilies(DB.mobs)))[id] || [id]; }
+function gmRespawnNow() { return typeof window.__gmRespawnTime==='number' ? window.__gmRespawnTime : Date.now(); }
+function gmRespawnSeconds(id) {
+    const configured=gmRespawnFamily(id).map(key=>gmWorld.monsters?.[key]?.respawnSeconds).filter(value=>Number.isInteger(value)&&value>=1&&value<=604800);
+    return configured.length ? Math.max(...configured) : null;
+}
+function gmRespawnRemaining(id) {
+    const seconds=gmRespawnSeconds(id),killed=player._gmRespawnKills?.[gmRespawnFamily(id)[0]];
+    return seconds===null||!Number.isFinite(killed) ? 0 : Math.max(0,killed+seconds*1000-gmRespawnNow());
+}
+function gmCanSpawnMonster(id) { return !!DB.mobs[id] && gmRespawnRemaining(id)<=0; }
+function gmRecordRespawnKill(mob) {
+    if(mob._pvpDuelFoe||mob.trollPlayer||mob.pledgeEnemy)return;
+    const id=mob._gmMonsterId||Object.keys(DB.mobs).find(id=>DB.mobs[id].n===mob.n);
+    if(id){player._gmRespawnKills||={};player._gmRespawnKills[gmRespawnFamily(id)[0]]=gmRespawnNow();}
+}
+function gmKingRespawnRemaining() {
+    const room=KING_ROOMS[mapState.current];
+    return room?Math.max(0,...(room.dual?room.bosses:[room.boss]).map(gmRespawnRemaining)):0;
+}
+function gmKingRespawnConfigured() {
+    const room=KING_ROOMS[mapState.current];
+    return !!room&&(room.dual?room.bosses:[room.boss]).some(id=>gmRespawnSeconds(id)!==null);
+}
+function gmFixedSpawnId(idx) {
+    const room=KING_ROOMS[mapState.current];
+    if(room)return room.dual?room.bosses[idx]:(idx===1?room.boss:room.minion);
+    if(typeof ANTHARAS_AREA_BOSS!=='undefined'&&ANTHARAS_AREA_BOSS[mapState.current]&&idx===1)return ANTHARAS_AREA_BOSS[mapState.current];
+    const pool=DB.maps[mapState.current];
+    return PURE_BOSS_MAPS.includes(mapState.current)&&idx===1&&pool?.length===1?pool[0]:null;
+}
+function gmFixedRespawnTicks(idx) {
+    const id=gmFixedSpawnId(idx);
+    return id&&gmRespawnSeconds(id)!==null&&Number.isFinite(player._gmRespawnKills?.[gmRespawnFamily(id)[0]])?Math.ceil(gmRespawnRemaining(id)/100):null;
+}
+function gmKingRespawnTicks(startedAt) {
+    const room=KING_ROOMS[mapState.current],ids=room?(room.dual?room.bosses:[room.boss]):[];
+    // A paired encounter restarts only after both bosses' cooldowns have finished.
+    return Math.max(0,...ids.map(id=>gmRespawnSeconds(id)===null?Math.ceil(Math.max(0,startedAt+5000-gmRespawnNow())/100):Math.ceil(gmRespawnRemaining(id)/100)));
 }
 function gmDropChance(source, mob, item, percent, bonus) {
     const key = gmDropKey(source, typeof mob === 'string' ? mob : mob.n, item);

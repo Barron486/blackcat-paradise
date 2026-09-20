@@ -642,9 +642,12 @@ function settleDeadMobs() {
             mapState.mobs = [null, null, null, null, null];
             mapState.spawnAt = [null, null, null, null, null];
             mapState.targetIdx = -1;
-            state._kbRespawnAt = state.ticks + 50;   // 5 秒（50 tick）後復活（2026-06 用戶調整 15 秒→5 秒）
+            mapState._gmKingDefeatedAt=gmRespawnNow();
+            mapState._gmKingOverrideActive=gmKingRespawnConfigured();
+            const respawnTicks=gmKingRespawnTicks(mapState._gmKingDefeatedAt);
+            state._kbRespawnAt = state.ticks + respawnTicks;   // 未自訂時保留原本 5 秒等待。
             if (!state.ff) { renderMobs(); updateUI(); }   // 補跑期間不逐次刷新，跑完由 gameLoop 統一刷新
-            logSys(`<span class="text-amber-300 font-bold">⚔ ${_krm.dual ? '兩位神祇' : '軍王'}已倒下！室內怪物盡數消散…</span> 5 秒後將消耗 <span class="text-amber-300">1 把${_keyNm}</span>，${_krm.dual ? '神祇' : '軍王'}再度甦醒。`);
+            logSys(`<span class="text-amber-300 font-bold">⚔ ${_krm.dual ? '兩位神祇' : '軍王'}已倒下！室內怪物盡數消散…</span> ${Math.ceil(respawnTicks/10)} 秒後將消耗 <span class="text-amber-300">1 把${_keyNm}</span>，${_krm.dual ? '神祇' : '軍王'}再度甦醒。`);
         } else {
             kbVictoryTeleport();
         }
@@ -681,6 +684,8 @@ function kbVictoryTeleport() {
 function kbRoomRespawn() {
     let _kr = KING_ROOMS[mapState.current];
     if (!_kr) { state._kbRespawnAt = null; return; }
+    if(gmKingRespawnRemaining()>0){state._kbRespawnAt=state.ticks+Math.ceil(gmKingRespawnRemaining()/100);return;}
+    delete mapState._gmKingDefeatedAt;
     let _keyId = _kr.key || 'item_king_key';
     let _keyNm = DB.items[_keyId] ? DB.items[_keyId].n : '鑰匙';
     let _ki = player.inv.findIndex(i => i.id === _keyId && (i.cnt || 1) >= 1);
@@ -1335,6 +1340,7 @@ function pickRiftMob(boss, minLv, maxLv, elapsedSec) {
     for (let id in DB.mobs) {
         let m = DB.mobs[id];
         if (!m || typeof m.lv !== 'number') continue;
+        if (!gmCanSpawnMonster(id)) continue;
         if (!!m.boss !== !!boss) continue;
         if (m.lv < minLv || m.lv > maxLv) continue;
         if (m.siegeEnemy || m.pledgeEnemy || m.race === '建築' || id === 'kari') continue;   // 排除攻城/血盟/建築/卡瑞

@@ -116,7 +116,7 @@ export class AuthoritativeGame {
     const now=this.clock(),ticks=Math.min(100,Math.floor(Math.max(0,now-r.anchor)/100));
     // Only the server's live monotonic clock grants time. Bound each pass, retain
     // backlog for later passes, and start a fresh anchor after a server restart.
-    if(ticks){r.anchor=r.paused?now:r.anchor+ticks*100;r.engine.setWorldSettings(this.service.world?.state());r.engine.refreshGm();if(!r.paused)r.engine.step(ticks);this.commit(user,r);}
+    if(ticks){r.anchor=r.paused?now:r.anchor+ticks*100;r.engine.setWorldSettings(this.service.world?.state());r.engine.refreshGm();if(!r.paused)r.engine.step(ticks,Date.now()-Math.max(0,now-r.anchor));this.commit(user,r);}
   }
   response(user,r,cursor,compact=false){
     const snapshot=this.service.bootstrap(user);
