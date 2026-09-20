@@ -255,6 +255,23 @@ function _petRosterRead(key) {
         return Array.isArray(arr) ? arr : [];
     } catch (e) { console.warn('petRoster 解析失敗', e); return null; }
 }
+// Online snapshots replace the browser mirror, without merging stale local progress or reviving pets.
+function petAdoptServerRoster(values, states) {
+    let key = _petBucketKey(), raw = values[key], roster = [];
+    if (raw != null) {
+        let decoded = _saveUnwrap(raw);
+        if (!decoded.ok) return;
+        try { roster = JSON.parse(decoded.payload); } catch (e) { return; }
+        if (!Array.isArray(roster)) return;
+    }
+    let live = new Map((states || _petRoster).map(p => [p.uid, p]));
+    _petRoster = roster.filter(p => p && PET_BOOK[p.form]).map(p => {
+        let rt = live.get(p.uid);
+        for (let k of ['_statuses', '_hardenDr', '_hardenUntil', '_reviveGuardUntil']) if (rt && rt[k] !== undefined) p[k] = rt[k];
+        return p;
+    });
+    _petRosterKey = key; _petRosterDirty = false; _petReleasedUids = {}; _petPendingAddUids = {};
+}
 function petRoster() {
     if (typeof player === 'undefined' || !player) return _petRoster;
     let key = _petBucketKey();
@@ -1320,39 +1337,65 @@ function renderPetStorageNPC(div, confirmUid) {
 }
 
 // ---------- 九、隊伍清單（renderSquadPanel 掛點：傭兵卡下方）----------
-function renderPetTeamHTML() {
-    let outs = petsOutList();
-    if (!outs.length) return '';
-    return outs.map(p => {
-        let _mmpEff = p.mmp + (((typeof petDerive === 'function' && petDerive(p)) || {}).mmpBonus || 0);   // 🦴 v3.2.42 稽核修：MP 條/浮標含防具精神加成（原本米索莉寵顯示 35/30 爆表）
-        let _mhpE = petMhpEff(p); let hpPct = Math.max(0, Math.min(100, Math.floor(p.hp / Math.max(1, _mhpE) * 100)));
-        let mpPct = Math.max(0, Math.min(100, Math.floor(p.mp / Math.max(1, _mmpEff) * 100)));
-        let expPct = Math.min(100, Math.floor((p.exp || 0) / petExpReq(p.lv) * 100));
-        let thumb = 'assets/anim/' + encodeURIComponent(p.form) + '/d6/idle_0.png';
-        // 🐾 v3.2.33 高度減半（用戶指示·樣式/元素不變）：縮圖 36×32→26×22、內距/條高/字級/間距減半（用 inline style 避開預編譯 Tailwind 任意值缺漏）
-        if (p._downed) {
-            return `<div class="bg-slate-800/80 border border-red-800 rounded text-xs flex items-center gap-2" style="padding:3px 6px;">
-                <img src="${thumb}" alt="" style="width:26px;height:22px;object-fit:contain;image-rendering:pixelated;filter:grayscale(1);" onerror="this.style.display='none'">
-                <span class="flex-1" style="font-size:10px;line-height:1.3;"><span class="text-red-400 font-bold">🐾 ${p.form}</span> <span class="text-slate-400">Lv.${p.lv}·倒地</span><br>
-                <span class="text-slate-400">${(p._reviveCd || 0) > 0 ? `卷軸復活倒數 ${Math.ceil(p._reviveCd / 10)} 秒` : '可用卷軸復活'}</span></span>
-                <span class="flex gap-1">
-                    <button onclick="petRevive('${p.uid}','rez')" class="btn font-bold" style="padding:0 6px;font-size:10px;height:18px;background:linear-gradient(135deg,#065f46,#059669);color:#a7f3d0;border-color:#10b981;">返生術</button>
-                    <button onclick="petRevive('${p.uid}','scroll')" class="btn font-bold" style="padding:0 6px;font-size:10px;height:18px;">卷軸</button>
-                </span>
-            </div>`;
+function createPetTeamCard(p) {
+    let card = document.createElement('div'); card.className = 'pet-team-card'; card.dataset.petUid = p.uid;
+    card.innerHTML = `<div class="pet-team-heading"><img data-pet-image alt=""><strong data-pet-name></strong><span data-pet-level></span><span data-pet-deploy></span></div>
+        <div class="compact-dual-vitals">
+            <div class="bar-bg compact-team-bar"><div data-pet-hp-bar class="bar-fill bg-red-600"></div><div data-pet-hp class="bar-text text-white"></div></div>
+            <div class="bar-bg compact-team-bar"><div data-pet-mp-bar class="bar-fill bg-blue-600"></div><div data-pet-mp class="bar-text text-white"></div></div>
+        </div>
+        <div data-pet-exp class="pet-team-detail"></div><div data-pet-status class="pet-team-status"></div>
+        <label class="squad-setting-field pet-team-setting"><span>自動喝水</span><span class="squad-percent-control">HP ≤ <input data-pet-potion type="number" inputmode="numeric" min="0" max="95" step="1" aria-label="寵物自動喝水血量百分比"> %</span><small data-pet-potion-note></small></label>
+        <div data-pet-revive class="pet-team-revive" hidden><span data-pet-revive-note></span><button type="button" class="btn" data-pet-rez>返生術</button><button type="button" class="btn" data-pet-scroll>復活卷軸</button></div>`;
+    let input = card.querySelector('[data-pet-potion]');
+    input.oninput = () => petSetPotPct(p.uid, input.value);
+    input.onblur = () => syncPetTeamPanel();
+    card.querySelector('[data-pet-rez]').onclick = () => petRevive(p.uid, 'rez');
+    card.querySelector('[data-pet-scroll]').onclick = () => petRevive(p.uid, 'scroll');
+    card.querySelector('[data-pet-image]').onerror = function () { this.style.display = 'none'; };
+    return card;
+}
+function syncPetTeamPanel() {
+    let host = document.querySelector('[data-squad-pets]'); if (!host) return;
+    let pets = petsOutList(), existing = new Map(Array.from(host.children, el => [el.dataset.petUid, el]));
+    let activeIds = new Set(pets.map(p => p.uid));
+    existing.forEach((card, id) => { if (!activeIds.has(id)) card.remove(); });
+    pets.forEach(p => {
+        let card = existing.get(p.uid);
+        if (!card) { card = createPetTeamCard(p); host.append(card); }
+        const el = key => card.querySelector('[data-pet-' + key + ']');
+        const text = (key, value) => { value = String(value); if (el(key).textContent !== value) el(key).textContent = value; };
+        text('name', '🐾 ' + petDisplayName(p)); text('level', 'Lv.' + p.lv); text('deploy', p._downed ? '倒地' : '出戰中');
+        card.classList.toggle('pet-team-downed', !!p._downed);
+        let image = el('image'), src = 'assets/anim/' + encodeURIComponent(p.form) + '/d6/idle_0.png';
+        if (image.getAttribute('src') !== src) { image.style.display = ''; image.src = src; }
+        let mhp = petMhpEff(p), mmp = p.mmp + (petDerive(p).mmpBonus || 0);
+        for (let [key, cur, max] of [['hp', p.hp, mhp], ['mp', p.mp, mmp]]) {
+            text(key, key.toUpperCase() + ' ' + Math.floor(cur || 0) + '/' + Math.floor(max));
+            el(key + '-bar').style.width = Math.max(0, Math.min(100, (cur || 0) / Math.max(1, max) * 100)) + '%';
         }
-        return `<div class="bg-slate-800/80 border border-slate-600 rounded text-xs" style="padding:3px 6px;">
-            <div class="flex items-center gap-2">
-                <img src="${thumb}" alt="" style="width:26px;height:22px;object-fit:contain;image-rendering:pixelated;" onerror="this.style.display='none'">
-                <span class="flex-1 min-w-0" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span class="text-emerald-300 font-bold">🐾 ${p.form}</span> <span class="text-amber-300">Lv.${p.lv}</span> <span class="text-slate-400" style="font-size:10px;">EXP ${expPct}%</span></span>
-                <span class="text-slate-400 whitespace-nowrap" style="font-size:10px;">HP&lt;<input type="number" min="0" max="95" value="${p.potPct || 0}" onchange="petSetPotPct('${p.uid}',this.value)" class="w-11 bg-slate-900 border border-slate-600 rounded px-1 text-center" style="font-size:10px;height:16px;padding-top:0;padding-bottom:0;">%喝水</span>
-            </div>
-            <div class="compact-dual-vitals" style="margin-top:2px;">
-                <div class="bar-bg compact-team-bar" title="HP ${p.hp}/${_mhpE}"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#dc2626,#f87171);"></div><div class="bar-text text-white">${p.hp}/${_mhpE}</div></div>
-                <div class="bar-bg compact-team-bar" title="MP ${p.mp}/${_mmpEff}"><div class="bar-fill" style="width:${mpPct}%;background:linear-gradient(90deg,#2563eb,#60a5fa);"></div><div class="bar-text text-white">${p.mp}/${_mmpEff}</div></div>
-            </div>
-        </div>`;
-    }).join('');
+        let req = petExpReq(p.lv), exp = p.exp || 0;
+        text('exp', 'EXP ' + exp + '/' + req + '（' + Math.min(100, exp / Math.max(1, req) * 100).toFixed(1) + '%）');
+        let effects = [], st = p._statuses || {};
+        for (let [key, name] of [['stun','暈眩'],['freeze','冰凍'],['stone','石化'],['paralyze','麻痺'],['sleep','沉睡'],['silence','沉默'],['magicseal','魔封'],['poison','中毒'],['burn','灼燒'],['scald','燙傷'],['bleed','出血'],['slowAtk','緩速'],['weaken','弱化'],['disease','疾病'],['blind','目盲'],['potionFrost','藥水霜化'],['foulWater','汙濁之水']]) {
+            if (st[key] > 0) effects.push(name + ' ' + Math.ceil(st[key] / 10) + '秒');
+        }
+        if (petHardenDr(p)) effects.push('硬化 ' + Math.ceil((p._hardenUntil - state.ticks) / 10) + '秒');
+        if (petDevotionGuardOn(p)) effects.push('珍愛夥伴的執念 ' + Math.ceil((p._reviveGuardUntil - state.ticks) / 10) + '秒');
+        text('status', effects.length ? effects.join(' · ') : (p._downed ? '等待復活' : '狀態正常'));
+        let input = el('potion'), pending = !!window.CloudStore?.petEditing?.(p.uid), pct = p.potPct || 0;
+        if (document.activeElement !== input && !pending) input.value = String(pct);
+        input.setAttribute('aria-busy', String(pending));
+        text('potion-note', pending ? '設定保存中…' : (pct ? '目前設定：HP ≤ ' + pct + '% 時喝水，使用主角色的第一種藥水。' : '目前設定：關閉自動喝水（0%）。'));
+        el('revive').hidden = !p._downed;
+        if (p._downed) {
+            let cd = Math.ceil((p._reviveCd || 0) / 10), scroll = player.inv.some(i => i.id === 'scroll_revive' && i.cnt > 0);
+            text('revive-note', cd ? '卷軸復活倒數 ' + cd + ' 秒' : (scroll ? '可使用復活卷軸' : '身上沒有復活卷軸'));
+            el('scroll').disabled = cd > 0 || !scroll || player.dead;
+            let sk = DB.skills.sk_resurrection;
+            el('rez').disabled = !player.skills.includes('sk_resurrection') || player.dead || player.mp < player.d.getMpCost(sk.mp, sk.tier);
+        }
+    });
 }
 
 // ---------- 十、狩獵區渲染（八方向閒晃＋朝向攻擊·獨立時鐘·不動 js/09）----------

@@ -121,6 +121,11 @@ export class HeadlessGame {
     return plain(this.run('({v:SAVE_VERSION,p:player,ms:mapState,ticks:state.ticks,running:state.running})'));
   }
 
+  petState() {
+    // Persistent vitals/settings are already in the roster bucket; send only live effects here.
+    return plain(this.run('petsOutList().map(p=>({uid:p.uid,_statuses:p._statuses||{},_hardenDr:p._hardenDr||0,_hardenUntil:p._hardenUntil||0,_reviveGuardUntil:p._reviveGuardUntil||0}))'));
+  }
+
   step(ticks = 1) {
     if(!Number.isInteger(ticks) || ticks < 0 || ticks > 36000) throw new Error('tick 數量須為 0–36000');
     if(!this.run('!!player.cls')) throw new Error('尚未載入角色');

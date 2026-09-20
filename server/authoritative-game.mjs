@@ -122,7 +122,7 @@ export class AuthoritativeGame {
     const snapshot=this.service.bootstrap(user);
     return {ok:true,authoritative:true,snapshot,game:r?{slot:r.slot,epoch:epoch(this.service.catalog.unwrap(snapshot.values[slotKey(r.slot)])),
       // Browsers already receive this character in snapshot.values. CLI clients retain their existing response.
-      ...(compact?{}:{view:r.engine.view(),status:r.engine.status()}),logs:r.engine.logs.slice(-100),paused:r.paused,battle:cursor===false?undefined:r.engine.battle?.(cursor)}:null};
+      ...(compact?{petState:r.engine.petState()}:{view:r.engine.view(),status:r.engine.status()}),logs:r.engine.logs.slice(-100),paused:r.paused,battle:cursor===false?undefined:r.engine.battle?.(cursor)}:null};
   }
   handle(user,body){
     requireValue(body&&typeof body==='object'&&!Array.isArray(body),'指令格式不正確');

@@ -137,7 +137,7 @@ export function extraAction(game,name,a){
       if(!Object.hasOwn(calls,a.operation))throw new Error('不支援的寵物操作');
       if(['equip','unequip'].includes(a.operation)&&!['wpn','arm'].includes(a.slot))throw new Error('寵物裝備欄不正確');
       if(a.operation==='equip')id(a.itemUid);if(a.operation==='revive'&&!['rez','scroll'].includes(a.method))throw new Error('復活方式不正確');if(a.operation==='potion')integer(a.value,0,95);
-      run(calls[a.operation]+';petRosterSave();');break;
+      run(`{const p=_petFind(__args.uid);if(!p)throw new Error('找不到這隻寵物');if(_petOwnedByOther(p))throw new Error('這隻寵物由其他角色帶領');}`+calls[a.operation]+`;if(!petRosterSave())throw new Error('寵物設定保存失敗');`);break;
     }
     case 'mercenary':{
       keys(a,['operation','slot','method']);integer(a.slot,1,8);

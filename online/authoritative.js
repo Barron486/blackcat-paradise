@@ -29,12 +29,13 @@ function start(){
   for(const name of ['tick','gameLoop','startGameTimers','settleBackgroundMs','queueCatchupMs','_resumeIncrementalBackground'])window[name]=()=>{};
   window.saveGame=()=>true;
   cloud.serverNow=()=>Date.now()+offset;
-  function render(view,initial=false,packet=null){
+  function render(view,initial=false,packet=null,values={},petState){
     if(!view)return;
     const oldMap=typeof mapState==='undefined'?null:mapState.current;
     if(initial){currentSlot=active.slot;const travel=window.changeMap;try{window.changeMap=()=>{};load();}finally{window.changeMap=travel;}initCombatLogLock();initSysLogLock();applyCombatFilter();_initTabGuard();}
     const draft=!initial&&_asBackup?{autoSellRules:player.autoSellRules,autoSellOn:player.autoSellOn,autoSellGlobal:player.autoSellGlobal}:null;
     player=view.p;mapState=view.ms;state.ticks=view.ticks;state.running=!player.dead;
+    petAdoptServerRoster(values,petState);
     const journey=view._serverState||docAt(active.slot)?._serverState||{};
     for(const [key,fallback]of Object.entries(journeyDefaults))state[key]=journey[key]??fallback;
     pvpServerRestore(view._serverPvp||docAt(active.slot)?._serverPvp);
@@ -53,7 +54,7 @@ function start(){
     document.getElementById('btn-revive-inplace')?.classList.toggle('hidden',!player.dead||!!player._gmDead);
     if(initial||oldMap!==mapState.current)battle.clear();
     const playing=battle.receive(packet,{reset:initial});
-    updateUI();if(!playing)renderMobs();renderTabs();pvpServerRender();
+    updateUI();if(!playing)renderMobs();renderTabs();renderSquadPanel();pvpServerRender();
   }
   function adopt(result){
     const snapshot=result.snapshot||result;
@@ -63,7 +64,7 @@ function start(){
       const initial=!active||active.epoch!==result.game.epoch||document.getElementById('game-screen').classList.contains('hidden');
       active={slot:result.game.slot,epoch:result.game.epoch};
       if(logEpoch!==active.epoch){lastLog=0;logEpoch=active.epoch;}
-      render(result.game.view||docAt(active.slot),initial,result.game.battle);
+      render(result.game.view||docAt(active.slot),initial,result.game.battle,snapshot.values,result.game.petState);
       feed.open(active);
       if((result.game.logs?.at(-1)?.id||0)<lastLog)lastLog=0;
       for(const entry of result.game.logs||[])if(entry.id>lastLog){
@@ -71,7 +72,7 @@ function start(){
         if(entry.type==='system')logSys(message);else logCombat(message,entry.type);
         lastLog=entry.id;
       }
-    }else if(active){const doc=docAt(active.slot);if(roleEpoch(doc)===active.epoch)render(doc);}
+    }else if(active){const doc=docAt(active.slot);if(roleEpoch(doc)===active.epoch)render(doc,false,null,snapshot.values);}
     // Upstream rendering may write presentation caches; none are submitted to the server.
     cloud.reset(snapshot);status.textContent='伺服器已結算 · '+new Date(snapshot.serverTime).toLocaleTimeString('zh-TW');status.classList.remove('cloud-error');
   }
@@ -187,9 +188,27 @@ function start(){
   window.confirmRespec=()=>{if(_respec){fire('respec',{allocation:{..._respec.draft}});_respec=null;}};
   const autoSell=()=>{_readAutoSellForm();const args={rules:JSON.parse(JSON.stringify(getAutoSellRules())),enabled:player.autoSellOn!==false,global:!!document.getElementById('as-global')?.checked};_asBackup=null;closeAutoSellRules();return action('auto-sell',args);};
   window.saveAutoSellRules=()=>void autoSell().catch(()=>{});window.sellAutoSellItemsNow=()=>void autoSell().then(()=>action('sell-junk')).catch(()=>{});
-  for(const [fn,operation]of [['petDeployToggle','deploy'],['petToggleLock','lock']])window[fn]=uid=>fire('pet',{operation,uid});
-  window.petSetPotPct=(uid,value)=>fire('pet',{operation:'potion',uid,value:Number(value)});
-  window.petGearEquip=(uid,slot,itemUid)=>fire('pet',{operation:'equip',uid,slot,itemUid});window.petGearUnequip=(uid,slot)=>fire('pet',{operation:'unequip',uid,slot});window.petRevive=(uid,method)=>fire('pet',{operation:'revive',uid,method});
+  const petAction=params=>{
+    const sourceNpc=npcId,sourceMap=mapState.current,panel=document.getElementById('interaction-content');
+    const sourcePanel=panel.firstElementChild;
+    return action('pet',params).then(()=>{
+      if(sourceNpc&&npcId===sourceNpc&&mapState.current===sourceMap&&panel.firstElementChild===sourcePanel&&!document.getElementById('town-interaction-container').classList.contains('hidden')&&DB.towns[sourceMap]?.npcs?.some(n=>n.id===sourceNpc&&n.type==='petstore'))renderPetStorageNPC(panel);
+    });
+  };
+  for(const [fn,operation]of [['petDeployToggle','deploy'],['petToggleLock','lock']])window[fn]=uid=>void petAction({operation,uid}).catch(()=>{});
+  window.petGearEquip=(uid,slot,itemUid)=>void petAction({operation:'equip',uid,slot,itemUid}).catch(()=>{});
+  window.petGearUnequip=(uid,slot)=>void petAction({operation:'unequip',uid,slot}).catch(()=>{});
+  window.petRevive=(uid,method)=>void petAction({operation:'revive',uid,method}).catch(()=>{});
+  const petPending=new Map();cloud.petEditing=uid=>petPending.has(uid);
+  window.petSetPotPct=(uid,value)=>{
+    if(typeof value==='string'&&!value.trim())return;
+    value=Number(value);if(!Number.isInteger(value)||value<0||value>95){showError(new Error('寵物喝水門檻請輸入 0～95 的整數百分比'));return;}
+    petPending.set(uid,(petPending.get(uid)||0)+1);syncPetTeamPanel();
+    void action('pet',{operation:'potion',uid,value}).catch(()=>{}).finally(()=>{
+      const count=petPending.get(uid)-1;if(count)petPending.set(uid,count);else petPending.delete(uid);
+      syncPetTeamPanel();
+    });
+  };
   for(const [fn,operation]of [['toggleAlly','toggle'],['dismissAlly','dismiss'],['refreshAllyOnce','refresh']])window[fn]=slot=>fire('mercenary',{operation,slot:Number(slot)});
   window.reviveMercenary=(slot,method)=>fire('mercenary',{operation:'revive',slot:Number(slot),method});
   const openAllyEquipment=window.openAllyEquipmentManager,closeAllyEquipment=window.closeAllyEquipmentManager;

@@ -2706,15 +2706,18 @@ function renderSquadPanel() {
     panel.style.display = '';
     let _sigAllies = allies.map(a => a._slot + ':' + (a._allyName || '') + ':' + (a._downed ? 'D' : '') + ':' + (a.lv || 1)).join('|');
     let sigTeam = _sigAllies
-        + '||P:' + _pets.map(p => p.uid + ':' + p.lv + ':' + (p._downed ? 'D' : '') + ':' + Math.round(p.hp / Math.max(1, p.mhp) * 20) + ':' + Math.round(p.mp / Math.max(1, p.mmp) * 20) + ':' + Math.round((p.exp || 0) / Math.max(1, petExpReq(p.lv)) * 20) + ':' + (p.potPct || 0) + ':' + Math.ceil((p._reviveCd || 0) / 10)).join('|')
-        + '||S:' + ((typeof summonTeamSignature === 'function') ? summonTeamSignature() : '')   // team 分頁：名單/倒地/等級＋寵物/召喚血量(5%階)變動才重建
+        + '||S:' + ((typeof summonTeamSignature === 'function') ? summonTeamSignature() : '')   // 傭兵與召喚區獨立更新；寵物卡片保留輸入焦點
         + '||G:' + ((typeof guardTeamSignature === 'function') ? guardTeamSignature() : '');   // 🏰 城堡護衛血量/倒地/復活倒數變動才重建
     let sigSkill = _sigAllies + '||E:' + allies.map(a => a.elfEle || '').join(',');   // 🩹 v3.2.74 skill 分頁只看傭兵名單/等級→戰鬥中寵物/召喚掉血不重建·開啟的技能下拉不被關
     // 🧝 v3.8.5 追加 elfEle：來源妖精換屬性後 refreshAllyOnce 重建快照時名字/等級都沒變 → 簽章不動 → 技能下拉與自動維持勾選會停在舊屬性的清單（該隱藏的沒隱藏）
-    let _squadRebuilt = false;
+    let _squadRebuilt = false, team = document.getElementById('squad-tab-team');
+    if (!team.querySelector('[data-squad-pets]')) {
+        team.innerHTML = '<div data-squad-allies></div><div data-squad-pets></div><div data-squad-companions></div>';
+        _squadSigTeam = '';
+    }
     if (sigTeam !== _squadSigTeam) {
         _squadSigTeam = sigTeam;
-        document.getElementById('squad-tab-team').innerHTML = allies.map(a => {
+        team.querySelector('[data-squad-allies]').innerHTML = allies.map(a => {
             let s = a._slot;
             if (a._downed) {   // 🤝 Phase 3：倒地→灰顯卡片。返生術＝手動鈕（消耗MP·無冷卻立即）；復活卷軸＝v2.6.6 改自動（15秒冷卻結束身上有卷軸即自動使用），此處只顯示狀態文字（不可點）。每幀更新。
                 return `<div class="bg-slate-900/70 border border-red-900 rounded p-2 flex items-center justify-between gap-2" style="opacity:0.85;">
@@ -2737,9 +2740,8 @@ function renderSquadPanel() {
                     <div class="bar-bg compact-team-bar" title="MP"><div id="squad-mp-${s}" class="bar-fill bg-blue-600" style="width:100%"></div><div id="squad-mp-txt-${s}" class="bar-text text-white">0/0</div></div>
                 </div>
             </div>`;
-        }).join('')
-            + ((typeof renderPetTeamHTML === 'function') ? renderPetTeamHTML() : '')
-            + ((typeof renderSummonTeamHTML === 'function') ? renderSummonTeamHTML() : '')
+        }).join('');
+        team.querySelector('[data-squad-companions]').innerHTML = ((typeof renderSummonTeamHTML === 'function') ? renderSummonTeamHTML() : '')
             + ((typeof renderMercSummonTeamHTML === 'function') ? renderMercSummonTeamHTML() : '')
             + ((typeof renderGuardTeamHTML === 'function') ? renderGuardTeamHTML() : '');   // 隊伍排列：傭兵 → 寵物 → 玩家召喚物 → 傭兵召喚物 → 🏰 城堡護衛
         _squadRebuilt = true;
@@ -2751,6 +2753,7 @@ function renderSquadPanel() {
     }
     if (_squadRebuilt) switchSquadTab(_squadTab);   // 有任一分頁重建→還原目前分頁與按鈕高亮
     syncSquadSettings();
+    if (typeof syncPetTeamPanel === 'function') syncPetTeamPanel();
     // 每幀更新血/魔/經驗條（不重建 DOM）
     allies.forEach(a => {
         let s = a._slot, el;

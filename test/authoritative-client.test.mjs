@@ -365,3 +365,92 @@ test('guild rejects forged equipment, stale members, forbidden classes and curse
   await assert.rejects(w.CloudStore.action('mercenary-equipment',{operation:'unequip',slot:2,identity,gearSlot:'wpn'}),e=>e.status===400);
   assert.deepEqual([read(1).inv,read(2).eq],cursed);
 });
+
+async function petFixture(t){
+  const f=await fixture(t),r=f.authority.runtimes.get(f.user.id);
+  f.authority.clock=()=>0;r.anchor=0;
+  r.engine.action('travel',{mapId:'town_gludin'});
+  const uid=r.engine.run("petStoreAdd('貓').uid");
+  r.engine.run("{const p=petRoster()[0];p.mhp=100;p.hp=100;p.exp=1;}");f.authority.commit(f.user,r);
+  await f.w.CloudStore.flush();f.w.interactNPC('npc_austin','town_gludin');
+  return {...f,uid,server:r.engine};
+}
+
+test('pet deployment and recall immediately update the team and the storage NPC without reloading',async t=>{
+  const {w,engine,uid,server,lose,requests}=await petFixture(t);
+  assert.equal(engine.run('petsOutList().length'),0);
+  lose();w.petDeployToggle(uid);await w.CloudStore.flush();
+  const commands=requests.filter(r=>r.body?.args?.name==='pet');assert.equal(commands.length,2);assert.equal(commands[0].body.requestId,commands[1].body.requestId);
+  assert.equal(engine.run('petsOutList().length'),1);assert.equal(server.run('petsOutList().length'),1);
+  assert.match(w.document.querySelector('[data-squad-pets]').textContent,/貓.*Lv.5.*出戰中/s);
+  const storage=w.document.getElementById('interaction-content');assert.equal(storage.querySelector('button[onclick^="petDeployToggle"]').textContent,'收回');
+  assert.equal(w.document.getElementById('squad-panel').style.display,'');
+  w.petDeployToggle(uid);await w.CloudStore.flush();assert.equal(engine.run('petsOutList().length'),0);
+  assert.equal(w.document.getElementById('squad-panel').style.display,'none');assert.equal(storage.querySelector('button[onclick^="petDeployToggle"]').textContent,'出戰');
+  w.petDeployToggle(uid);await w.CloudStore.flush();assert.equal(w.document.querySelectorAll('[data-pet-uid]').length,1);
+});
+
+test('live pet vitals, effects, experience and death replace stale browser state without rebuilding inputs',async t=>{
+  const {w,engine,uid,server,authority,user}=await petFixture(t);
+  w.petDeployToggle(uid);await w.CloudStore.flush();
+  const card=w.document.querySelector('[data-pet-uid]'),input=card.querySelector('input'),r=authority.runtimes.get(user.id);
+  input.focus();input.value='4';
+  server.run("{const p=petsOutList()[0];p.hp=99;p.mp=29;p.exp=2;p._statuses={poison:23,slowAtk:10};p._hardenDr=10;p._hardenUntil=state.ticks+31;}");authority.commit(user,r);
+  await w.CloudStore.flush();
+  assert.equal(card.querySelector('[data-pet-hp]').textContent,'HP 99/100');assert.equal(card.querySelector('[data-pet-mp]').textContent,'MP 29/30');
+  assert.match(card.querySelector('[data-pet-exp]').textContent,/EXP 2\//);assert.match(card.textContent,/中毒 3秒.*緩速 1秒.*硬化 4秒/);
+  assert.equal(w.document.querySelector('[data-pet-uid]'),card);assert.equal(w.document.activeElement,input);assert.equal(input.value,'4');
+  engine.run("{const p=petsOutList()[0];p.hp=999;p.exp=999999;p.potPct=95;}");
+  server.run("{const p=petsOutList()[0];p.hp=0;p._downed=1;p._reviveCd=40;p._statuses={};p._hardenUntil=0;}");authority.commit(user,r);await w.CloudStore.flush();
+  assert.match(card.textContent,/倒地/);assert.equal(card.querySelector('[data-pet-hp]').textContent,'HP 0/100');assert.match(card.textContent,/卷軸復活倒數 4 秒/);assert.doesNotMatch(card.textContent,/中毒|硬化/);
+  assert.equal(engine.run('petsOutList()[0].exp'),2);assert.equal(engine.run('petsOutList()[0].potPct'),0);assert.equal(w.document.activeElement,input);
+  server.run("{const p=petsOutList()[0];p._downed=false;p._reviveCd=0;p.hp=50;p.lv=6;p.exp=3;}");authority.commit(user,r);await w.CloudStore.flush();
+  assert.equal(card.querySelector('[data-pet-level]').textContent,'Lv.6');assert.equal(card.querySelector('[data-pet-revive]').hidden,true);assert.equal(card.querySelector('[data-pet-hp]').textContent,'HP 50/100');
+  input.blur();assert.equal(input.value,'0');
+});
+
+test('pet potion edits save every valid change, retain an unfinished draft during replies and survive reconnect',async t=>{
+  const {w,uid,authority,user,service,requests}=await petFixture(t);
+  w.petDeployToggle(uid);await w.CloudStore.flush();
+  const input=w.document.querySelector('[data-pet-potion]'),request=w.CloudStore.request;let release,held=false;
+  w.CloudStore.request=async(url,body,...rest)=>{
+    const result=await request(url,body,...rest);
+    if(!held&&body?.args?.params?.operation==='potion'){held=true;await new Promise(resolve=>release=resolve);}return result;
+  };
+  input.focus();input.value='4';input.dispatchEvent(new w.Event('input'));await settle();
+  input.value='48';input.dispatchEvent(new w.Event('input'));input.blur();
+  assert.equal(input.value,'48');assert.equal(input.getAttribute('aria-busy'),'true');
+  release();await w.CloudStore.flush();await settle();
+  assert.equal(input.value,'48');assert.equal(input.getAttribute('aria-busy'),'false');
+  assert.match(w.document.querySelector('[data-pet-potion-note]').textContent,/HP ≤ 48%/);
+  const edits=requests.filter(r=>r.body?.args?.params?.operation==='potion');assert.deepEqual(edits.map(r=>r.body.args.params.value),[4,48]);
+  const saved=()=>catalog.unwrap(service.bootstrap(user).values.fb5_pet_roster)[0];assert.equal(saved().potPct,48);
+  input.focus();input.value='';input.dispatchEvent(new w.Event('input'));await w.CloudStore.flush();assert.equal(input.value,'');input.blur();assert.equal(input.value,'48');
+  for(const value of ['-1','96','1.5'])w.petSetPotPct(uid,value);await w.CloudStore.flush();assert.equal(saved().potPct,48);
+  authority.drop(user.id);await w.CloudStore.flush();assert.equal(w.document.querySelector('[data-pet-potion]').value,'48');
+  w.petSetPotPct(uid,'0');await w.CloudStore.flush();assert.equal(saved().potPct,0);assert.match(w.document.querySelector('[data-pet-potion-note]').textContent,/關閉自動喝水/);
+});
+
+test('pet settings reject missing and foreign-owned pets without changing saved settings',async t=>{
+  const {w,uid,authority,user,service}=await petFixture(t);
+  await assert.rejects(w.CloudStore.action('pet',{operation:'potion',uid:'not-a-pet',value:50}),/找不到/);
+  const r=authority.runtimes.get(user.id);r.engine.run("{const p=petRoster()[0];p.outOwner='char:another-role';p.outSlot='2';p.outV=_petNowStamp();petMarkDirty();}");authority.commit(user,r);await w.CloudStore.flush();
+  await assert.rejects(w.CloudStore.action('pet',{operation:'potion',uid,value:50}),/其他角色/);
+  const saved=catalog.unwrap(service.bootstrap(user).values.fb5_pet_roster)[0];assert.equal(saved.potPct,0);assert.equal(saved.outOwner,'char:another-role');
+});
+
+test('pet equipment and revival responses immediately refresh effective vitals and storage controls',async t=>{
+  const {w,uid,authority,user,server,lose,requests}=await petFixture(t),r=authority.runtimes.get(user.id);
+  server.run("player.inv.push({id:'pet_arm_mithril',uid:'pet-armor-qa',cnt:1,en:0},{id:'scroll_revive',uid:'pet-revive-qa',cnt:1});");authority.commit(user,r);
+  w.petDeployToggle(uid);await w.CloudStore.flush();w.petGearOpen(uid,'arm');
+  lose();w.petGearEquip(uid,'arm','pet-armor-qa');await w.CloudStore.flush();
+  assert.equal(w.document.querySelector('[data-pet-mp]').textContent,'MP 30/35');
+  assert.ok(w.document.querySelector('#interaction-content button[title="寵物米索莉盔甲"]'));
+  const equips=requests.filter(r=>r.body?.args?.params?.operation==='equip');assert.equal(equips.length,2);assert.equal(equips[0].body.requestId,equips[1].body.requestId);
+  assert.equal(server.run("player.inv.filter(i=>i.uid==='pet-armor-qa').length"),0);
+  server.run("{const p=petsOutList()[0];p._downed=1;p.hp=0;p._reviveCd=0;}");authority.commit(user,r);await w.CloudStore.flush();
+  assert.equal(w.document.querySelector('[data-pet-scroll]').disabled,false);
+  w.document.querySelector('[data-pet-scroll]').click();await w.CloudStore.flush();
+  assert.equal(w.document.querySelector('[data-pet-revive]').hidden,true);assert.equal(w.document.querySelector('[data-pet-hp]').textContent,'HP 50/100');assert.equal(w.document.querySelector('[data-pet-mp]').textContent,'MP 35/35');
+  assert.equal(server.run("player.inv.filter(i=>i.uid==='pet-revive-qa').length"),0);
+});

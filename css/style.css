@@ -266,6 +266,25 @@
            狀態框不壓縮（數值/血條保持完整）；隊伍面板可縮小讓內部清單捲動→整塊面板不會被擠出視窗外。max-height 46vh 為上限（傭兵多時大螢幕也不會霸佔整欄，保留自動化設定可見）。 */
         #status-panel { flex-shrink: 0; }
         #squad-panel { min-height: 0; }
+        [data-squad-allies], [data-squad-pets], [data-squad-companions] { display: grid; gap: 8px; min-width: 0; }
+        #squad-tab-team > :empty { display: none; }
+        .pet-team-card { display: grid; gap: 8px; min-width: 0; padding: 10px; border: 1px solid #546278; border-radius: 7px; background: #19212e; }
+        .pet-team-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: 13px; }
+        .pet-team-heading img { width: 32px; height: 28px; object-fit: contain; image-rendering: pixelated; }
+        .pet-team-heading strong { flex: 1; min-width: 70px; color: #a7f3d0; overflow-wrap: anywhere; }
+        .pet-team-heading > span { color: #e6c98c; white-space: nowrap; }
+        .pet-team-detail, .pet-team-status { font-size: 12px; line-height: 1.5; color: #b8c7dd; overflow-wrap: anywhere; }
+        .pet-team-status { color: #f4cf9b; }
+        .pet-team-setting { grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 6px 12px; }
+        .pet-team-setting small { grid-column: 1 / -1; }
+        .pet-team-revive { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; color: #fca5a5; }
+        .pet-team-revive[hidden] { display: none; }
+        .pet-team-revive > span { flex-basis: 100%; }
+        .pet-team-revive button { flex: 1; min-height: 44px; }
+        .pet-team-downed { border-color: #994949; }
+        .pet-team-downed img { filter: grayscale(1); }
+        .pet-team-card .compact-team-bar { height: 18px; }
+        .pet-team-card .compact-team-bar .bar-text { font-size: 11px; line-height: 18px; }
         #squad-body { min-height: 0; }
         #squad-tab-team, #squad-tab-skill { min-height: 0; max-height: 46vh; overflow-y: auto; }
         #squad-panel, #squad-body, #squad-tab-skill { min-width: 0; }
