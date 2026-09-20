@@ -126,12 +126,14 @@ export class HeadlessGame {
     return plain(this.run('petsOutList().map(p=>({uid:p.uid,_statuses:p._statuses||{},_hardenDr:p._hardenDr||0,_hardenUntil:p._hardenUntil||0,_reviveGuardUntil:p._reviveGuardUntil||0}))'));
   }
 
-  step(ticks = 1, endTime = Date.now()) {
+  step(ticks = 1, endTime = Date.now(), {status=true} = {}) {
     if(!Number.isInteger(ticks) || ticks < 0 || ticks > 36000) throw new Error('tick 數量須為 0–36000');
     if(!this.run('!!player.cls')) throw new Error('尚未載入角色');
     this.run('try{for(let i=0;i<__args.ticks;i++){if(player.dead || player._gmDead) break;window.__gmRespawnTime=__args.endTime-(__args.ticks-i-1)*100;state.inTick=true;try{tick();}finally{state.inTick=false;settleDeadMobs();pvpServerTick();window.__captureBattle();}}pvpServerTick();}finally{delete window.__gmRespawnTime;}',{ticks,endTime});
-    return this.status();
+    if(status)return this.status();
   }
+
+  presence(){return plain(this.run('({name:player.name,map:mapState.current,mapName:mapDisplayName(mapState.current)})'));}
 
   status() {
     const result = plain(this.run(`({slot:currentSlot,classId:player.cls,cls:player.cls,name:player.name,level:player.lv,lv:player.lv,exp:player.exp,expRequired:getExpReq(player.lv),gold:player.gold,hp:player.hp,maxHp:player.mhp,mp:player.mp,maxMp:player.mmp,dead:player.dead,gmDead:!!player._gmDead,map:mapState.current,mapName:mapDisplayName(mapState.current),ticks:state.ticks,base:player.base,stats:player.d,skills:player.skills,config:player.config || {},equipment:player.eq,inventory:player.inv.map(i=>({...i,name:DB.items[i.id]?.n || i.id})),buffs:player.buffs,statuses:player.statuses,mobs:mapState.mobs.filter(Boolean).map(m=>({id:m.id,name:m.n,hp:m.curHp,maxHp:m.hp,level:m.lv}))})`));

@@ -1,0 +1,8 @@
+#view-server>.surface+section{margin-top:20px}
+.server-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}
+.server-metrics article{min-width:0;padding:18px;background:#11151d;border:1px solid #303846;border-radius:7px}
+.server-metrics span{display:block;color:#9ca7b9;font-size:13px}
+.server-metrics strong{display:block;color:#e6c487;font-size:22px;font-weight:500;margin-top:7px;overflow-wrap:anywhere}
+#server-history{overflow-wrap:anywhere}
+#server-restart-dialog{margin:auto;max-height:calc(100dvh - 32px)}
+@media(max-width:720px){.server-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.server-metrics article{padding:12px}.server-metrics strong{font-size:18px}#server-restart-dialog{padding:20px}#server-restart-dialog .dialog-actions>*{flex:1}}

@@ -19,4 +19,4 @@ COPY --from=upstream /upstream/assets ./assets
 COPY --from=upstream /upstream/public ./public
 RUN mkdir -p /data
 EXPOSE 8787
-CMD ["node", "server/index.mjs"]
+CMD ["node", "server/start.mjs"]

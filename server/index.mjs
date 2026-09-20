@@ -16,6 +16,7 @@ import { AuthoritativeGame } from './authoritative-game.mjs';
 import { BattleFeed } from './battle-feed.mjs';
 import { loadBrowserAssets } from './browser-assets.mjs';
 import {gmCharacterReport} from './gm-character.mjs';
+import {ServerControl} from './server-control.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const rootPath = path.resolve(fileURLToPath(ROOT));
@@ -26,7 +27,7 @@ const MIME = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset
 const loopback = request => ['127.0.0.1','::1','::ffff:127.0.0.1'].includes(request.socket.remoteAddress) && !request.headers['x-forwarded-for'] && !request.headers.forwarded;
 const escapedJson = value => JSON.stringify(value).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
 
-export function createApp({ database = databasePath(), catalog = loadCatalog(ROOT), publicOrigin = publicOriginFromEnv(), aiOptions = {}, publicAliases = process.env.RAILWAY_PUBLIC_DOMAIN ? ['https://'+process.env.RAILWAY_PUBLIC_DOMAIN] : [] } = {}) {
+export function createApp({ database = databasePath(), catalog = loadCatalog(ROOT), publicOrigin = publicOriginFromEnv(), aiOptions = {}, restartOptions = {}, publicAliases = process.env.RAILWAY_PUBLIC_DOMAIN ? ['https://'+process.env.RAILWAY_PUBLIC_DOMAIN] : [] } = {}) {
   const service = new GameService(database,catalog);
   const aiChat = new AiChatService(service,aiOptions);
   const commerce = new CommerceService(service);
@@ -36,6 +37,8 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
   const killBroadcasts = new KillBroadcastService(service);
   const authority = new AuthoritativeGame(service);
   const battleFeed = new BattleFeed(authority,service);
+  const serverControl = new ServerControl(service,{...restartOptions,authority,battleFeed});
+  let draining=false,shutdownPromise;
   const origins=new Set([publicOrigin,...publicAliases].filter(Boolean).map(value=>{
     const u=new URL(value);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.pathname!=='/'||u.search||u.hash)throw new Error('公開網址必須是有效的 HTTP(S) origin');return u.origin;
   }));
@@ -51,6 +54,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
     if(!String(req.headers['content-type']||'').startsWith('application/json')) throw new ApiError(415,'需要 JSON 請求');
     const chunks=[]; let size=0;
     for await(const chunk of req) { size+=chunk.length; if(size>36_000_000) throw new ApiError(413,'請求內容過大'); chunks.push(chunk); }
+    if(draining)throw new ApiError(503,'伺服器正在保存並重啟，請稍後再試');
     try { const body=JSON.parse(Buffer.concat(chunks).toString()); if(!body||typeof body!=='object'||Array.isArray(body)) throw new Error(); return body; }
     catch { throw new ApiError(400,'JSON 格式不正確'); }
   }
@@ -60,6 +64,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
     res.setHeader('X-Frame-Options','SAMEORIGIN');
     let route;
     try {
+      if(draining)return json(res,503,{error:'伺服器正在保存並重啟，請稍後再試'},{'Retry-After':'5'});
       // Railway probes use a different Host. This endpoint exposes no account data.
       if (req.url === '/healthz' && ['GET','HEAD'].includes(req.method)) {
         service.db.prepare('SELECT 1').get();
@@ -104,7 +109,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
         if(route==='/api/me') return json(res,200,{user:{id:user.id,username:user.username,role:user.role},csrf:user.csrf});
         if(route==='/api/bootstrap') return json(res,200,service.bootstrap(user));
         if(route==='/api/world-settings'&&req.method==='GET') return json(res,200,worldSettings.state());
-        if(route==='/api/loot-broadcasts'&&req.method==='GET') {const params=new URL(req.url,base).searchParams,announcement=worldSettings.state().announcement;return json(res,200,{...lootBroadcasts.list(Number(params.get('after'))),kills:killBroadcasts.list(Number(params.get('afterKills'))),announcement:announcement?.expiresAt>Date.now()?announcement:null});}
+        if(route==='/api/loot-broadcasts'&&req.method==='GET') {const params=new URL(req.url,base).searchParams,announcement=serverControl.announcement()||worldSettings.state().announcement;return json(res,200,{...lootBroadcasts.list(Number(params.get('after'))),kills:killBroadcasts.list(Number(params.get('afterKills'))),announcement:announcement?.expiresAt>Date.now()?announcement:null});}
         if(route==='/api/auth/logout'&&req.method==='POST') {service.logout(session);return json(res,200,{ok:true},{'Set-Cookie':cookie('',true)});}
         if(route==='/api/lease'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.acquireLease(user,b.lease,b.takeover===true));}
         if(route==='/api/sync'&&req.method==='POST') {
@@ -146,6 +151,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
         }
         if(route.startsWith('/api/gm/')) {
           service.gm(user);
+          if(route==='/api/gm/server'&&req.method==='GET')return json(res,200,serverControl.status(user));
           if(route==='/api/gm/character'&&req.method==='GET'){
             limit(`gm-inspect:${user.id}`,60);const params=new URL(req.url,base).searchParams;
             return json(res,200,gmCharacterReport(service,user,params.get('accountId'),Number(params.get('slot'))));
@@ -166,6 +172,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
           if(req.method==='POST') {
             limit(`gm:${user.id}`,60);
             const b=await readBody(req);
+            if(route==='/api/gm/server/restart')return json(res,202,serverControl.request(user,b));
             if(route==='/api/gm/world-settings')return json(res,200,worldSettings.update(user,b));
             if(route==='/api/gm/diamonds')return json(res,200,commerce.grant(user,b));
             if(route==='/api/gm/ai-chat/settings')return json(res,200,aiChat.update(user,b));
@@ -222,15 +229,32 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
   server.on('listening',()=>aiChat.start());
   const closeServer=server.close.bind(server);
   server.close=(...args)=>{battleFeed.close();return closeServer(...args);};
-  server.on('close',()=>{battleFeed.close();aiChat.stop();clearInterval(cleanup);authority.close();service.close();});
-  return {server,service,aiChat,commerce,market,worldSettings,authority};
+  server.on('close',()=>{serverControl.close();battleFeed.close();aiChat.stop();clearInterval(cleanup);authority.close();service.close();});
+  function shutdown(){
+    if(shutdownPromise)return shutdownPromise;
+    draining=true;
+    let saved;
+    try{saved=authority.checkpointAll();}
+    catch(error){draining=false;return Promise.reject(error);}
+    aiChat.stop();
+    shutdownPromise=new Promise(resolve=>{
+      const deadline=setTimeout(()=>server.closeAllConnections(),5000);deadline.unref();
+      server.close(()=>{clearTimeout(deadline);resolve({saved});});
+    });
+    return shutdownPromise;
+  }
+  return {server,service,aiChat,commerce,market,worldSettings,authority,serverControl,shutdown};
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) {
   const host=process.env.HOST||(process.env.RAILWAY_ENVIRONMENT_ID?'0.0.0.0':'127.0.0.1'),port=Number(process.env.PORT||8787);
   const origin=publicOriginFromEnv();
   if(!['127.0.0.1','localhost','::1'].includes(host)&&!origin)throw new Error('對外監聽必須設定 PUBLIC_ORIGIN，或先產生 Railway 公開網址');
-  const {server,service}=createApp();
+  const supervised=process.env.BLACKCAT_SUPERVISED==='1'&&typeof process.send==='function';
+  const app=createApp({restartOptions:{restart:supervised?async()=>{await app.shutdown();process.exit(75);}:undefined}});
+  const {server,service}=app;
   server.listen(port,host,()=>{const url=origin||`http://localhost:${port}`;console.log(`黑貓天堂 ${service.catalog.version} + GM\n遊戲：${url}\nGM 管理台：${url}/gm`);if(!service.hasGm())console.log(origin?'尚未建立 GM：註冊帳號後，在伺服器終端執行 node server/promote-gm.mjs 帳號':`首次 GM 設定：${url}/setup`);});
-  process.on('SIGINT',()=>server.close());process.on('SIGTERM',()=>server.close());
+  const stop=()=>app.shutdown().then(()=>process.exit(0)).catch(error=>{console.error('[shutdown]',error.message);server.close(()=>process.exit(1));});
+  process.on('SIGINT',stop);process.on('SIGTERM',stop);
+  if(supervised)process.on('message',message=>{if(message==='shutdown')void stop();});
 }

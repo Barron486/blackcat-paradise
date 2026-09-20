@@ -14,6 +14,7 @@ export class AuthoritativeGame {
   constructor(service,{clock=()=>performance.now(),Engine=HeadlessGame,idleMs=90000,maxRuntimes=64,autoTick=true}={}){
     this.service=service;this.db=service.db;this.clock=clock;this.Engine=Engine;
     this.idleMs=idleMs;this.maxRuntimes=maxRuntimes;this.runtimes=new Map();service.authority=this;
+    this.metrics={lastPassMs:0,maxPassMs:0};
     this.db.exec(`CREATE TABLE IF NOT EXISTS game_requests(
       account_id TEXT NOT NULL,request_id TEXT NOT NULL,payload_hash TEXT NOT NULL,created_at INTEGER NOT NULL,
       PRIMARY KEY(account_id,request_id));
@@ -58,6 +59,7 @@ export class AuthoritativeGame {
   }
   close(){this.closed=true;clearInterval(this.cleanup);clearInterval(this.timer);for(const id of this.runtimes.keys())this.drop(id);}
   tickRuntime(id,r){
+    if(this.suspended||this.closed)return;
     if(this.runtimes.get(id)!==r)return;
     try{const lease=this.db.prepare('SELECT token FROM leases WHERE account_id=?').get(id);if(!lease){this.forget(id);return;}
       r.lease=lease.token; // UI control can change without restarting the account's combat clock.
@@ -65,27 +67,34 @@ export class AuthoritativeGame {
     }catch(error){console.error('[game-tick]',id,error.message);this.drop(id);this.db.prepare('UPDATE game_sessions SET running=0 WHERE account_id=?').run(id);}
   }
   tick(){
+    if(this.suspended||this.closed)return;
     this.evict();
     for(const user of this.recoveryCandidates()){if(this.runtimes.size>=this.maxRuntimes)break;this.recover(user);}
     for(const [id,r]of this.runtimes)this.tickRuntime(id,r);
   }
   async tickResponsive(){
-    if(this.ticking||this.closed)return;
+    if(this.ticking||this.closed||this.suspended)return;
+    const started=performance.now();
     this.ticking=true;
     try{
       this.evict();
       for(const user of this.recoveryCandidates()){
-        if(this.closed||this.runtimes.size>=this.maxRuntimes)break;
+        if(this.closed||this.suspended||this.runtimes.size>=this.maxRuntimes)break;
         if(!this.runtimes.has(user.id))this.recover(user);
         await yieldTurn();
       }
       for(const [id,r]of [...this.runtimes]){
-        if(this.closed)break;
+        if(this.closed||this.suspended)break;
         this.tickRuntime(id,r);
         // Keep each character atomic while letting HTTP and battle streams run between characters.
         await yieldTurn();
       }
-    }finally{this.ticking=false;}
+    }finally{this.ticking=false;this.metrics.lastPassMs=Math.round(performance.now()-started);this.metrics.maxPassMs=Math.max(this.metrics.maxPassMs,this.metrics.lastPassMs);}
+  }
+  checkpointAll(){
+    this.suspended=true;let count=0;
+    try{for(const r of this.runtimes.values()){this.service.transaction(()=>{this.reconcile(r.user,r);this.commit(r.user,r);});count++;}return count;}
+    catch(error){this.suspended=false;throw error;}
   }
   commit(user,r){
     const before=this.row(user);
@@ -99,7 +108,7 @@ export class AuthoritativeGame {
     this.service.killBroadcasts?.record(user,old?this.service.catalog.unwrap(old):null,doc);
     const data=JSON.stringify(values);
     if(data!==before.data){r.revision++;this.db.prepare('UPDATE saves SET data=?,revision=?,updated_at=? WHERE account_id=?').run(data,r.revision,Date.now(),user.id);}
-    const s=r.engine.status();
+    const s=r.engine.presence?r.engine.presence():r.engine.status();
     this.db.prepare('UPDATE leases SET display_name=?,slot=?,map_name=? WHERE account_id=?').run(s.name,r.slot,s.mapName||s.map,user.id);
     this.saveSession(user,r,doc);
   }
@@ -116,7 +125,7 @@ export class AuthoritativeGame {
     const now=this.clock(),ticks=Math.min(100,Math.floor(Math.max(0,now-r.anchor)/100));
     // Only the server's live monotonic clock grants time. Bound each pass, retain
     // backlog for later passes, and start a fresh anchor after a server restart.
-    if(ticks){r.anchor=r.paused?now:r.anchor+ticks*100;r.engine.setWorldSettings(this.service.world?.state());r.engine.refreshGm();if(!r.paused)r.engine.step(ticks,Date.now()-Math.max(0,now-r.anchor));this.commit(user,r);}
+    if(ticks){r.anchor=r.paused?now:r.anchor+ticks*100;r.engine.setWorldSettings(this.service.world?.state());r.engine.refreshGm();if(!r.paused)r.engine.step(ticks,Date.now()-Math.max(0,now-r.anchor),{status:false});this.commit(user,r);}
   }
   response(user,r,cursor,compact=false){
     const snapshot=this.service.bootstrap(user);
@@ -130,6 +139,7 @@ export class AuthoritativeGame {
       r.revision===latest&&body.revision>=r.inputRevision&&body.revision<=latest;
   }
   handle(user,body){
+    requireValue(!this.suspended&&!this.closed,'伺服器正在保存並重啟，請稍後再試',503);
     requireValue(body&&typeof body==='object'&&!Array.isArray(body),'指令格式不正確');
     const {lease,op='state',slot,requestId,args={}}=body;
     requireValue(['state','select','create','delete','leave','pause','resume','action'].includes(op),'不支援的遊戲指令');

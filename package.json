@@ -8,7 +8,7 @@
   },
   "scripts": {
     "cli": "node cli/main.mjs",
-    "start": "node server/index.mjs",
+    "start": "node server/start.mjs",
     "test": "node --test test/*.test.mjs",
     "gm:create": "node server/create-gm.mjs",
     "gm:promote": "node server/promote-gm.mjs",
