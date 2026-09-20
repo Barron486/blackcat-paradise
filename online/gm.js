@@ -46,7 +46,7 @@ function renderPlayers(){
     account.textContent=p.username+(p.id===me?.id?'（你）':'');
     for(const [cell,label] of [[account,'帳號'],[characters,'角色'],[online,'連線'],[role,'權限'],[manage,'管理']])cell.dataset.label=label;
     if(!p.characters.length)characters.textContent='尚未建立角色';
-    for(const c of p.characters){const line=document.createElement('div');line.textContent=`${c.name} · Lv.${c.level} ${classNames[c.cls]||c.cls}${c.dead?' · 已死亡':''}`;characters.append(line);}
+    for(const c of p.characters){const line=document.createElement('div');line.className='gm-character-entry';const name=document.createElement('span');name.textContent=`第 ${c.slot} 格 · ${c.name} · Lv.${c.level} ${classNames[c.cls]||c.cls}${c.dead?' · 已死亡':''}`;const inspect=document.createElement('button');inspect.type='button';inspect.className='secondary small';inspect.textContent='檢視角色';inspect.setAttribute('aria-label',`檢視 ${p.username} 第 ${c.slot} 格 ${c.name}`);inspect.onclick=()=>window.openGmCharacter?.(p,c.slot);line.append(name,inspect);characters.append(line);}
     online.className=p.online?'online':'offline';online.textContent=p.online?'在線上':'離線';role.textContent=p.role==='gm'?'♛ GM':'玩家';
     const button=document.createElement('button');button.className='secondary small';button.textContent=p.role==='gm'?'取消 GM':'授予 GM';
     button.disabled=p.role==='gm'&&players.filter(a=>a.role==='gm').length===1;
@@ -147,4 +147,4 @@ async function refreshAudit(){
   }
 }
 $('audit-refresh').onclick=()=>refreshAudit().catch(e=>notify(e.message,true));
-(async()=>{try{const data=await api('/api/me');me=data.user;csrf=data.csrf;if(me.role!=='gm')throw new Error('這個帳號沒有 GM 權限');$('gm-account').textContent='♛ '+me.username;await refreshPlayers();if(typeof window.initAiChat==='function')window.initAiChat({api,notify});if(typeof window.initDiamondAdmin==='function')window.initDiamondAdmin({api,notify});if(typeof window.initWorldAdmin==='function')window.initWorldAdmin({api,notify});if(typeof window.initMonsterAdmin==='function')window.initMonsterAdmin({api,notify});}catch(e){notify(e.message,true);}})();
+(async()=>{try{const data=await api('/api/me');me=data.user;csrf=data.csrf;if(me.role!=='gm')throw new Error('這個帳號沒有 GM 權限');$('gm-account').textContent='♛ '+me.username;await refreshPlayers();if(typeof window.initCharacterAdmin==='function')window.initCharacterAdmin({api,notify});if(typeof window.initAiChat==='function')window.initAiChat({api,notify});if(typeof window.initDiamondAdmin==='function')window.initDiamondAdmin({api,notify});if(typeof window.initWorldAdmin==='function')window.initWorldAdmin({api,notify});if(typeof window.initMonsterAdmin==='function')window.initMonsterAdmin({api,notify});}catch(e){notify(e.message,true);}})();

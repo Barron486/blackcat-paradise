@@ -15,6 +15,7 @@ import { KillBroadcastService } from './kill-broadcasts.mjs';
 import { AuthoritativeGame } from './authoritative-game.mjs';
 import { BattleFeed } from './battle-feed.mjs';
 import { loadBrowserAssets } from './browser-assets.mjs';
+import {gmCharacterReport} from './gm-character.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const rootPath = path.resolve(fileURLToPath(ROOT));
@@ -145,6 +146,10 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
         }
         if(route.startsWith('/api/gm/')) {
           service.gm(user);
+          if(route==='/api/gm/character'&&req.method==='GET'){
+            limit(`gm-inspect:${user.id}`,60);const params=new URL(req.url,base).searchParams;
+            return json(res,200,gmCharacterReport(service,user,params.get('accountId'),Number(params.get('slot'))));
+          }
           if(route==='/api/gm/world-settings'&&req.method==='GET')return json(res,200,worldSettings.admin(user));
           if(route==='/api/gm/drops'&&req.method==='GET')return json(res,200,worldSettings.listDrops(user,new URL(req.url,base).searchParams));
           if(route==='/api/gm/monsters'&&req.method==='GET')return json(res,200,worldSettings.monsters.list(user,new URL(req.url,base).searchParams));
