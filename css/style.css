@@ -283,8 +283,10 @@
         .pet-team-revive button { flex: 1; min-height: 44px; }
         .pet-team-downed { border-color: #994949; }
         .pet-team-downed img { filter: grayscale(1); }
-        .pet-team-card .compact-team-bar { height: 18px; }
-        .pet-team-card .compact-team-bar .bar-text { font-size: 11px; line-height: 18px; }
+        /* 傭兵與寵物使用相同內距、血魔條高度與數字大小。 */
+        #squad-panel .ally-compact-card { padding: 10px; }
+        :is(.ally-compact-card, .pet-team-card) .compact-team-bar { height: 18px; }
+        :is(.ally-compact-card, .pet-team-card) .compact-team-bar .bar-text { inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; }
         #squad-body { min-height: 0; }
         #squad-tab-team, #squad-tab-skill { min-height: 0; max-height: 46vh; overflow-y: auto; }
         #squad-panel, #squad-body, #squad-tab-skill { min-width: 0; }
@@ -693,10 +695,10 @@
         /* 傭兵卡頭列：經驗條固定 110px（不因名稱長短/職業而變）；名字欄改彈性、過長以省略號截斷（.ally-compact-name 已有 ellipsis）。 */
         .ally-compact-head { display: grid; grid-template-columns: minmax(0, 1fr) auto 110px; align-items: center; gap: 6px; }
         .ally-compact-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        /* 傭兵經驗條：高度/字級對齊主角經驗條（.status-exp-bar 9px/8px），寬度維持撐滿本欄不變。 */
-        .ally-exp-bar { height: 9px; min-width: 0; }
-        .ally-exp-bar .bar-text { font-size: 8px; line-height: 9px; }
-        /* 傭兵 HP／MP：與主角內條同為 9px、沿用相同紅藍漸層；不套主角的雙條底框圖片。 */
+        /* 傭兵經驗條與血魔條同高，百分比文字在內框中置中，避免被邊框裁切。 */
+        .ally-exp-bar { height: 18px; min-width: 0; }
+        .ally-exp-bar .bar-text { inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; }
+        /* 其他夥伴的精簡血魔條；傭兵與寵物在各自卡片內共用上方較大的尺寸。 */
         .compact-team-bar { height: 9px; min-width: 0; }
         .compact-team-bar .bar-text { font-size: 8px; line-height: 9px; }
         /* 🛡️ 裝備可用職業 logo：細金邊、無發光特效 */
