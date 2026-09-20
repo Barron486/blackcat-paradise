@@ -96,6 +96,7 @@ export class AuthoritativeGame {
     requireValue(JSON.stringify(values).length<=32_000_000,'帳號存檔已超過上限');
     this.db.prepare('INSERT OR IGNORE INTO character_epochs VALUES(?,?,?)').run(epoch(doc),user.id,slotKey(r.slot));
     this.service.lootBroadcasts?.record(user,old?this.service.catalog.unwrap(old):null,doc);
+    this.service.killBroadcasts?.record(user,old?this.service.catalog.unwrap(old):null,doc);
     const data=JSON.stringify(values);
     if(data!==before.data){r.revision++;this.db.prepare('UPDATE saves SET data=?,revision=?,updated_at=? WHERE account_id=?').run(data,r.revision,Date.now(),user.id);}
     const s=r.engine.status();

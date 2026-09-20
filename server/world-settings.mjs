@@ -1,21 +1,24 @@
 import {ApiError} from './service.mjs';
 import '../js/loot-rarity.js';
+import {MonsterSettings} from './monster-settings.mjs';
 
 const check=(ok,message,status=400)=>{if(!ok)throw new ApiError(status,message);};
 const broadcastDefaults=()=>({enabled:true,rarities:[...GameLootRarity.types],generation:0,cursor:0,startedAt:0});
-const defaults=()=>({revision:0,goldMultiplier:1,expMultiplier:1,dropMultiplier:1,showDropRates:false,showPlayerLocations:false,lootBroadcast:broadcastDefaults(),maps:{},drops:{}});
+const killDefaults=()=>({enabled:false,monsters:[],generation:0,cursor:0,startedAt:0});
+const defaults=()=>({revision:0,goldMultiplier:1,expMultiplier:1,dropMultiplier:1,showDropRates:false,showPlayerLocations:false,lootBroadcast:broadcastDefaults(),killBroadcast:killDefaults(),announcement:null,monsterStrength:1,monsters:{},maps:{},drops:{}});
 export class WorldSettingsService {
   constructor(service){
     this.service=service;this.db=service.db;
     this.catalog=service.catalog.world||{maps:[],monsters:[],drops:[]};
     this.maps=new Map(this.catalog.maps.map(m=>[m.id,m]));
     this.drops=new Map(this.catalog.drops.map(r=>[r.key,r]));
+    this.monsters=new MonsterSettings(this);
     this.db.exec(`CREATE TABLE IF NOT EXISTS world_settings(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS world_settings_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,actor_id TEXT NOT NULL,request_id TEXT NOT NULL,payload TEXT NOT NULL,before_data TEXT NOT NULL,after_data TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(actor_id,request_id));`);
     this.db.prepare('INSERT OR IGNORE INTO world_settings VALUES(1,?)').run(JSON.stringify(defaults()));
     service.world=this;
   }
-  state(){const saved=JSON.parse(this.db.prepare('SELECT data FROM world_settings WHERE id=1').get().data);return {...defaults(),...saved,lootBroadcast:{...broadcastDefaults(),...saved.lootBroadcast}};}
+  state(){const saved=JSON.parse(this.db.prepare('SELECT data FROM world_settings WHERE id=1').get().data);return {...defaults(),...saved,lootBroadcast:{...broadcastDefaults(),...saved.lootBroadcast},killBroadcast:{...killDefaults(),...saved.killBroadcast}};}
   admin(user){this.service.gm(user);return {settings:this.state(),maps:this.catalog.maps,monsterCount:this.catalog.monsters.length,dropCount:this.catalog.drops.length,location:this.location(user,false),history:this.history(),locationClans:this.service.presence.admin(user)};}
   location(user,required=true){
     const lease=this.db.prepare('SELECT slot,expires_at FROM leases WHERE account_id=?').get(user.id);
@@ -41,7 +44,14 @@ export class WorldSettingsService {
     check(typeof body.requestId==='string'&&/^[\w-]{16,80}$/.test(body.requestId),'缺少操作識別碼');
     check(typeof body.reason==='string'&&body.reason.trim().length>=2&&body.reason.length<=200,'請填寫 2～200 字的修改原因');
     const command={type:body.type,reason:body.reason.trim()};
-    if(body.type==='global'){
+    if(['monsters','monster-strength','kill-broadcast'].includes(body.type))Object.assign(command,this.monsters.command(body));
+    else if(body.type==='announcement'){
+      check(typeof body.text==='string'&&body.text.trim().length>=1&&body.text.trim().length<=300&&!/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(body.text),'廣播內容須為 1～300 字');
+      check(typeof body.pinned==='boolean','置頂設定不正確');
+      check(Number.isInteger(body.seconds)&&body.seconds>=10&&body.seconds<=604800,'廣播時間須為 10 秒～7 天');
+      Object.assign(command,{text:body.text.trim(),pinned:body.pinned,seconds:body.seconds});
+    }else if(body.type==='announcement-clear'){}
+    else if(body.type==='global'){
       for(const key of ['goldMultiplier','expMultiplier','dropMultiplier']) {check(typeof body[key]==='number'&&Number.isFinite(body[key])&&body[key]>=0&&body[key]<=1000,'倍率須為 0～1000');command[key]=body[key];}
       check(typeof body.showDropRates==='boolean','掉落率顯示設定須為勾選值');command.showDropRates=body.showDropRates;
     }else if(body.type==='presence'){
@@ -66,6 +76,9 @@ export class WorldSettingsService {
       if(previous){check(previous.payload===payload,'操作識別碼已用於其他修改',409);return {settings:this.state(),replayed:true};}
       const s=this.state();check(body.revision===s.revision,'設定已被其他 GM 修改，請重新整理後再送出',409);
       const before=JSON.stringify(s);
+      if(['monsters','monster-strength','kill-broadcast'].includes(command.type))this.monsters.apply(s,command);
+      if(command.type==='announcement')s.announcement={id:body.requestId,text:command.text,pinned:command.pinned,startedAt:Date.now(),expiresAt:Date.now()+command.seconds*1000};
+      if(command.type==='announcement-clear')s.announcement=null;
       if(command.type==='global')for(const key of ['goldMultiplier','expMultiplier','dropMultiplier','showDropRates'])s[key]=command[key];
       if(command.type==='presence')s.showPlayerLocations=command.showPlayerLocations;
       if(command.type==='broadcast')s.lootBroadcast={enabled:command.enabled,rarities:command.rarities,generation:s.lootBroadcast.generation+1,cursor:this.service.lootBroadcasts?.latestId()||0,startedAt:Date.now()};

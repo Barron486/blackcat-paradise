@@ -95,7 +95,7 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
     worldBusy = true;
     try {
       const data = await cloud.request('/api/world');
-      const messages=[...data.messages.map(m=>({...m,rowId:'chat:'+m.id})),...(data.lootBroadcasts||[]).map(m=>({...m,rowId:'loot:'+m.id,loot:true}))].sort((a,b)=>a.at-b.at||a.rowId.localeCompare(b.rowId)).slice(-160);
+      const messages=[...data.messages.map(m=>({...m,rowId:'chat:'+m.id})),...(data.lootBroadcasts||[]).map(m=>({...m,rowId:'loot:'+m.id,loot:true})),...(data.killBroadcasts||[]).map(m=>({...m,rowId:'kill:'+m.id,loot:true}))].sort((a,b)=>a.at-b.at||a.rowId.localeCompare(b.rowId)).slice(-160);
       const last = messages.map(m=>m.rowId).join('|');
       if (last === lastChatId) return;
       const previousTop = list.scrollTop, previousHeight = list.scrollHeight;
@@ -106,7 +106,7 @@ export function startWorldChat(cloud, toolbar, isStopped = () => false) {
         line.dataset.id = m.rowId;
         if(m.loot){
           line.className='cloud-loot-message loot-name-'+(GameLootRarity.types.includes(m.rarity)?m.rarity:'rare');
-          name.textContent='稀有掉落　';line.append(name,document.createTextNode(GameLootRarity.message(m)));list.append(line);continue;
+          name.textContent=m.kind==='kill'?'討伐捷報　':'稀有掉落　';line.append(name,document.createTextNode(GameLootRarity.message(m)));list.append(line);continue;
         }
         name.textContent = (m.displayName || '冒險者') + '　';name.title = m.displayName || '冒險者';
         time.textContent = new Date(m.at).toLocaleTimeString('zh-TW');line.append(time);

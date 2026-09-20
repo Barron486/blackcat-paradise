@@ -29,8 +29,9 @@ window.initWorldAdmin=function({api,notify}){
     renderMaps();$('world-history').replaceChildren();
     for(const r of data.history){
       const c=r.command,entry=make('article',null,'audit-entry'),text=make('div');
-      const subject=c.type==='global'?'世界倍率／顯示設定':c.type==='broadcast'?'稀有掉落廣播':c.type==='presence'?'玩家位置權限':c.type==='map'?'地圖：'+(maps.find(m=>m.id===c.mapId)?.name||c.mapId):'掉落：'+JSON.parse(c.key).slice(1).join(' / ');
-      const detail=c.type==='presence'?(c.showPlayerLocations?'向所有玩家公開':'限自己、GM 與同血盟成員'):c.type==='broadcast'?`${c.enabled?'開啟':'關閉'} · ${c.rarities.map(r=>({legend:'傳說',relic:'遺物',rare:'極低掉率'})[r]).join('、')||'未選分類'}`:c.type==='drop'?(c.rate===null?'恢復原始':fmt(c.rate)):c.type==='map'?`${c.open?'開放':'關閉'} · Lv.${c.minLevel}`:`金幣 ×${c.goldMultiplier} / 經驗 ×${c.expMultiplier} / 掉落 ×${c.dropMultiplier}`;
+      const labels={monsters:'怪物能力／擊殺廣播','monster-strength':'全服怪物強度','kill-broadcast':'擊殺廣播設定',announcement:'GM 文字廣播','announcement-clear':'關閉 GM 廣播'};
+      const subject=labels[c.type]||(c.type==='global'?'世界倍率／顯示設定':c.type==='broadcast'?'稀有掉落廣播':c.type==='presence'?'玩家位置權限':c.type==='map'?'地圖：'+(maps.find(m=>m.id===c.mapId)?.name||c.mapId):c.type==='drop'?'掉落：'+JSON.parse(c.key).slice(1).join(' / '):c.type);
+      const detail=labels[c.type]?(c.type==='monsters'?`${c.ids.length} 種怪物${c.reset?' · 恢復原始能力':''}`:c.type==='monster-strength'?`HP／傷害 ×${c.strength}`:c.type==='kill-broadcast'?`${c.enabled?'開啟':'關閉'} · ${c.monsters.length} 種怪物`:c.type==='announcement'?`${c.pinned?'置頂':'跑馬燈'} · ${c.seconds} 秒 · ${c.text}`:'提前關閉'):c.type==='presence'?(c.showPlayerLocations?'向所有玩家公開':'限自己、GM 與同血盟成員'):c.type==='broadcast'?`${c.enabled?'開啟':'關閉'} · ${c.rarities.map(r=>({legend:'傳說',relic:'遺物',rare:'極低掉率'})[r]).join('、')||'未選分類'}`:c.type==='drop'?(c.rate===null?'恢復原始':fmt(c.rate)):c.type==='map'?`${c.open?'開放':'關閉'} · Lv.${c.minLevel}`:`金幣 ×${c.goldMultiplier} / 經驗 ×${c.expMultiplier} / 掉落 ×${c.dropMultiplier}`;
       text.append(make('strong',subject),make('p',c.reason),make('small',r.actor+' · '+detail));entry.append(text,make('time',new Date(r.created_at).toLocaleString('zh-TW')));$('world-history').append(entry);
     }
     if(!data.history.length)$('world-history').textContent='尚無設定修改紀錄。';

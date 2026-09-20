@@ -1964,6 +1964,7 @@ function spawnMob(idx) {
         if (_aid) {
             let _ab = DB.mobs[_aid]; if (!_ab) return;
             mapState.mobs[idx] = { ..._ab, curHp: _ab.hp, uid: uid(), _born: ++_mobBornSeq, _bornMs: Date.now(), _magCd: {}, justHit: false, st: newMobStatus() };
+            gmApplyMonsterStats(mapState.mobs[idx],_aid);
             applySherineBuff(idx);   // 🐉 v3.7.61 初始區域頭目也套用席琳世界，與後續變身階段一致
             if (_ab.hard) initHardSkin(mapState.mobs[idx]);
             if (_ab.boss && typeof vfxBossEntrance === 'function') vfxBossEntrance(mapState.mobs[idx]);
@@ -1979,6 +1980,7 @@ function spawnMob(idx) {
         else _id = (idx === 1) ? _kr.boss : _kr.minion;
         let _b = DB.mobs[_id]; if(!_b) return;
         mapState.mobs[idx] = { ..._b, curHp: _b.hp, uid: uid(), _born: ++_mobBornSeq, _bornMs: Date.now(), _magCd: {}, justHit: false, st: newMobStatus() };
+        gmApplyMonsterStats(mapState.mobs[idx],_id);
         applySherineBuff(idx);   // 🔮 軍王之室／底比斯歐西里斯祭壇也吃「席琳的世界」強化＋_sherine（與一般出怪一致；不含恩賜 grace；須在 initHardSkin 之前）
         if(mapState.mobs[idx].hard) initHardSkin(mapState.mobs[idx]);
         if (_b.boss && typeof vfxBossEntrance === 'function') { try { vfxBossEntrance(mapState.mobs[idx]); } catch (e) {} }   // 🐉 v3.4.95 軍王之室／祭壇頭目也播出場特效
@@ -2184,6 +2186,7 @@ function spawnMob(idx) {
         delete mapState._trollSpawn;
     }
     if(base.siegeEnemy) applySiegeEnemyScaling(mapState.mobs[idx]);   // 攻城敵人：依玩家等級縮放
+    gmApplyMonsterStats(mapState.mobs[idx],mobId);
     applySherineBuff(idx);   // 🔮 席琳的世界強化＋_sherine（與時空裂痕共用 applySherineBuff）
     if(mapState.mobs[idx].hard) initHardSkin(mapState.mobs[idx]);   // 🔧 硬皮：依等級/頭目/席琳世界初始化硬皮值（須在席琳 _sherine 標記之後）
     // 🔧 攻城城門/守護塔 HP 跨地圖保留（兩座城共用 gateHp/towerHp，依當前攻城城池的城門/塔名稱判定）

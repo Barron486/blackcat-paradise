@@ -15,7 +15,7 @@ export function loadCatalog(root) {
     setTimeout: empty, setInterval: empty, clearTimeout: empty, clearInterval: empty,
   }, { codeGeneration: { strings: false, wasm: false } });
   vm.runInContext(readFileSync(new URL('js/00-data.js', root), 'utf8'), context, { timeout: 10000 });
-  for(const file of ['01-drops-config','11-world-map','12-npc-quests','15-cards','loot-rarity','world-rules']) vm.runInContext(readFileSync(new URL('js/'+file+'.js',root),'utf8'),context,{timeout:10000});
+  for(const file of ['01-drops-config','11-world-map','12-npc-quests','15-cards','loot-rarity','monster-rules','world-rules']) vm.runInContext(readFileSync(new URL('js/'+file+'.js',root),'utf8'),context,{timeout:10000});
   const catalog = vm.runInContext('JSON.stringify({items: DB.items, skills: DB.skills, creation: createBase, experience: EXP_REQ_CLASSIC, version: GAME_VERSION, world: gmBuildWorldCatalog()})', context);
   const data = JSON.parse(catalog);
   return {

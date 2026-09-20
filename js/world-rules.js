@@ -8,6 +8,20 @@ function gmSetWorld(value) {
     if (typeof player !== 'undefined' && player.cls && typeof syncMapSelectors === 'function') syncMapSelectors();
 }
 function gmDropKey(source, name, item) { return JSON.stringify([source,name,item]); }
+function gmApplyMonsterStats(mob,id) {
+    if(!mob||!DB.mobs[id])return;
+    Object.assign(mob,GameMonsterRules.apply(mob,gmWorld.monsters?.[id],gmWorld.monsterStrength??1));
+    mob._gmMonsterId=id;mob.curHp=mob.hp;
+    if(['goldMin','goldMax'].some(k=>Object.hasOwn(gmWorld.monsters?.[id]?.values||{},k)))mob._gmGoldOverride=true;
+}
+function gmRecordMonsterKill(mob) {
+    const settings=gmWorld.killBroadcast;
+    if(!settings?.enabled||mob._pvpDuelFoe)return;
+    const id=mob._gmMonsterId||Object.keys(DB.mobs).find(id=>DB.mobs[id].n===mob.n);
+    if(!id||!settings.monsters.includes(id))return;
+    player._monsterKillSeq=(player._monsterKillSeq||0)+1;
+    player._monsterKillEvents=[...(player._monsterKillEvents||[]),{seq:player._monsterKillSeq,monsterId:id,mapId:mapState.current,at:Date.now()}].slice(-64);
+}
 function gmDropChance(source, mob, item, percent, bonus) {
     const key = gmDropKey(source, typeof mob === 'string' ? mob : mob.n, item);
     const rate = Object.prototype.hasOwnProperty.call(gmWorld.drops,key) ? gmWorld.drops[key] : percent;
@@ -104,7 +118,15 @@ function gmBuildWorldCatalog() {
             for(const n of pool)add('card'+tier,name,cardId(n,tier),rate/pool.length,'同階卡片擇一；未開通圖鑑時自動登錄','card'+tier);
         }
     }
-    return {maps:[...maps.values()],monsters:[...monsters.values()],drops:[...rows.values()]};
+    const locations=new Map(Object.keys(DB.mobs).map(id=>[id,new Set()]));
+    const addLocation=(id,mapId)=>{const seen=new Set();while(DB.mobs[id]&&!seen.has(id)){seen.add(id);locations.get(id).add(mapId);id=DB.mobs[id].transformTo;}};
+    for(const map of maps.values())for(const id of DB.maps[map.id]||[])addLocation(id,map.id);
+    if(typeof KING_ROOMS!=='undefined')for(const [mapId,room]of Object.entries(KING_ROOMS))for(const id of room.dual?room.bosses:[room.boss,room.minion])addLocation(id,mapId);
+    if(typeof ANTHARAS_AREA_BOSS!=='undefined')for(const [mapId,id]of Object.entries(ANTHARAS_AREA_BOSS))addLocation(id,mapId);
+    const transformStages=new Set(Object.values(DB.mobs).map(m=>m.transformTo).filter(Boolean));
+    for(const [id,m]of Object.entries(DB.mobs))if(typeof m.lv==='number'&&m.lv>=1&&m.lv<=100&&!m.siegeEnemy&&!m.pledgeEnemy&&m.race!=='建築'&&id!=='kari'&&!transformStages.has(id))addLocation(id,'rift_battle');
+    const creatures=Object.entries(DB.mobs).map(([id,data])=>({id,name:data.n,boss:!!data.boss,data,maps:[...locations.get(id)].filter(mapId=>maps.has(mapId)).map(mapId=>({id:mapId,name:maps.get(mapId).name}))}));
+    return {maps:[...maps.values()],monsters:[...monsters.values()],creatures,drops:[...rows.values()]};
 }
 var gmWorldCatalogCache;
 var gmLootSourcesCache;

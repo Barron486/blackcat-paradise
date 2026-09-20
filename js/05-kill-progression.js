@@ -299,6 +299,7 @@ function doMobTransform(idx) {
     // 🎴 v3.5.2 變身中間階不掉卡：整鏈三張卡（玉藻/九尾/殺生石）全由最終階 殺生石 擲中時隨機選一張（js/15 rollCardDrops 的 transformTo 閘＋CARD_CHAIN_BY_FINAL 隨機池）。
     let next = { ...base, curHp: base.hp, uid: uid(), _born: mob._born, _magCd: {}, justHit: false, st: newMobStatus(), _bornMs: mob._bornMs || Date.now(), _justTransformedTick: state.ticks };
     mapState.mobs[idx] = next;
+    gmApplyMonsterStats(next,mob.transformTo);
     if (typeof applySherineBuff === 'function') { try { applySherineBuff(idx); } catch (e) {} }   // 🔮 審查修：席琳的世界強化跨變身沿用（與 spawnMob/spawnRiftMob 同序·須在 initHardSkin 之前）
     if (base.hard) initHardSkin(next);
     logCombat(mob.transformLogText
@@ -315,7 +316,7 @@ function monsterGoldRange(mob) {
     let diffMult = (mob && mob.hard && !mob.boss) ? 1.25 : 1;
     let gMin, gMax;
     let cfgMin = Number(mob && mob.goldMin), cfgMax = Number(mob && mob.goldMax);
-    let bossHasConfiguredGold = !!(mob && mob.boss && Number.isFinite(cfgMin) && Number.isFinite(cfgMax) && cfgMin > 0 && cfgMax >= cfgMin);
+    let bossHasConfiguredGold = !!(mob && (mob.boss||mob._gmGoldOverride) && Number.isFinite(cfgMin) && Number.isFinite(cfgMax) && (cfgMin > 0||mob._gmGoldOverride) && cfgMax >= cfgMin);
     if (bossHasConfiguredGold) {
         // spawn 時席琳／恩賜已直接乘入頭目的 goldMin/goldMax，不再重複計算。
         gMin = Math.floor(cfgMin); gMax = Math.floor(cfgMax);
@@ -326,7 +327,8 @@ function monsterGoldRange(mob) {
         gMin = Math.round(mean * 0.65 * diffMult * worldMult);
         gMax = Math.round(mean * 1.35 * diffMult * worldMult);
     }
-    return { min: Math.max(1, gMin), max: Math.max(Math.max(1, gMin), gMax) };
+    const lower=mob?._gmGoldOverride?0:1;
+    return { min: Math.max(lower, gMin), max: Math.max(Math.max(lower, gMin), gMax) };
 }
 function killMob(idx) {
     let mob = mapState.mobs[idx];
@@ -352,6 +354,7 @@ function killMob(idx) {
         }
     }
     mob._dead = true;
+    gmRecordMonsterKill(mob);
     try { vfxKill(mob); } catch(e){}   // ✨ VFX：擊殺粒子爆裂（趁格子 DOM 仍在、重繪前）
     try { playMobKill(mob); } catch(e){}   // 🔊 音效：怪物死亡（依怪名對應專屬死亡音，查無→通用擊殺音）
     if (mob.curHp > 0) mob.curHp = 0;     // 待清算期間不可被當成活目標
@@ -399,7 +402,7 @@ function killMob(idx) {
     if (!_kbNoReward && !mob.noGold && Math.random() < _goldDropRate) {
         let _goldRange = monsterGoldRange(mob);
         let g = _goldRange.min + Math.floor(Math.random() * (_goldRange.max - _goldRange.min + 1));
-        g = Math.max(1, Math.floor(g * (0.9 + Math.random() * 0.2)));   // 💰 最終金額額外浮動 −10%～+10%
+        g = Math.max(mob._gmGoldOverride?0:1, Math.floor(g * (0.9 + Math.random() * 0.2)));   // 💰 最終金額額外浮動 −10%～+10%
         // ⚠️v3.0.82 經典模式金幣÷2 已移除（一般＝經典；歷次：×1/10 → ×1/3 → ×1/2 → ×1）
         g = Math.floor(g * (1 + dollFieldVal('goldBonus') / 100) * partyRewardMult() * gmWorld.goldMultiplier);   // 🪆 娃娃加成後再乘有效隊伍人數（最高 ×8）
         player.gold += g;
@@ -1317,6 +1320,7 @@ function spawnRiftMob(idx) {
     if (!mobId) return;
     let base = DB.mobs[mobId];
     mapState.mobs[idx] = { ...base, curHp: base.hp, uid: uid(), _born: ++_mobBornSeq, _magCd: {}, justHit: false, st: newMobStatus() };
+    gmApplyMonsterStats(mapState.mobs[idx],mobId);
     applySherineBuff(idx);   // 🔮 時空裂痕也吃席琳世界：怪物強化＋_sherine（詞綴／×3掉／×2傷由 _sherine 帶動）；須在 initHardSkin 前
     if (mapState.mobs[idx].hard) initHardSkin(mapState.mobs[idx]);
     applySherineGrace(idx);   // 🔮 席琳的恩賜（1% 機率）

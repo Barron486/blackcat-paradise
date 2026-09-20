@@ -782,7 +782,7 @@ function buildAlly(slotN) {
     ally._downed = false;   // 🤝 Phase 3：倒地旗標（curHp 歸零→true·停止行動/不被選為目標·須隊伍面板手動復活）
     ally._reviveCd = 0;   // 🤝 Phase 3：倒地後復活冷卻（ticks 倒數；倒地時設 150＝15秒·每 tick 於 alliesTick 遞減·存檔安全相對值）
     ally.statuses = {};   // 🤝 Phase4：招募即清空異常狀態（避免繼承來源存檔殘留的中毒/冰凍等）
-    ally.exp = 0;   // 🤝 當前等級的經驗進度（升級時歸零再累積）
+    ally.exp = Math.max(0, Math.floor(Number(p.exp) || 0)); // 刷新或重新招募保留來源角色的升級進度。
     ally._expGained = 0;   // 🤝 受雇期間「賺到的經驗總量」（含已被即時升級消耗的）→ 解雇時 delta-merge 加回該存檔角色（多開安全）
     ally._alignmentDelta = 0;   // 🤝 受雇期間實際取得的性向差額；與經驗一起進待領帳本，避免直接覆寫來源角色存檔
     ally._atkSkill = (ally.config && ally.config.selAtkSkill) || '';   // 攻擊技能選擇（快照；法師施法 / 妖精三重矢）
@@ -3669,7 +3669,7 @@ function dismissAlly(slotN) {
         return;
     }
     let name = ally._allyName || `存檔 ${slotN}`;
-    if (!confirm(`確定要解散協力傭兵「${name}」嗎？\n（累積經驗會記入待領帳本，該角色下次載入或回村時領取）`)) return;
+    if (!confirm(`確定要解散協力傭兵「${name}」嗎？\n（${window.CloudStore ? "經驗已隨戰鬥自動儲存至角色" : "累積經驗會記入待領帳本，該角色下次載入或回村時領取"}）`)) return;
     toggleAlly(slotN);
 }
 const ALLY_EQUIP_SLOT_NAME = {
@@ -4084,7 +4084,7 @@ function renderAllyNPC(div) {
             ? `<div class="flex flex-wrap justify-end gap-1.5 shrink-0">
                     <button onclick="openAllyEquipmentManager('${n}')" class="btn py-1 px-3 text-sm font-bold bg-sky-950 border-sky-700 text-sky-100" title="在安全區使用隊長背包管理此隊員的裝備">裝備</button>
                     <button onclick="openAllyQuestManager('${n}')" class="btn py-1 px-3 text-sm font-bold bg-amber-950 border-amber-700 text-amber-100" title="在安全區替符合等級的隊員接取專屬試煉">任務</button>
-                    <button onclick="dismissAlly('${n}')" class="btn py-1 px-3 text-sm font-bold bg-red-950 border-red-700 text-red-200" title="只解散這名協力傭兵（累積經驗會記入待領帳本）">解散</button>
+                    <button onclick="dismissAlly('${n}')" class="btn py-1 px-3 text-sm font-bold bg-red-950 border-red-700 text-red-200" title="只解散這名協力傭兵（${window.CloudStore ? "已取得經驗保留" : "累積經驗會記入待領帳本"}）">解散</button>
                </div>`
             : (!_modeMatch
                 ? `<span class="text-xs text-slate-500 px-2 text-right">非同模式存檔<br>不可招募</span>`
@@ -4108,7 +4108,7 @@ function renderAllyNPC(div) {
         </div>`;
     }).join('');
     div.innerHTML = `<div class="flex flex-col gap-3 p-1">
-        <div class="text-slate-300 text-sm leading-relaxed">招募其他存檔位的角色一起作戰，<b class="text-emerald-300">完全免費</b>。協力傭兵戰鬥中不會陣亡，<b class="text-emerald-300">你死亡並回城／原地復活後仍會留在身邊，可使用各傭兵旁的「解散」或「⚠ 全員退出」</b>；存讀檔不會使其消失。法師以魔法、妖精以弓/三重矢、騎士以物理（含看破/殺戮）出手。<br><span class="text-amber-300">同一個角色同時只能受僱於一位僱主——已被其他角色招募走的存檔不會出現「召喚」按鈕，須由現任僱主先解散。</span>${_capHint}<br><span class="text-slate-400">提示：<b class="text-sky-300">每次進入安全區（含載入存檔回到村莊）都會自動刷新一次隊員資料</b>——結算各隊員累積的經驗（記入待領帳本，該角色下次載入或回村時領取）並依來源存檔的最新狀態重建戰力快照，不需要也不再有「重新招募」按鈕。點「解散」只會解除該名傭兵並結算其累積經驗。</span></div>
+        <div class="text-slate-300 text-sm leading-relaxed">招募其他存檔位的角色一起作戰，<b class="text-emerald-300">完全免費</b>。協力傭兵戰鬥中不會陣亡，<b class="text-emerald-300">你死亡並回城／原地復活後仍會留在身邊，可使用各傭兵旁的「解散」或「⚠ 全員退出」</b>；存讀檔不會使其消失。法師以魔法、妖精以弓/三重矢、騎士以物理（含看破/殺戮）出手。<br><span class="text-amber-300">同一個角色同時只能受僱於一位僱主——已被其他角色招募走的存檔不會出現「召喚」按鈕，須由現任僱主先解散。</span>${_capHint}<br><span class="text-slate-400">提示：<b class="text-sky-300">每次進入安全區（含載入存檔回到村莊）都會自動刷新一次隊員資料</b>——${window.CloudStore ? "隊員經驗會隨戰鬥自動儲存至角色，回村時保留等級與經驗進度" : "結算各隊員累積的經驗（記入待領帳本，該角色下次載入或回村時領取）"}並依來源存檔的最新狀態重建戰力快照，不需要也不再有「重新招募」按鈕。點「解散」只會解除該名傭兵並結算其累積經驗。</span></div>
         ${(player.allies||[]).length ? `<div class="flex items-center justify-end gap-2">
             <button onclick="dismissAllAllies()" class="btn py-1 px-3 text-xs font-bold bg-red-950 border-red-700 text-red-200" title="解除目前全部協力傭兵（含異常卡住、找不到對應存檔的傭兵）">⚠ 全員退出（${(player.allies||[]).length}）</button>
         </div>` : ''}

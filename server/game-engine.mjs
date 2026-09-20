@@ -4,6 +4,7 @@ import {JSDOM, VirtualConsole} from 'jsdom';
 import {applyEffect, refreshGmBuffs} from '../shared/gm-effects.js';
 import {extraAction} from './game-actions.mjs';
 import {installBattleRecording} from './battle-stream.mjs';
+import {installMercenaryProgress} from './mercenary-progress.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const HTML = readFileSync(new URL('index.html', ROOT), 'utf8');
@@ -64,6 +65,7 @@ export class HeadlessGame {
       wireBuffEnders();
       currentSlot = ${this.slot};`, visualFunctions);
     installBattleRecording(this);
+    installMercenaryProgress(this);
   }
 
   run(code,args) {
@@ -159,6 +161,7 @@ export class HeadlessGame {
 
   save() {
     if(!this.run('!!player.cls')) throw new Error('尚未載入角色');
+    this.run('serverSyncMercenaryProgress();');
     if(!this.run('player.dead') && !this.run('saveGame()')) throw new Error('遊戲存檔失敗');
     // GM deaths need their authoritative marker persisted although upstream skips dead saves.
     this.run(`if(!_lzSet('lineage_idle_save_'+currentSlot,_saveWrapPortable(__args))) throw new Error('存檔寫入失敗');`,JSON.stringify(this.snapshot()));
@@ -175,6 +178,7 @@ export class HeadlessGame {
 
   action(name,args = {}) {
     if(!this.run('!!player.cls')) throw new Error('尚未載入角色');
+    this.run('serverSyncMercenaryProgress();');
     if(this.run('player.dead') && !['revive','revive-in-place','arena-result'].includes(name)) throw new Error('角色已死亡');
     switch(name) {
       case 'travel': case 'map':

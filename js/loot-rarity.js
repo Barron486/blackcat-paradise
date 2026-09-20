@@ -12,6 +12,7 @@ globalThis.GameLootRarity = Object.freeze({
         return new Intl.DateTimeFormat('sv-SE', {timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'}).format(new Date(at));
     },
     message(event) {
+        if(event.kind==='kill')return `[${this.time(event.killedAt??event.at)}] ${event.name} 在 ${event.mapName} 擊敗了【${event.monster}】！`;
         const tier = this.labels[event.rarity] || '稀有';
         return `[${this.time(event.droppedAt ?? event.at)}] 恭喜 ${event.name} 在 ${event.mapName} 擊敗 ${event.monster}，獲得【${tier}】${event.itemName}${event.quantity > 1 ? ' ×' + event.quantity : ''}！`;
     }

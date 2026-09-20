@@ -59,7 +59,7 @@ function renderPlayers(){
 }
 document.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>{
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b===button));
-  for(const view of ['commands','players','audit','ai-chat','diamonds','world-settings','drops'])$('view-'+view).hidden=view!==button.dataset.view;
+  for(const view of ['commands','players','audit','ai-chat','diamonds','world-settings','drops','monsters','announcements'])$('view-'+view).hidden=view!==button.dataset.view;
   document.dispatchEvent(new CustomEvent('gm:view-change',{detail:{view:button.dataset.view}}));
   if(button.dataset.view==='audit')void refreshAudit().catch(e=>notify(e.message,true));
 });
@@ -147,4 +147,4 @@ async function refreshAudit(){
   }
 }
 $('audit-refresh').onclick=()=>refreshAudit().catch(e=>notify(e.message,true));
-(async()=>{try{const data=await api('/api/me');me=data.user;csrf=data.csrf;if(me.role!=='gm')throw new Error('這個帳號沒有 GM 權限');$('gm-account').textContent='♛ '+me.username;await refreshPlayers();if(typeof window.initAiChat==='function')window.initAiChat({api,notify});if(typeof window.initDiamondAdmin==='function')window.initDiamondAdmin({api,notify});if(typeof window.initWorldAdmin==='function')window.initWorldAdmin({api,notify});}catch(e){notify(e.message,true);}})();
+(async()=>{try{const data=await api('/api/me');me=data.user;csrf=data.csrf;if(me.role!=='gm')throw new Error('這個帳號沒有 GM 權限');$('gm-account').textContent='♛ '+me.username;await refreshPlayers();if(typeof window.initAiChat==='function')window.initAiChat({api,notify});if(typeof window.initDiamondAdmin==='function')window.initDiamondAdmin({api,notify});if(typeof window.initWorldAdmin==='function')window.initWorldAdmin({api,notify});if(typeof window.initMonsterAdmin==='function')window.initMonsterAdmin({api,notify});}catch(e){notify(e.message,true);}})();

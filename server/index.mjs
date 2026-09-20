@@ -11,6 +11,7 @@ import { CommerceService } from './commerce.mjs';
 import { MarketService } from './market.mjs';
 import { WorldSettingsService } from './world-settings.mjs';
 import { LootBroadcastService } from './loot-broadcasts.mjs';
+import { KillBroadcastService } from './kill-broadcasts.mjs';
 import { AuthoritativeGame } from './authoritative-game.mjs';
 import { BattleFeed } from './battle-feed.mjs';
 import { loadBrowserAssets } from './browser-assets.mjs';
@@ -31,6 +32,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
   const market = new MarketService(service,commerce);
   const worldSettings = new WorldSettingsService(service);
   const lootBroadcasts = new LootBroadcastService(service);
+  const killBroadcasts = new KillBroadcastService(service);
   const authority = new AuthoritativeGame(service);
   const battleFeed = new BattleFeed(authority,service);
   const origins=new Set([publicOrigin,...publicAliases].filter(Boolean).map(value=>{
@@ -101,7 +103,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
         if(route==='/api/me') return json(res,200,{user:{id:user.id,username:user.username,role:user.role},csrf:user.csrf});
         if(route==='/api/bootstrap') return json(res,200,service.bootstrap(user));
         if(route==='/api/world-settings'&&req.method==='GET') return json(res,200,worldSettings.state());
-        if(route==='/api/loot-broadcasts'&&req.method==='GET') return json(res,200,lootBroadcasts.list(Number(new URL(req.url,base).searchParams.get('after'))));
+        if(route==='/api/loot-broadcasts'&&req.method==='GET') {const params=new URL(req.url,base).searchParams,announcement=worldSettings.state().announcement;return json(res,200,{...lootBroadcasts.list(Number(params.get('after'))),kills:killBroadcasts.list(Number(params.get('afterKills'))),announcement:announcement?.expiresAt>Date.now()?announcement:null});}
         if(route==='/api/auth/logout'&&req.method==='POST') {service.logout(session);return json(res,200,{ok:true},{'Set-Cookie':cookie('',true)});}
         if(route==='/api/lease'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.acquireLease(user,b.lease,b.takeover===true));}
         if(route==='/api/sync'&&req.method==='POST') {
@@ -115,7 +117,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
           const query=new URL(req.url,base).searchParams;
           return battleFeed.open({user,session,lease:query.get('lease'),after:query.get('after'),req,res});
         }
-        if(route==='/api/world') return json(res,200,{online:service.onlineSummary(user).list,messages:service.publicMessages(),lootBroadcasts:lootBroadcasts.history()});
+        if(route==='/api/world') return json(res,200,{online:service.onlineSummary(user).list,messages:service.publicMessages(),lootBroadcasts:lootBroadcasts.history(),killBroadcasts:killBroadcasts.history()});
         if(route==='/api/online'&&req.method==='GET') return json(res,200,service.onlineSummary(user));
         if(route==='/api/gm/location-clans'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.presence.assign(user,b));}
         if(route==='/api/clans'&&req.method==='GET') return json(res,200,{clans:service.clans(user)});
@@ -145,6 +147,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
           service.gm(user);
           if(route==='/api/gm/world-settings'&&req.method==='GET')return json(res,200,worldSettings.admin(user));
           if(route==='/api/gm/drops'&&req.method==='GET')return json(res,200,worldSettings.listDrops(user,new URL(req.url,base).searchParams));
+          if(route==='/api/gm/monsters'&&req.method==='GET')return json(res,200,worldSettings.monsters.list(user,new URL(req.url,base).searchParams));
           if(route==='/api/gm/diamonds'&&req.method==='GET')return json(res,200,commerce.admin(user,new URL(req.url,base).searchParams.get('accountId')));
           if(route==='/api/gm/ai-chat'&&req.method==='GET')return json(res,200,aiChat.status(user));
           if(route==='/api/gm/players') return json(res,200,{players:service.players(user)});
@@ -174,7 +177,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
       if(route==='/'||route==='/index.html') {
         const boot=service.bootstrap(user);
         const html=readFileSync(new URL('index.html',ROOT),'utf8').replace('</head>',
-          `<script id="cloud-boot" type="application/json">${escapedJson(boot)}</script><script src="/online/bootstrap.js"></script><link rel="stylesheet" href="/online/cloud.css"><link rel="stylesheet" href="/online/mobile.css"></head>`)
+          `<script id="cloud-boot" type="application/json">${escapedJson(boot)}</script><script src="/online/bootstrap.js"></script><link rel="stylesheet" href="/online/cloud.css"><link rel="stylesheet" href="/online/mobile.css"><link rel="stylesheet" href="/online/loot-ticker.css"></head>`)
           .replace('</body>','<script type="module" src="/online/authoritative.js?v=battle-feed-20260919"></script><script type="module" src="/online/mobile.js"></script><script type="module" src="/online/shop.js"></script><script type="module" src="/online/market.js"></script></body>');
         res.writeHead(200,{'Content-Type':MIME['.html'],'Cache-Control':'no-store'});return res.end(req.method==='HEAD'?undefined:browserAssets.html(html));
       }
