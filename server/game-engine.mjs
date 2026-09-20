@@ -199,7 +199,12 @@ export class HeadlessGame {
       case 'equip':
         this.run(`{const item=player.inv.find(i=>i.uid===__args.uid);if(!item || !['wpn','arm','acc'].includes(DB.items[item.id]?.type) || !checkCanEquip(item)) throw new Error('沒有此物品或無法裝備');equipItem(item);}`,args); break;
       case 'use':
-        this.run(`{const item=player.inv.find(i=>i.uid===__args.uid);if(!item) throw new Error('背包沒有此物品');useItem(item.uid);}`,args); break;
+        this.run(`{const item=player.inv.find(i=>i.uid===__args.uid);if(!item) throw new Error('背包沒有此物品');
+          if(DB.items[item.id]?.eff==='poly'&&hasPolyRing())throw new Error('請先選擇變身形態');
+          if(DB.items[item.id]?.eff==='osiris_box')throw new Error('請先選擇開箱數量');
+          if(DB.items[item.id]?.eff==='reset')throw new Error('請先完成回憶蠟燭配點');
+          if(DB.items[item.id]?.eff==='soulorb'&&['wpn_powerless_baless','wpn_powerless_baphomet'].every(id=>player.inv.some(i=>i.id===id&&i.cnt>0)))throw new Error('請先選擇要恢復的魔杖');
+          useItem(item.uid);}`,args); break;
       case 'cast':
         this.run(`if(!player.skills.includes(__args.skillId) && !player.grantedSkills?.includes(__args.skillId)) throw new Error('尚未學會此技能');
           if(['stun','freeze','stone','paralyze','sleep'].some(id=>(player.statuses[id]||0)>0)) throw new Error('目前受到控制，無法施放技能');

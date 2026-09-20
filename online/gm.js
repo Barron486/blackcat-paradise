@@ -1,7 +1,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 let csrf='',me=null,players=[],action='buff_all',selected=null,preview=null,requestId=null,executing=false;
-const labels={buff_all:'賜予全狀態',grant_item:'發放指定物品',kill:'即刻死亡',revive:'復活與恢復',clear_buffs:'移除 GM 增益',teleport:'傳送至 GM 所在地圖',restore_progress:'修復已確認的經驗進度'};
+const labels={buff_all:'賜予全狀態',grant_item:'發放指定物品',grant_gold:'發放金幣',kill:'即刻死亡',revive:'復活與恢復',clear_buffs:'移除 GM 增益',teleport:'傳送至 GM 所在地圖',restore_progress:'修復已確認的經驗進度'};
 const classNames={royal:'王族',knight:'騎士',elf:'妖精',mage:'法師',dark:'黑暗妖精',illusion:'幻術士',dragon:'龍騎士',warrior:'戰士'};
 const scopeNames={all:'全部玩家（含離線）',online:'在線玩家目前角色',account:'指定帳號全部角色',character:'指定帳號內單一角色'};
 async function api(path,body){
@@ -25,7 +25,7 @@ function renderTargetCharacters(preserve=true){
   targetCount();
 }
 function updateTargetScope(){
-  const single=$('character-scope');single.hidden=single.disabled=action!=='grant_item';
+  const single=$('character-scope');single.hidden=single.disabled=!['grant_item','grant_gold'].includes(action);
   if(single.disabled&&$('scope').value==='character')$('scope').value='account';
   $('account-wrap').hidden=!['account','character'].includes($('scope').value);
   $('character-wrap').hidden=$('scope').value!=='character';targetCount();
@@ -66,8 +66,9 @@ document.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>{
 document.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>{
   action=button.dataset.action;document.querySelectorAll('[data-action]').forEach(b=>b.classList.toggle('selected',b===button));
   $('buff-options').hidden=action!=='buff_all';$('item-options').hidden=action!=='grant_item';
+  $('gold-options').hidden=action!=='grant_gold';
   updateTargetScope();
-  $('action-explanation').hidden=['buff_all','grant_item'].includes(action);
+  $('action-explanation').hidden=['buff_all','grant_item','grant_gold'].includes(action);
   $('action-explanation').textContent=action==='kill'?'令目標角色 HP 立即歸零，停止戰鬥並顯示復活按鈕。GM 死亡不額外扣除經驗或掉落裝備。':action==='revive'?'解除死亡，恢復全部 HP 與 MP，並清除異常狀態。':action==='teleport'?'先用此 GM 帳號在另一個遊戲分頁移動到目的地並同步存檔，再預覽傳送。傳送略過地圖進入限制與費用，離線角色下次登入時套用。':'移除目前由 GM 施加的增益效果。';
   if(action==='grant_item')void searchItems().catch(e=>notify(e.message,true));
 });
@@ -98,7 +99,7 @@ function command(){
   if(action==='grant_item'&&!selected)throw new Error('請先從清單選擇物品');
   const single=$('scope').value==='character';
   if(single&&!$('target-character').value)throw new Error('請先選擇帳號及收件角色');
-  return {action,scope:$('scope').value,accountId:$('target-account').value,...(single?{slot:Number($('target-character').value)}:{}),reason:$('reason').value.trim(),duration:Number($('duration').value),itemId:selected?.id,quantity:Number($('quantity').value),enchant:Number($('enchant').value),blessed:$('blessed').checked};
+  return {action,scope:$('scope').value,accountId:$('target-account').value,...(single?{slot:Number($('target-character').value)}:{}),reason:$('reason').value.trim(),duration:Number($('duration').value),itemId:selected?.id,quantity:Number($('quantity').value),enchant:Number($('enchant').value),blessed:$('blessed').checked,...(action==='grant_gold'?{amount:Number($('gold-amount').value)}:{})};
 }
 function detail(label,value){const p=document.createElement('p'),strong=document.createElement('strong');p.append(document.createTextNode(label+'　'));strong.textContent=value;p.append(strong);$('confirm-detail').append(p);}
 $('preview').onclick=async()=>{
@@ -110,6 +111,10 @@ $('preview').onclick=async()=>{
     detail('作用範圍',scopeNames[preview.command.scope]);detail('影響人數',`${preview.accountCount} 個帳號 / ${preview.characterCount} 個角色`);
     if(preview.command.action==='teleport')detail('傳送目的地',preview.command.mapName);
     if(preview.command.action==='buff_all')detail('持續時間',`${preview.command.duration/60} 分鐘`);
+    if(preview.command.action==='grant_gold'){
+      detail('每個角色金幣',preview.command.amount.toLocaleString());
+      detail('總發放金幣',(BigInt(preview.command.amount)*BigInt(preview.characterCount)).toLocaleString());
+    }
     if(preview.command.action==='grant_item')detail('發放物品',`${selected.name} × ${preview.command.quantity} / 每個角色${preview.command.enchant?'，強化 +'+preview.command.enchant:''}${preview.command.blessed?'，祝福':''}`);
     detail('操作原因',preview.command.reason);detail('目標帳號',preview.targets.slice(0,15).map(t=>t.username).join('、')+(preview.targets.length>15?'…':''));
     if(preview.command.scope==='character')detail('收件角色',`第 ${preview.command.slot} 格 · ${preview.targets[0].characters[0]}`);
@@ -136,6 +141,7 @@ async function refreshAudit(){
     const article=document.createElement('article');article.className='audit-entry';const body=document.createElement('div'),title=document.createElement('strong'),reason=document.createElement('p'),meta=document.createElement('small'),time=document.createElement('time');
     title.textContent=`#${entry.seq}　${labels[entry.command.action]}　·　${entry.result.characterCount} 個角色`;
     const recipient=entry.result.recipient;
+    if(entry.command.action==='grant_gold'){const amount=document.createElement('p');amount.textContent=`每個角色 ${entry.command.amount.toLocaleString()} 金幣`;body.append(amount);}
     reason.textContent=entry.command.reason;meta.textContent=`操作者 ${entry.actor} · ${scopeNames[entry.command.scope]}${recipient?` · ${recipient.username} / 第 ${recipient.slot} 格 · ${recipient.name}`:''}${entry.command.itemId?' · '+entry.command.itemId+' × '+entry.command.quantity:''}`;time.textContent=new Date(entry.at).toLocaleString('zh-TW');body.append(title,reason,meta);article.append(body,time);$('audit-list').append(article);
   }
   const security=await api('/api/gm/save-security');$('save-security-list').replaceChildren();

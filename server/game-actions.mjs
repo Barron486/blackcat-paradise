@@ -7,6 +7,44 @@ const keys=(a,allowed)=>{if(Object.keys(a).some(k=>!allowed.includes(k)))throw n
 export function extraAction(game,name,a){
   const run=(code,args=a)=>game.run(code,args);
   switch(name){
+    case 'summon-choice':{
+      keys(a,['name']);if(a.name!=='')id(a.name);
+      run(`if(!hasSummonCtrlRing(player))throw new Error('需要裝備召喚控制戒指');
+        if(__args.name&&(!_sumQualified(__args.name)||_sumCountFor(__args.name)<1))throw new Error('等級或魅力不足，無法選擇此召喚物');
+        chooseSummon(__args.name);`);break;
+    }
+    case 'open-box':{
+      keys(a,['uid','qty']);id(a.uid);integer(a.qty,1,1000);
+      run(`{const item=player.inv.find(i=>i.uid===__args.uid);
+        if(!item||DB.items[item.id]?.eff!=='osiris_box'||!Object.hasOwn(BOX_LOOT_BY_ID,item.id))throw new Error('背包沒有這個寶箱');
+        if(player.dead||player._gmDead||inAbsBarrier())throw new Error('目前狀態無法開啟寶箱');
+        if(item.cnt<__args.qty)throw new Error('寶箱數量不足，請重新選擇數量');
+        if(playerCoreCount()<__args.qty)throw new Error('龜裂之核不足，每個寶箱需要 1 顆');
+        doOpenOsirisBox(item.uid,__args.qty);
+      }`);break;
+    }
+    case 'soul-orb':{
+      keys(a,['uid','wand']);id(a.uid);
+      if(!['wpn_powerless_baless','wpn_powerless_baphomet'].includes(a.wand))throw new Error('請選擇要恢復的魔杖');
+      run(`{const item=player.inv.find(i=>i.uid===__args.uid);
+        if(!item||DB.items[item.id]?.eff!=='soulorb'||item.cnt<1)throw new Error('背包沒有靈魂之球');
+        if(player.dead||player._gmDead||inAbsBarrier())throw new Error('目前狀態無法使用靈魂之球');
+        if(!player.inv.some(i=>i.id===__args.wand&&i.cnt>0))throw new Error('背包沒有選定的失去魔力魔杖');}`);
+      const confirm=game.window.confirm;game.window.confirm=()=>a.wand==='wpn_powerless_baless';
+      try{run('useItem(__args.uid);');}finally{game.window.confirm=confirm;}break;
+    }
+    case 'polymorph':{
+      keys(a,['uid','name']);id(a.uid);id(a.name);
+      run(`{const item=player.inv.find(i=>i.uid===__args.uid);
+        if(!item||DB.items[item.id]?.eff!=='poly'||!Number.isSafeInteger(item.cnt)||item.cnt<1)throw new Error('背包沒有這張變形卷軸');
+        if(player.dead||player._gmDead)throw new Error('死亡狀態無法變身，請先復活');
+        if(inAbsBarrier())throw new Error('絕對屏障期間無法使用變形卷軸');
+        if(!hasPolyRing())throw new Error('指定變身需要攜帶變形控制戒指，或裝備浣熊的變身葉');
+        const found=findPolyForm(__args.name);
+        if(!found||player.lv<found.form.lv||!polyFormMatchesEquippedWeapon(found.form))throw new Error('目前等級或武器無法使用此變身，請重新開啟選單');
+        confirmPolySelect(item.uid,__args.name);
+      }`);break;
+    }
     case 'black-market':{
       keys(a,['operation','index','offer']);
       if(!['view','buy'].includes(a.operation))throw new Error('不支援的黑市操作');
@@ -25,7 +63,14 @@ export function extraAction(game,name,a){
     case 'npc-command':{
       keys(a,['npcId','method','params','fields']);id(a.npcId);
       if(!npcIntents.includes(a.method)||!Array.isArray(a.params)||a.params.length>4)throw new Error('不支援的 NPC 操作');
-      for(const value of a.params)if(!['string','number','boolean'].includes(typeof value)||String(value).length>160)throw new Error('NPC 選項不正確');
+      for(const value of a.params)if(value!==null&&(!['string','number','boolean'].includes(typeof value)||String(value).length>160))throw new Error('NPC 選項不正確');
+      // The tier/count buttons only select a menu; validate them before rendering
+      // the authoritative merchant menu that authorizes the actual synthesis.
+      if(['dollSynth','dollSynthAll'].includes(a.method)){
+        if(a.params.length!==2)throw new Error('合成選項不正確');
+        integer(a.params[0],1,5);integer(a.params[1],2,4);
+        run('_dollSynthTier=__args.params[0];_dollSynthCount=__args.params[1];');
+      }
       // Clear stale markup before rendering: hidden/unavailable NPCs must not inherit
       // another menu, and map notices must validate their actual entrance location.
       const panel=game.window.document.getElementById('interaction-content');panel.innerHTML='';
@@ -39,7 +84,7 @@ export function extraAction(game,name,a){
       const allowed=[...panel.querySelectorAll('[onclick]:not([disabled])')].some(el=>{
         const match=/^\s*([A-Za-z]\w*)\((.*)\)\s*;?\s*$/.exec(el.getAttribute('onclick'));
         if(!match||match[1]!==a.method)return false;
-        try{const parts=match[2].trim()?match[2].match(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|true|false|-?\d+(?:\.\d+)?/g):[];
+        try{const parts=match[2].trim()?match[2].match(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|true|false|null|-?\d+(?:\.\d+)?/g):[];
           if((parts||[]).join(',').replace(/\s/g,'')!==match[2].replace(/\s/g,''))return false;
           const parsed=parts.map(p=>JSON.parse(p.startsWith("'")?'"'+p.slice(1,-1).replace(/\\'/g,"'").replace(/"/g,'\\"')+'"':p));
           return JSON.stringify(parsed)===JSON.stringify(a.params);
@@ -122,7 +167,7 @@ export function extraAction(game,name,a){
     case 'respec':{
       keys(a,['allocation']);if(!a.allocation||Object.keys(a.allocation).length!==6)throw new Error('配點不完整');
       for(const [s,v]of Object.entries(a.allocation)){stat(s);integer(v,0,60);}
-      run(`{const b=createBase[player.cls],points=b.pts+Math.max(0,player.lv-49);if(Object.values(__args.allocation).reduce((s,n)=>s+n,0)>points||Object.entries(__args.allocation).some(([k,v])=>b[k]+v>60))throw new Error('配點不合法');startRespec();if(!_respec)throw new Error('需要回憶蠟燭');_respec.draft=__args.allocation;confirmRespec();}`);break;
+      run(`{if(player.dead||player._gmDead||inAbsBarrier())throw new Error('目前狀態無法使用回憶蠟燭');const b=createBase[player.cls],points=b.pts+Math.max(0,player.lv-49);if(Object.values(__args.allocation).reduce((s,n)=>s+n,0)>points||Object.entries(__args.allocation).some(([k,v])=>b[k]+v>60))throw new Error('配點不合法');_respec=null;startRespec();if(!_respec)throw new Error('需要回憶蠟燭');_respec.draft=__args.allocation;confirmRespec();}`);break;
     }
     case 'enhance':case 'auto-enhance':case 'curse-enhance':{
       keys(a,['uid','equipped','scrollId','goal']);id(a.uid);id(a.scrollId);if(typeof a.equipped!=='boolean')throw new Error('裝備位置不正確');

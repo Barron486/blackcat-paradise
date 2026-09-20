@@ -205,7 +205,7 @@ export class GameService {
     });
   }
   normalizeCommand(body) {
-    const actions=['buff_all','kill','grant_item','revive','clear_buffs','teleport','restore_progress'];
+    const actions=['buff_all','kill','grant_item','grant_gold','revive','clear_buffs','teleport','restore_progress'];
     requireValue(actions.includes(body.action),'不支援的 GM 操作');
     requireValue(['all','online','account','character'].includes(body.scope),'請選擇有效的操作範圍');
     requireValue(typeof body.reason==='string' && body.reason.trim().length>=2 && body.reason.length<=200,'請填寫 2～200 字的操作原因');
@@ -213,11 +213,15 @@ export class GameService {
     const command={action:body.action,scope:body.scope,accountId:accountScope?body.accountId:null,reason:body.reason.trim()};
     if(accountScope) requireValue(typeof body.accountId==='string' && !!this.db.prepare('SELECT id FROM accounts WHERE id=?').get(body.accountId),'找不到指定帳號');
     if(body.scope==='character') {
-      requireValue(body.action==='grant_item','指定單一角色目前僅用於發放物品');
+      requireValue(['grant_item','grant_gold'].includes(body.action),'指定單一角色目前僅用於發放物品或金幣');
       requireValue(Number.isInteger(body.slot)&&body.slot>=1&&body.slot<=8,'請指定角色欄位 1～8');
       command.slot=body.slot;
     }
-    if(body.action==='grant_item'&&body.slot!==undefined)requireValue(body.scope==='character','指定角色欄位時，請使用指定單一角色範圍');
+    if(['grant_item','grant_gold'].includes(body.action)&&body.slot!==undefined)requireValue(body.scope==='character','指定角色欄位時，請使用指定單一角色範圍');
+    if(body.action==='grant_gold'){
+      requireValue(Number.isSafeInteger(body.amount)&&body.amount>=1&&body.amount<=1000000000000,'每個角色金幣數量須為 1～1,000,000,000,000 的整數');
+      command.amount=body.amount;
+    }
     if(body.action==='restore_progress') {
       requireValue(body.scope==='account','進度修復必須指定單一帳號');
       requireValue(Number.isInteger(body.slot)&&body.slot>=1&&body.slot<=8,'請指定角色欄位 1～8');
@@ -260,6 +264,10 @@ export class GameService {
   }
   preview(user,body) {
     this.gm(user); const command=this.normalizeCommand(body),targets=this.targets(command);
+    if(command.action==='grant_gold')for(const target of targets)for(const {doc} of target.chars){
+      const balance=doc.p.gold??0;
+      requireValue(Number.isSafeInteger(balance)&&balance>=0&&Number.isSafeInteger(balance+command.amount),`${target.username} 的金幣將超過安全上限，已取消整批操作`,409);
+    }
     if(command.action==='teleport'){
       const location=this.world.location(user);
       requireValue(!command.mapId||command.mapId===location.mapId,'GM 所在地圖已改變，請重新預覽',409);
@@ -295,6 +303,7 @@ export class GameService {
             requireValue(!max || held+command.quantity<=max,`${target.username} 持有數量將超過物品上限，已取消整批操作`,409);
           }
           const effect={seq,action:command.action,epoch:doc.p._roleEpoch||doc.p.enSeed||'',at:now,reason:command.reason};
+          if(command.action==='grant_gold')effect.amount=command.amount;
           if(command.action==='restore_progress') {
             let level=doc.p.lv,experience=(doc.p.exp||0)+command.experienceDelta;
             requireValue(Number.isInteger(level)&&level>=1&&level<=100&&Number.isSafeInteger(experience)&&experience>=0,'角色經驗資料不正確，已取消修復',409);

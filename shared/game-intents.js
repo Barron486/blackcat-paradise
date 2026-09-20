@@ -9,6 +9,8 @@ export const npcIntents=Object.freeze([
   'doIoExchange','doLachesisSplit','doYuriaExchange','shimizheEx','doYuriaHatinExchange','doRedExchange',
   'doDemonKingCraft','doLumielCraft','doMysticWandCraft','doSlayerCraft',
   'obelCancelTracking',
+  'magicDollSynth','exchangeSilverForBags','exchangeGoldForBoxes','openDollBag','openDollBox',
+  'dollSynth','dollSynthAll','dollRerollT6','dollRerollT6All',
 ]);
 
 // Map notices use the same interaction panel as NPCs, but are not DB.towns NPCs.

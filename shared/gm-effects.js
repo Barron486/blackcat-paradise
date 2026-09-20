@@ -12,6 +12,7 @@ export function applyEffect(doc, effect, now = Date.now()) {
   if (effect.action === 'restore_progress') {
     p.lv=effect.level;p.exp=effect.experience;p.bonus=effect.bonus;
   }
+  if (effect.action === 'grant_gold') p.gold=(p.gold??0)+effect.amount;
   if (effect.action === 'teleport') {
     p._gmTeleport = {seq:effect.seq,mapId:effect.mapId,mapName:effect.mapName};
     if(doc.ms){doc.ms.current=effect.mapId;doc.ms.mobs=[null,null,null,null,null];doc.ms.targetIdx=-1;}

@@ -1189,10 +1189,14 @@ function openPolySelect(uid) {
         modal = document.createElement('div');
         modal.id = 'poly-modal';
         modal.className = 'hidden fixed inset-0 z-[60] flex items-center justify-center';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', 'poly-modal-title');
         modal.innerHTML =
             '<div class="absolute inset-0 bg-black/60" onclick="closePolyModal()"></div>' +
             '<div class="panel border-slate-500 p-5 relative w-[440px] max-h-[80vh] flex flex-col">' +
-              '<div class="panel-header rounded-md mb-3">變形控制戒指 — 選擇變身</div>' +
+              '<div id="poly-modal-title" class="panel-header rounded-md mb-3">變形控制戒指 — 選擇變身</div>' +
+              '<p class="text-sm text-slate-300 mb-3">選定後消耗 1 張卷軸，持續 30 分鐘。可選擇符合等級與目前武器的形態。</p>' +
               '<div id="poly-modal-list" class="flex flex-col gap-2 overflow-y-auto pr-1"></div>' +
               '<button class="btn mt-4" onclick="closePolyModal()">取消</button>' +
             '</div>';
@@ -1214,7 +1218,11 @@ function openPolySelect(uid) {
             '<span class="text-slate-400 text-xs block mt-0.5">' + polyFormDesc(f) + '</span>' +
         '</button>'
     ).join('');
+    if (!avail.length) listEl.innerHTML = '<p class="text-slate-300">目前等級與武器沒有可選形態。</p>';
+    const notice = modal.querySelector('[data-poly-notice]');
+    if (notice) notice.textContent = '';
     modal.classList.remove('hidden');
+    (listEl.querySelector('button') || modal.querySelector('.panel > button'))?.focus();
 }
 function closePolyModal() {
     let m = document.getElementById('poly-modal');
@@ -1281,19 +1289,22 @@ function openOsirisBox(uid) {
     let d = DB.items[item.id]; if (!d) return;
     let coreCnt = playerCoreCount();
     if (coreCnt < 1) { logSys('<span class="text-red-400">缺少 龜裂之核：開啟歐西里斯寶箱每個需消耗 1 顆 龜裂之核（希培利亞・巴特爾可用時空裂痕碎片×100 製作）。</span>'); return; }
-    let maxN = Math.min(item.cnt || 1, coreCnt);
+    let maxN = Math.min(item.cnt || 1, coreCnt, window.CloudStore ? 1000 : Infinity);
     let modal = document.getElementById('osiris-box-modal');
     if (!modal) { modal = document.createElement('div'); modal.id = 'osiris-box-modal'; modal.className = 'hidden fixed inset-0 z-[60] flex items-center justify-center'; document.body.appendChild(modal); }
     modal.innerHTML =
         '<div class="absolute inset-0 bg-black/60" onclick="closeOsirisBoxModal()"></div>' +
         '<div class="panel border-amber-500 p-5 relative w-[420px] flex flex-col">' +
-          `<div class="panel-header rounded-md mb-3">${d.n} — 選擇開啟數量</div>` +
+          `<div id="osiris-box-title" class="panel-header rounded-md mb-3">${d.n} — 選擇開啟數量</div>` +
           `<div class="text-sm text-slate-300 mb-3">每開啟 1 個消耗 <span class="text-amber-300">1 顆 龜裂之核</span>。<br>持有寶箱 <span class="text-amber-300">${item.cnt || 1}</span> 個、龜裂之核 <span class="text-amber-300">${coreCnt}</span> 顆，最多可開啟 <span class="text-amber-300">${maxN}</span> 個。</div>` +
-          `<input id="osiris-box-qty" type="number" min="1" max="${maxN}" value="${maxN}" class="w-full mb-3 px-2 py-1 rounded bg-slate-800 border border-slate-600 text-center text-lg">` +
+          `<input id="osiris-box-qty" aria-label="開啟寶箱數量" inputmode="numeric" type="number" min="1" max="${maxN}" value="${maxN}" class="w-full mb-3 px-2 py-1 rounded bg-slate-800 border border-slate-600 text-center text-lg">` +
+          '<p data-box-notice role="alert" class="text-red-300 mb-2"></p>' +
           `<div class="flex gap-2"><button class="btn flex-1 bg-amber-800 hover:bg-amber-700 font-bold" onclick="confirmOsirisBox('${uid}')">開啟</button><button class="btn flex-1" onclick="closeOsirisBoxModal()">取消</button></div>` +
         '</div>';
+    modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-labelledby','osiris-box-title');
     modal.classList.remove('hidden');
     if (!document.getElementById('item-modal').classList.contains('hidden')) closeModal();
+    document.getElementById('osiris-box-qty').focus();
 }
 function confirmOsirisBox(uid) {
     let inp = document.getElementById('osiris-box-qty');

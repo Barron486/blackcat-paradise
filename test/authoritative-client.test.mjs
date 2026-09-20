@@ -63,6 +63,53 @@ async function fixture(t,character={classId:'mage',name:'伺服器角色',alloca
   w.loadGame();await w.CloudStore.flush();
   return {w,engine,service,user,authority,requests,lose:()=>{loseNext=true;}};
 }
+test('item dialogs open on the browser and retry controlled transformation and box opening only once',async t=>{
+  const {w,engine,authority,user,requests,lose}=await fixture(t);authority.clock=()=>0;
+  const r=authority.runtimes.get(user.id);r.anchor=0;
+  r.engine.run("player.lv=50;gainItem('scroll_poly',3);gainItem('acc_117',1);gainItem('item_osiris_box_basic',4);gainItem('mat_crack_core',3);calcStats();");authority.commit(user,r);await w.CloudStore.flush();
+  const uid=id=>engine.run('player.inv.find(i=>i.id===__args).uid',id),count=id=>engine.run('player.inv.filter(i=>i.id===__args).reduce((n,i)=>n+i.cnt,0)',id);
+  const scroll=uid('scroll_poly'),box=uid('item_osiris_box_basic');
+  w.useItem(scroll);assert.equal(w.document.getElementById('poly-modal').classList.contains('hidden'),false);assert.equal(count('scroll_poly'),3);
+  w.closePolyModal();assert.equal(count('scroll_poly'),3);w.useItem(scroll);lose();w.confirmPolySelect(scroll,'哥布林');w.confirmPolySelect(scroll,'哥布林');await w.CloudStore.flush();
+  assert.equal(count('scroll_poly'),2);assert.equal(engine.run('player.poly.n'),'哥布林');assert.equal(engine.run('player.buffs.poly'),1800);
+  assert.equal(w.document.getElementById('poly-modal').classList.contains('hidden'),true);
+  w.useItem(box);const modal=w.document.getElementById('osiris-box-modal');assert.equal(modal.classList.contains('hidden'),false);
+  assert.equal(w.document.getElementById('osiris-box-qty').max,'3');w.closeOsirisBoxModal();assert.equal(count('item_osiris_box_basic'),4);
+  w.useItem(box);w.document.getElementById('osiris-box-qty').value='1.5';w.confirmOsirisBox(box);assert.match(modal.textContent,/整數數量/);assert.equal(count('mat_crack_core'),3);
+  w.document.getElementById('osiris-box-qty').value='2';lose();w.confirmOsirisBox(box);w.confirmOsirisBox(box);await w.CloudStore.flush();
+  assert.equal(count('item_osiris_box_basic'),2);assert.equal(count('mat_crack_core'),1);assert.equal(modal.classList.contains('hidden'),true);
+  for(const name of ['polymorph','open-box']){const calls=requests.filter(r=>r.body?.args?.name===name);assert.equal(calls.length,2);assert.equal(calls[0].body.requestId,calls[1].body.requestId);}
+  assert.equal(requests.filter(r=>r.body?.args?.name==='use').length,0);
+  w.useItem(box);w.document.getElementById('osiris-box-qty').value='2';w.confirmOsirisBox(box);await w.CloudStore.flush();
+  assert.equal(modal.classList.contains('hidden'),false);assert.match(modal.textContent,/龜裂之核不足/);assert.equal(count('item_osiris_box_basic'),2);assert.equal(modal.querySelector('button').disabled,false);
+});
+
+test('candle draft, soul orb choice and GM gold remain authoritative across browser snapshots',async t=>{
+  const {w,engine,authority,service,user,lose}=await fixture(t);authority.clock=()=>0;const r=authority.runtimes.get(user.id);r.anchor=0;
+  r.engine.run("gainItem('candle',2);gainItem('item_soul_orb',2);gainItem('wpn_powerless_baless',1);gainItem('wpn_powerless_baphomet',1);");authority.commit(user,r);await w.CloudStore.flush();
+  const uid=id=>engine.run('player.inv.find(i=>i.id===__args).uid',id);
+  w.useItem(uid('candle'));assert.ok(engine.run('!!_respec'));w.adjAlloc('int',1);await w.CloudStore.flush();assert.equal(engine.run('_respec.draft.int'),1);
+  lose();w.confirmRespec();w.confirmRespec();await w.CloudStore.flush();assert.equal(engine.run('player.alloc.int'),1);assert.equal(engine.run('player.inv.find(i=>i.id==="candle").cnt'),1);assert.equal(engine.run('_respec'),null);
+  w.useItem(uid('item_soul_orb'));const modal=w.document.getElementById('soul-orb-modal');assert.ok(modal);modal.querySelector('[data-cancel]').click();assert.equal(engine.run('player.inv.find(i=>i.id==="item_soul_orb").cnt'),2);
+  w.useItem(uid('item_soul_orb'));modal.querySelector('[data-choices] button').click();await w.CloudStore.flush();assert.ok(engine.run('player.inv.some(i=>i.id==="wpn_baless")'));assert.ok(engine.run('player.inv.some(i=>i.id==="wpn_powerless_baphomet")'));
+  service.db.prepare("UPDATE accounts SET role='gm' WHERE id=?").run(user.id);
+  const command={action:'grant_gold',scope:'character',accountId:user.id,slot:1,amount:5000,reason:'即時發金幣'},preview=service.preview(user,command),before=engine.run('player.gold');
+  service.execute(user,{...command,requestId:randomUUID(),targetFingerprint:preview.targetFingerprint});
+  await w.CloudStore.flush();assert.equal(engine.run('player.gold'),before+5000);await w.CloudStore.flush();assert.equal(engine.run('player.gold'),before+5000);
+});
+
+test('doll merchant buttons and summon selection reach the server without local-only changes',async t=>{
+  const {w,engine,authority,user,lose,requests}=await fixture(t),r=authority.runtimes.get(user.id);
+  const town=r.engine.run("Object.entries(DB.towns).find(([id,t])=>t.npcs.some(n=>n.id==='npc_doll_merchant'))[0]");
+  r.engine.action('travel',{mapId:town});r.engine.run("gainItem('doll_bag',3);player.lv=60;player.eq.ring1={id:'acc_summon_ctrl',uid:uid(),cnt:1};calcStats();");authority.commit(user,r);await w.CloudStore.flush();
+  w.interactNPC('npc_doll_merchant',town);const button=w.document.querySelector('#interaction-content [onclick="openDollBag(null,true)"]');assert.ok(button);assert.equal(button.disabled,false);
+  lose();engine.run(button.getAttribute('onclick'));await w.CloudStore.flush();assert.equal(engine.run('player.dollSeq'),3);assert.equal(engine.run('player.inv.some(i=>i.id==="doll_bag")'),false);
+  const calls=requests.filter(r=>r.body?.args?.params?.method==='openDollBag');assert.equal(calls.length,2);assert.equal(calls[0].body.requestId,calls[1].body.requestId);
+  w.openSummonSelect();const choice=w.document.querySelector('#summon-select-overlay button[onclick^="chooseSummon("]:not([disabled])');assert.ok(choice);
+  const name=engine.run('SUMMON_TIERS.flatMap(t=>t.mobs).find(m=>_sumQualified(m.n)&&_sumCountFor(m.n)>0).n');w.chooseSummon(name);await w.CloudStore.flush();
+  assert.equal(engine.run('player.summonChoice'),name);assert.equal(w.document.getElementById('summon-select-overlay'),null);assert.equal(r.engine.run('player.summonChoice'),name);
+});
+
 test('harbour button starts the server voyage once and keeps island controls correct after polling and reloading',async t=>{
   const {w,engine,authority,user,requests,lose}=await fixture(t),r=authority.runtimes.get(user.id);
   r.engine.action('travel',{mapId:'town_heine'});r.engine.run('player.gold=200000;');authority.commit(user,r);

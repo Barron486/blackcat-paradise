@@ -25,6 +25,14 @@
 }
 #adventure-controls #cloud-toolbar.menu-open { flex-wrap:wrap; }
 #adventure-controls #cloud-toolbar.menu-open #cloud-actions { position:static; flex:1 0 100%; width:100%; box-shadow:none; }
+:is(#poly-modal,#osiris-box-modal,#soul-orb-modal) { z-index:100005;padding:12px; }
+:is(#poly-modal,#osiris-box-modal,#soul-orb-modal) > .panel { width:min(480px,100%);min-width:0;max-height:calc(100dvh - 24px);overflow-y:auto; }
+:is(#poly-modal,#osiris-box-modal,#soul-orb-modal) .panel-header { font-size:18px;line-height:1.4; }
+#poly-modal-list { min-height:0;overscroll-behavior:contain; }
+#summon-select-overlay { z-index:100005!important;padding:12px; }
+#summon-select-overlay > div { max-width:100%;max-height:calc(100dvh - 24px)!important; }
+:is(#poly-modal,#osiris-box-modal,#soul-orb-modal) button { min-height:44px;white-space:normal; }
+:is(#poly-modal,#osiris-box-modal,#soul-orb-modal) button:disabled { opacity:.5;cursor:wait; }
 #cloud-toolbar { gap: 7px; padding: 4px 7px; }
 #cloud-toolbar .cloud-account { max-width: 140px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #cloud-toolbar .cloud-save { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: #93d4ae; font-size: 0; overflow: hidden; }

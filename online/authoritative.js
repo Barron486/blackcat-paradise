@@ -31,6 +31,7 @@ function start(){
   cloud.serverNow=()=>Date.now()+offset;
   function render(view,initial=false,packet=null,values={},petState){
     if(!view)return;
+    if(initial){_respec=null;for(const id of ['poly-modal','osiris-box-modal','soul-orb-modal'])document.getElementById(id)?.classList.add('hidden');document.getElementById('summon-select-overlay')?.remove();}
     const oldMap=typeof mapState==='undefined'?null:mapState.current;
     if(initial){currentSlot=active.slot;const travel=window.changeMap;try{window.changeMap=()=>{};load();}finally{window.changeMap=travel;}initCombatLogLock();initSysLogLock();applyCombatFilter();_initTabGuard();}
     const draft=!initial&&_asBackup?{autoSellRules:player.autoSellRules,autoSellOn:player.autoSellOn,autoSellGlobal:player.autoSellGlobal}:null;
@@ -136,13 +137,85 @@ function start(){
   window.pvpResultReturn=()=>fire('arena-result',{operation:'return'});
   window.revive=()=>fire('revive');window.reviveInPlace=()=>fire('revive-in-place');
   window.equipItem=item=>fire('equip',{uid:item.uid});window.unequipItem=slot=>fire('unequip',{slot});
-  window.useItem=uid=>fire('use',{uid});window.sellItem=(uid,qty)=>fire('sell',{uid,qty});
+  let polyBusy=false;
+  const closePoly=window.closePolyModal;
+  window.closePolyModal=()=>{if(!polyBusy)closePoly();};
+  window.useItem=uid=>{
+    const item=player.inv.find(i=>i.uid===uid);
+    const effect=DB.items[item?.id]?.eff;
+    if(['poly','osiris_box','reset','soulorb'].includes(effect)&&(player.dead||inAbsBarrier())){showError(new Error('目前狀態無法使用此道具'));return;}
+    if(effect==='osiris_box'){
+      if(boxBusy)return;
+      if(playerCoreCount()<1){showError(new Error('缺少龜裂之核：每個寶箱需要 1 顆，可向希培利亞的巴特爾製作'));return;}
+      closeModal();openOsirisBox(uid);return;
+    }
+    if(effect==='reset'){closeModal();startRespec();return;}
+    if(effect==='soulorb'&&['wpn_powerless_baless','wpn_powerless_baphomet'].every(id=>player.inv.some(i=>i.id===id&&i.cnt>0))){openSoulChoice(uid);return;}
+    if(DB.items[item?.id]?.eff==='poly'&&hasPolyRing()){
+      if(polyBusy)return;
+      if(player.dead||inAbsBarrier()){showError(new Error(player.dead?'死亡狀態無法變身，請先復活':'絕對屏障期間無法使用變形卷軸'));return;}
+      closeModal();openPolySelect(uid);return;
+    }
+    fire('use',{uid});
+  };
+  window.confirmPolySelect=(uid,name)=>{
+    if(polyBusy)return;polyBusy=true;
+    const modal=document.getElementById('poly-modal');
+    let notice=modal?.querySelector('[data-poly-notice]');
+    if(modal&&!notice){notice=document.createElement('p');notice.dataset.polyNotice='';notice.setAttribute('role','alert');notice.className='text-red-300 text-sm mt-2';modal.querySelector('#poly-modal-list').after(notice);}
+    if(notice)notice.textContent='正在套用變身…';
+    modal?.querySelectorAll('button').forEach(button=>button.disabled=true);
+    void action('polymorph',{uid,name}).then(()=>{closePoly();}).catch(error=>{if(notice)notice.textContent=error.message;}).finally(()=>{
+      polyBusy=false;modal?.querySelectorAll('button').forEach(button=>button.disabled=false);
+    });
+  };
+  let boxBusy=false,soulBusy=false;
+  const closeBox=window.closeOsirisBoxModal;
+  window.closeOsirisBoxModal=()=>{if(!boxBusy)closeBox();};
+  window.confirmOsirisBox=uid=>window.doOpenOsirisBox(uid,Number(document.getElementById('osiris-box-qty')?.value));
+  window.doOpenOsirisBox=(uid,qty)=>{
+    if(boxBusy)return;
+    const modal=document.getElementById('osiris-box-modal'),notice=modal?.querySelector('[data-box-notice]');
+    if(!Number.isSafeInteger(qty)||qty<1||qty>1000){if(notice)notice.textContent='請輸入 1～1000 的整數數量';return;}
+    boxBusy=true;if(notice)notice.textContent='正在開啟寶箱…';
+    modal?.querySelectorAll('button,input').forEach(el=>el.disabled=true);
+    void action('open-box',{uid,qty}).then(closeBox).catch(error=>{if(notice)notice.textContent=error.message;}).finally(()=>{
+      boxBusy=false;modal?.querySelectorAll('button,input').forEach(el=>el.disabled=false);
+    });
+  };
+  function openSoulChoice(uid){
+    if(soulBusy)return;closeModal();
+    let modal=document.getElementById('soul-orb-modal');
+    if(!modal){modal=document.createElement('div');modal.id='soul-orb-modal';modal.className='fixed inset-0 flex items-center justify-center';document.body.append(modal);}
+    modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-labelledby','soul-orb-title');
+    modal.innerHTML='<div class="absolute inset-0 bg-black/60"></div><div class="panel p-5 relative flex flex-col gap-3"><h2 id="soul-orb-title" class="panel-header">靈魂之球 — 選擇魔杖</h2><p>消耗 1 顆靈魂之球與選定的失去魔力魔杖，恢復該魔杖。</p><div data-choices class="flex flex-col gap-2"></div><p role="alert" data-notice></p><button class="btn" data-cancel>取消</button></div>';
+    const close=()=>{if(!soulBusy)modal.classList.add('hidden');};
+    modal.firstElementChild.onclick=close;modal.querySelector('[data-cancel]').onclick=close;
+    for(const [wand,name]of [['wpn_powerless_baless','巴列斯魔杖'],['wpn_powerless_baphomet','巴風特魔杖']]){
+      const button=document.createElement('button');button.className='btn';button.textContent=name;
+      button.onclick=()=>{
+        if(soulBusy)return;soulBusy=true;modal.querySelectorAll('button').forEach(el=>el.disabled=true);
+        modal.querySelector('[data-notice]').textContent='正在恢復魔杖…';
+        void action('soul-orb',{uid,wand}).then(()=>modal.classList.add('hidden')).catch(error=>{modal.querySelector('[data-notice]').textContent=error.message;}).finally(()=>{soulBusy=false;modal.querySelectorAll('button').forEach(el=>el.disabled=false);});
+      };modal.querySelector('[data-choices]').append(button);
+    }
+    modal.classList.remove('hidden');modal.querySelector('button').focus();
+  }
+  window.sellItem=(uid,qty)=>fire('sell',{uid,qty});
   window.batchUseItem=uid=>{const qty=Number(prompt('要使用多少個？（最多 1000）','1'));if(qty>0)fire('batch-use',{uid,qty});};
   window.toggleLock=uid=>fire('lock',{uid});window.toggleJunk=uid=>fire('junk',{uid});window.autoSellJunk=()=>fire('sell-junk');
   window.setInventorySortMode=mode=>fire('sort',{mode});window.toggleInventoryAutoSort=enabled=>fire('sort',{enabled:!!enabled});window.sortInventoryNow=()=>fire('sort',{});
   window.runQuickJunk=type=>fire('quick-junk',{type,uids:Object.keys(quickJunk[type].sel).filter(k=>quickJunk[type].sel[k])});
   window.runQuickEnhance=type=>fire('quick-enhance',{type,uids:Object.keys(quickEnh[type].sel).filter(k=>quickEnh[type].sel[k]),goal:Number(document.getElementById('qe-target-'+type)?.value)||quickEnh[type].target,blessed:!!quickEnh[type].useBless});
   window.manualCast=skillId=>fire('cast',{skillId});window.castSkill=skillId=>{fire('cast',{skillId});return true;};
+  let summonBusy=false;
+  window.chooseSummon=name=>{
+    if(summonBusy)return;summonBusy=true;
+    const modal=document.getElementById('summon-select-overlay');
+    void action('summon-choice',{name}).then(()=>modal?.remove()).catch(error=>{
+      if(modal?.isConnected){let notice=modal.querySelector('[role="alert"]');if(!notice){notice=document.createElement('p');notice.setAttribute('role','alert');modal.firstElementChild.prepend(notice);}notice.textContent=error.message;}
+    }).finally(()=>{summonBusy=false;});
+  };
   window.adjBonusStat=stat=>fire('bonus',{stat});
   window.chooseElfElement=element=>{
     if(!Object.hasOwn(ELF_ELE,element)||player.elfEle===element)return;
@@ -185,7 +258,14 @@ function start(){
   window.whGold=dir=>fire('warehouse',{operation:dir==='in'?'gold-in':'gold-out',qty:Number(document.getElementById('wh-gold-amt').value)});
   window.whOneClickDeposit=()=>fire('warehouse',{operation:'deposit-all'});window.sortWarehouse=()=>fire('warehouse',{operation:'sort'});
   window.trialQAccept=key=>fire('trial',{key,complete:false});window.trialQComplete=key=>fire('trial',{key,complete:true});
-  window.confirmRespec=()=>{if(_respec){fire('respec',{allocation:{..._respec.draft}});_respec=null;}};
+  let respecBusy=false;
+  const adjustAllocation=window.adjAlloc,cancelAllocation=window.cancelRespec;
+  window.adjAlloc=(...args)=>{if(!respecBusy)adjustAllocation(...args);};
+  window.cancelRespec=()=>{if(!respecBusy)cancelAllocation();};
+  window.confirmRespec=()=>{
+    if(!_respec||respecBusy)return;respecBusy=true;
+    void action('respec',{allocation:{..._respec.draft}}).then(()=>{_respec=null;updateUI();}).catch(()=>{}).finally(()=>{respecBusy=false;});
+  };
   const autoSell=()=>{_readAutoSellForm();const args={rules:JSON.parse(JSON.stringify(getAutoSellRules())),enabled:player.autoSellOn!==false,global:!!document.getElementById('as-global')?.checked};_asBackup=null;closeAutoSellRules();return action('auto-sell',args);};
   window.saveAutoSellRules=()=>void autoSell().catch(()=>{});window.sellAutoSellItemsNow=()=>void autoSell().then(()=>action('sell-junk')).catch(()=>{});
   const petAction=params=>{

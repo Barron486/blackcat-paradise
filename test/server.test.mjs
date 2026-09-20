@@ -32,6 +32,39 @@ async function fixture(t){
 function run(s,gm,body){const command={scope:'all',reason:'自動測試指令',...body};const p=s.preview(gm,command);return s.execute(gm,{...command,requestId:randomUUID(),targetFingerprint:p.targetFingerprint});}
 const saved=(s,user)=>catalog.unwrap(s.bootstrap(user).values[key]);
 
+test('GM gold grants target one role, every account role, online roles or all roles; retry and effect replay never duplicate',async t=>{
+  const {service,gm,a,b,leaseA}=await fixture(t),slot2='lineage_idle_save_2';
+  service.sync(a,leaseA,1,{[slot2]:catalog.wrap(character('第二角色'))},{slot:1});
+  service.db.prepare('UPDATE leases SET expires_at=0 WHERE account_id=?').run(b.id);
+  const body={action:'grant_gold',scope:'character',accountId:a.id,slot:2,amount:12345,reason:'金幣發送測試'},preview=service.preview(gm,body);
+  assert.equal(preview.characterCount,1);
+  const request={...preview.command,requestId:randomUUID(),targetFingerprint:preview.targetFingerprint};
+  service.execute(gm,request);assert.equal(service.execute(gm,request).replayed,true);
+  const read=(user,slot=1)=>catalog.unwrap(service.bootstrap(user).values['lineage_idle_save_'+slot]);
+  assert.equal(read(a,2).p.gold,12345);assert.equal(read(a).p.gold,undefined);assert.equal(read(b).p.gold,undefined);
+  const effect=JSON.parse(service.db.prepare('SELECT payload FROM gm_effects WHERE account_id=?').get(a.id).payload),copy=read(a,2);
+  assert.equal(applyEffect(copy,effect),false);assert.equal(copy.p.gold,12345);
+  assert.equal(service.audit(gm)[0].command.amount,12345);assert.equal(service.audit(gm)[0].result.recipient.slot,2);
+  run(service,gm,{action:'grant_gold',scope:'account',accountId:a.id,amount:100});
+  assert.equal(read(a).p.gold,100);assert.equal(read(a,2).p.gold,12445);
+  run(service,gm,{action:'grant_gold',scope:'online',amount:10});
+  assert.equal(read(a).p.gold,110);assert.equal(read(a,2).p.gold,12445);assert.equal(read(b).p.gold,undefined);
+  run(service,gm,{action:'grant_gold',amount:1});
+  assert.equal(read(a).p.gold,111);assert.equal(read(a,2).p.gold,12446);assert.equal(read(b).p.gold,1);
+  assert.throws(()=>service.execute(gm,{...request,amount:1}),e=>e.status===409);
+});
+
+test('GM gold validation rejects non-GMs, invalid amounts and balance overflow without partial grants',async t=>{
+  const {service,gm,a,b}=await fixture(t),body={action:'grant_gold',scope:'all',amount:100,reason:'金幣驗證測試'};
+  assert.throws(()=>service.preview(a,body),e=>e.status===403);
+  for(const amount of [0,-1,1.2,'100',null,NaN,Infinity,1000000000001])assert.throws(()=>service.preview(gm,{...body,amount}),e=>e.status===400);
+  const preview=service.preview(gm,body),values=service.bootstrap(b).values,doc=catalog.unwrap(values[key]);doc.p.gold=Number.MAX_SAFE_INTEGER;values[key]=catalog.wrap(doc);
+  service.db.prepare('UPDATE saves SET data=? WHERE account_id=?').run(JSON.stringify(values),b.id);
+  const before=service.bootstrap(a);
+  assert.throws(()=>service.execute(gm,{...body,requestId:randomUUID(),targetFingerprint:preview.targetFingerprint}),/安全上限/);
+  assert.deepEqual(service.bootstrap(a).values,before.values);assert.equal(saved(service,b).p.gold,Number.MAX_SAFE_INTEGER);assert.equal(service.audit(gm).length,0);
+});
+
 test('upstream catalog and signed save round-trip',()=>{
   assert.equal(catalog.version,'v3.8.34');assert.ok(Object.keys(catalog.items).length>1500);
   const doc=character('中文角色');assert.deepEqual(catalog.unwrap(catalog.wrap(doc)),doc);

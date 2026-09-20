@@ -42,6 +42,18 @@ async function fixture(t,{dropFirst=false}={}){
   return {service,user,gm,w,$,change,requests};
 }
 
+test('GM gold UI previews per-character and total amounts and records a single character grant after retry',async t=>{
+  const {$,change,w,service,user,gm}=await fixture(t,{dropFirst:true});
+  w.document.querySelector('[data-action="grant_gold"]').click();change('target-character','2');
+  assert.equal($('gold-options').hidden,false);assert.equal($('item-options').hidden,true);assert.equal($('character-scope').disabled,false);
+  $('gold-amount').value='12500';$('preview').click();await settle();
+  assert.match($('confirm-detail').textContent,/每個角色金幣　12,500/);assert.match($('confirm-detail').textContent,/總發放金幣　12,500/);assert.match($('confirm-detail').textContent,/第二妖精/);
+  $('execute').click();await settle();assert.match($('execute-error').textContent,/重試不會重複/);
+  $('execute').click();await settle();assert.equal($('confirm-dialog').open,false);
+  const values=service.bootstrap(user).values;assert.equal(catalog.unwrap(values.lineage_idle_save_1).p.gold,undefined);assert.equal(catalog.unwrap(values.lineage_idle_save_2).p.gold,12500);
+  assert.equal(service.audit(gm).length,1);w.document.querySelector('[data-view="audit"]').click();await settle();assert.match($('audit-list').textContent,/發放金幣/);assert.match($('audit-list').textContent,/12,500 金幣/);
+});
+
 test('GM UI previews the exact account and role, cancels safely and retries delivery only once',async t=>{
   const c=await fixture(t,{dropFirst:true}),{$,change,w,service,user,requests}=c;
   assert.match($('target-character').textContent,/第 2 格 · 第二妖精 · Lv.20 妖精/);
