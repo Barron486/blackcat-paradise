@@ -16,7 +16,7 @@ function start(){
   toolbar.querySelector('#cloud-actions').prepend(huntNote);
   const status=toolbar.querySelector('.cloud-save');
   let active=null,queue=Promise.resolve(),pending=0,lastLog=0,logEpoch=null,offset=cloud.boot.serverTime-Date.now(),stopped=false;
-  let npcId=null,pollController=null;
+  let npcId=null,pollController=null,managedAlly=null;
   const load=window.loadGame,leave=window.returnToCharacterSelect;
   const showError=error=>{status.textContent=error.message;status.classList.add('cloud-error');if(error.status===401||error.status===423){cloud.ready=false;stopped=true;block(error.message,true);}else if(typeof logSys==='function')logSys(escape(error.message));};
   const escape=text=>String(text).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -151,7 +151,7 @@ function start(){
       if(npcId==='npc_elion'&&mapState.current==='town_elf')renderElionUI(document.getElementById('interaction-content'));
     }).catch(()=>{});
   };
-  const originalInteract=window.interactNPC;window.interactNPC=(id,town)=>{npcId=id;return originalInteract(id,town);};
+  const originalInteract=window.interactNPC;window.interactNPC=(id,town)=>{npcId=id;managedAlly=null;return originalInteract(id,town);};
   const originalFloat=window.openTownFloatWindow;
   window.openTownFloatWindow=(name,title,renderer)=>{
     npcId=Object.keys(townEntrances).find(id=>window[townEntrances[id].render]===renderer)||null;
@@ -192,6 +192,17 @@ function start(){
   window.petGearEquip=(uid,slot,itemUid)=>fire('pet',{operation:'equip',uid,slot,itemUid});window.petGearUnequip=(uid,slot)=>fire('pet',{operation:'unequip',uid,slot});window.petRevive=(uid,method)=>fire('pet',{operation:'revive',uid,method});
   for(const [fn,operation]of [['toggleAlly','toggle'],['dismissAlly','dismiss'],['refreshAllyOnce','refresh']])window[fn]=slot=>fire('mercenary',{operation,slot:Number(slot)});
   window.reviveMercenary=(slot,method)=>fire('mercenary',{operation:'revive',slot:Number(slot),method});
+  const openAllyEquipment=window.openAllyEquipmentManager,closeAllyEquipment=window.closeAllyEquipmentManager;
+  window.openAllyEquipmentManager=slot=>{managedAlly={slot:Number(slot),identity:_findAlly(slot)?.enSeed};return openAllyEquipment(slot);};
+  window.closeAllyEquipmentManager=()=>{managedAlly=null;return closeAllyEquipment();};
+  for(const [fn,operation]of [['allyEquipItem','equip'],['allyUnequipItem','unequip']])window[fn]=(slot,value)=>{
+    const source=managedAlly&&{...managedAlly},sourceNpc=npcId,sourceMap=mapState.current;
+    if(!source||source.slot!==Number(slot))return;
+    const params={...source,operation,...(operation==='equip'?{uid:decodeURIComponent(String(value))}:{gearSlot:value})};
+    void action('mercenary-equipment',params).then(()=>{
+      if(managedAlly?.slot===source.slot&&managedAlly.identity===source.identity&&npcId===sourceNpc&&mapState.current===sourceMap&&!document.getElementById('town-interaction-container').classList.contains('hidden'))openAllyEquipment(source.slot);
+    }).catch(()=>{});
+  };
   const squadPending=new Map();cloud.squadEditing=slot=>squadPending.has(String(slot));
   for(const [fn,setting,type]of [
     ['setAllyAtkSkill','attack','skill'],['setAllyHealSkill','heal','skill'],['setAllyConvertSkill','convert','skill'],

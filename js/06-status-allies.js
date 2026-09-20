@@ -3868,6 +3868,7 @@ function allyEquipItem(slotN, encodedUid) {
     });
     if (!saved && leaderChanged) { leader.inv = _allyCloneInventory(leaderBefore); updateUI(); }
     if (saved) { calcStats(); updateUI(); openAllyEquipmentManager(slotN); }
+    return saved;
 }
 function allyUnequipItem(slotN, slot) {
     let leader = player, leaderBefore = _allyCloneInventory(leader.inv), leaderChanged = false;
@@ -3887,6 +3888,7 @@ function allyUnequipItem(slotN, slot) {
     });
     if (!saved && leaderChanged) { leader.inv = _allyCloneInventory(leaderBefore); updateUI(); }
     if (saved) { calcStats(); updateUI(); openAllyEquipmentManager(slotN); }
+    return saved;
 }
 function renderAllyEquipmentManager(div, slotN) {
     let ctx = _allyManagerSource(slotN, true);

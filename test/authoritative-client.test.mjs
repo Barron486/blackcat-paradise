@@ -330,3 +330,38 @@ test('arena challenge and result buttons use server combat and retain the return
   assert.ok(w.document.getElementById('pvp-result-modal'));w.pvpResultReturn();await w.CloudStore.flush();
   assert.equal(engine.status().map,'town_gludin');assert.equal(engine.status().dead,false);assert.equal(w.document.getElementById('pvp-result-modal'),null);
 });
+
+test('guild equipment buttons transfer and return items once, update both characters and survive reconnect',async t=>{
+  const {w,engine,authority,service,user,lose,requests}=await fixture(t,undefined,[{classId:'knight',name:'換裝隊員',allocation:{str:2,con:6}}]);
+  const r=authority.runtimes.get(user.id);r.engine.run("player.inv.push({id:'wpn_2',uid:'guild-mace',cnt:2,en:3});");authority.commit(user,r);
+  await w.CloudStore.action('mercenary',{operation:'toggle',slot:2});
+  const town=engine.status().map,npc=engine.run('DB.towns[mapState.current].npcs.find(n=>n.type===\'ally\').id');
+  w.interactNPC(npc,town);w.openAllyEquipmentManager(2);
+  const read=slot=>catalog.unwrap(service.bootstrap(user).values['lineage_idle_save_'+slot]).p;
+  const prior=read(2).eq.wpn,leaderWeapon=read(1).eq.wpn;
+  lose();clickNpcButton(w,'allyEquipItem');assert.equal(read(1).inv.find(i=>i.uid==='guild-mace').cnt,2);
+  await w.CloudStore.flush();
+  assert.equal(read(2).eq.wpn.id,'wpn_2');assert.equal(read(2).eq.wpn.en,3);assert.equal(read(1).inv.find(i=>i.uid==='guild-mace').cnt,1);
+  assert.deepEqual(read(1).eq.wpn,leaderWeapon);assert.equal(read(1).allies[0].eq.wpn.id,'wpn_2');
+  if(prior)assert.ok(read(1).inv.some(i=>i.id===prior.id&&i.en===prior.en));
+  assert.match(w.document.getElementById('interaction-content').textContent,/釘錘/);
+  const actions=requests.filter(r=>r.body?.args?.name==='mercenary-equipment');assert.equal(actions.length,2);assert.equal(actions[0].body.requestId,actions[1].body.requestId);
+  authority.drop(user.id);await w.CloudStore.flush();assert.equal(read(2).eq.wpn.id,'wpn_2');assert.equal(engine.run('player.allies[0].eq.wpn.id'),'wpn_2');
+  w.allyUnequipItem(2,'wpn');await w.CloudStore.flush();assert.equal(read(2).eq.wpn,null);assert.equal(read(1).inv.filter(i=>i.id==='wpn_2'&&i.en===3).reduce((n,i)=>n+i.cnt,0),2);
+});
+
+test('guild rejects forged equipment, stale members, forbidden classes and cursed swaps without moving inventory',async t=>{
+  const {w,authority,service,user}=await fixture(t,undefined,[{classId:'knight',name:'換裝限制',allocation:{str:2,con:6}}]);
+  await w.CloudStore.action('mercenary',{operation:'toggle',slot:2});
+  const r=authority.runtimes.get(user.id);r.engine.run("player.inv.push({id:'wpn_2',uid:'valid-mace',cnt:1,en:0},{id:'wpn_29',uid:'elf-only-bow',cnt:1,en:0});");authority.commit(user,r);await w.CloudStore.flush();
+  const read=slot=>catalog.unwrap(service.bootstrap(user).values['lineage_idle_save_'+slot]).p;
+  const identity=read(2).enSeed,base={operation:'equip',slot:2,identity,uid:'valid-mace'},before=[read(1).inv,read(2).eq];
+  for(const change of [{uid:'unknown'},{uid:'elf-only-bow'},{identity:'replaced-role'},{slot:1},{slot:8},{gearSlot:'wpn'}])await assert.rejects(w.CloudStore.action('mercenary-equipment',{...base,...change}),e=>e.status===400);
+  assert.deepEqual([read(1).inv,read(2).eq],before);
+  await w.CloudStore.action('travel',{mapId:'training'});await assert.rejects(w.CloudStore.action('mercenary-equipment',base),e=>e.status===400);w.returnToTown();await w.CloudStore.flush();
+  const active=authority.runtimes.get(user.id);active.engine.run("{const d=JSON.parse(_saveUnwrap(_lzGet('lineage_idle_save_2')).payload);d.p.eq.wpn={id:'wpn_1',uid:'cursed-axe',cnt:1,en:0,bless:'cursed'};_lzSet('lineage_idle_save_2',_saveWrap(JSON.stringify(d)));refreshAllyOnce(2);}");authority.commit(user,active);await w.CloudStore.flush();
+  const cursed=[read(1).inv,read(2).eq];
+  await assert.rejects(w.CloudStore.action('mercenary-equipment',base),e=>e.status===400);
+  await assert.rejects(w.CloudStore.action('mercenary-equipment',{operation:'unequip',slot:2,identity,gearSlot:'wpn'}),e=>e.status===400);
+  assert.deepEqual([read(1).inv,read(2).eq],cursed);
+});

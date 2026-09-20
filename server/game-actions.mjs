@@ -147,6 +147,25 @@ export function extraAction(game,name,a){
       const confirm=game.window.confirm;game.window.confirm=()=>true;
       try{run(({toggle:'toggleAlly(__args.slot);',dismiss:'dismissAlly(__args.slot);',refresh:'refreshAllyOnce(__args.slot);',revive:'reviveMercenary(__args.slot,__args.method);'})[a.operation]);}finally{game.window.confirm=confirm;}break;
     }
+    case 'mercenary-equipment':{
+      keys(a,['operation','slot','identity','uid','gearSlot']);integer(a.slot,1,8);id(a.identity);
+      if(!['equip','unequip'].includes(a.operation))throw new Error('不支援的隊員裝備操作');
+      run(`{const ally=_findAlly(__args.slot);if(__args.slot===currentSlot||!ally)throw new Error('該角色目前不在隊伍中');
+        if(!DB.towns[mapState.current])throw new Error('請回到安全區的傭兵公會管理裝備');
+        if(ally.enSeed!==__args.identity||_slotCharEnSeed(__args.slot)!==__args.identity)throw new Error('隊員資料已變更，請重新開啟裝備管理');
+        if(!_allyManagerSource(__args.slot,false))throw new Error('隊員來源存檔目前無法管理');}`);
+      if(a.operation==='equip'){
+        id(a.uid);if(a.gearSlot!==undefined)throw new Error('穿戴操作不接受指定欄位');
+        run(`{const item=player.inv.find(i=>i.uid===__args.uid),source=_allyManagerSource(__args.slot,false).source;
+          if(!item||!_allyCanEquipLeaderItem(source,item))throw new Error('隊長未持有此裝備，或隊員不符合穿戴條件');}`);
+      }else{
+        id(a.gearSlot);if(a.uid!==undefined)throw new Error('卸裝操作不接受背包物品');
+        run(`if(!Object.hasOwn(ALLY_EQUIP_SLOT_NAME,__args.gearSlot)||!_allyManagerSource(__args.slot,false).source.eq[__args.gearSlot])throw new Error('該裝備欄沒有可卸下的裝備');`);
+      }
+      const changed=run(a.operation==='equip'?'allyEquipItem(__args.slot,encodeURIComponent(__args.uid));':'allyUnequipItem(__args.slot,__args.gearSlot);');
+      if(!changed)throw new Error('無法變更裝備，請檢查詛咒、職業、等級與裝備欄限制');
+      break;
+    }
     case 'mercenary-settings':{
       keys(a,['slot','identity','setting','value','skillId']);integer(a.slot,1,8);id(a.identity);
       const rules={attack:['setAllyAtkSkill','atk'],heal:['setAllyHealSkill','heal'],convert:['setAllyConvertSkill','convert'],
