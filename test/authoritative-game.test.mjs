@@ -200,6 +200,44 @@ test('HTTP rejects all uploaded saves, warehouses and fake rewards, including GM
   await remote.leave();await client.logout();
 });
 
+test('market listings and cancellations accept combat-only checkpoints without losing rewards or duplicating escrow',async t=>{
+  const {service,authority,user,lease,send,advance}=await fixture(t);
+  const commerce=new CommerceService(service),market=new MarketService(service,commerce);
+  const initial=send('action',{name:'travel',params:{mapId:'training'}}),uid=initial.game.status.inventory.find(i=>i.id==='potion_heal').uid;
+  const request={slot:1,epoch:initial.game.epoch,revision:initial.snapshot.revision,lease,requestId:randomUUID(),uid,currency:'gold',price:100,quantity:1};
+  advance(1000);authority.tick();
+  const before=catalog.unwrap(service.bootstrap(user).values.lineage_idle_save_1);
+  assert.ok(service.bootstrap(user).revision>request.revision);
+  const listed=market.transact(user,'list',request),after=catalog.unwrap(listed.snapshot.values.lineage_idle_save_1);
+  assert.equal(after.p.inv.find(i=>i.uid===uid).cnt,before.p.inv.find(i=>i.uid===uid).cnt-1);
+  assert.equal(after.p.gold,before.p.gold);assert.equal(after.p.exp,before.p.exp);assert.equal(after.ticks,before.ticks);
+  assert.equal(market.transact(user,'list',request).replayed,true);
+  const synced=send('state'),cancel={slot:1,epoch:initial.game.epoch,revision:synced.snapshot.revision,lease,requestId:randomUUID(),listingId:listed.listingId};
+  advance(1000);authority.tick();
+  market.transact(user,'cancel',cancel);market.transact(user,'cancel',cancel);
+  assert.equal(market.view(user).mine.length,1);assert.equal(market.view(user).mine[0].status,'cancelled');
+  assert.equal(send('state').game.status.inventory.filter(i=>i.id==='potion_heal').reduce((n,i)=>n+i.cnt,0),before.p.inv.filter(i=>i.id==='potion_heal').reduce((n,i)=>n+i.cnt,0));
+});
+
+test('market retains revision, lease and character guards across player commands and external changes',async t=>{
+  const {service,authority,user,gm,lease,send,advance}=await fixture(t);
+  const market=new MarketService(service,new CommerceService(service));
+  const initial=send('state'),uid=initial.game.status.inventory.find(i=>i.id==='potion_heal').uid;
+  const request={slot:1,epoch:initial.game.epoch,revision:initial.snapshot.revision,lease,requestId:randomUUID(),uid,currency:'gold',price:100,quantity:1};
+  advance(1000);authority.tick();
+  for(const changed of [{revision:-1},{revision:'1'},{revision:999999},{epoch:'wrong'},{slot:2},{lease:randomUUID()}])assert.throws(()=>market.transact(user,'list',{...request,...changed}));
+  send('action',{name:'lock',params:{uid}});
+  assert.throws(()=>market.transact(user,'list',request),e=>e.status===409);
+  send('action',{name:'lock',params:{uid}});
+  const fresh={...request,revision:service.bootstrap(user).revision};
+  const command={scope:'account',accountId:user.id,action:'grant_item',itemId:'potion_heal',quantity:2,enchant:0,reason:'交易同步測試'},preview=service.preview(gm,command);
+  service.execute(gm,{...command,targetFingerprint:preview.targetFingerprint,requestId:randomUUID()});
+  assert.throws(()=>market.transact(user,'list',fresh),e=>e.status===409);
+  advance(1000);authority.tick();
+  assert.throws(()=>market.transact(user,'list',fresh),e=>e.status===409);
+  assert.equal(market.view(user).mine.length,0);
+});
+
 test('market escrow, paid buffs and GM rewards reconcile with a running server encounter',async t=>{
   const {service,authority,user,gm,lease,send,advance}=await fixture(t);
   const commerce=new CommerceService(service),market=new MarketService(service,commerce);

@@ -5,7 +5,7 @@ if(cloud){
   dialog.innerHTML=`<header><div><h2 id="market-title">玩家交易所</h2><p>玩家上架 · 全服交易</p></div><button data-close aria-label="關閉交易所">✕</button></header>
     <p class="market-wallet"></p><p class="market-policy">整組售價成交，系統收取 20% 手續費（不足 1 枚進位）。藍鑽由 GM 儲值；售出藍鑽直接入帳，金幣可在此領取。下架不收費。</p>
     <nav aria-label="交易所分頁"><button data-tab="browse" aria-pressed="true">逛市場</button><button data-tab="sell" aria-pressed="false">我要上架</button><button data-tab="mine" aria-pressed="false">我的交易</button></nav>
-    <p class="market-notice" role="status"></p><button data-retry hidden>確認交易結果 / 重試</button><div class="market-review" hidden><p></p><button data-confirm>確認交易</button><button data-cancel-review>取消</button></div>
+    <p class="market-notice" role="status"></p><button data-retry hidden>確認交易結果 / 重試</button><section class="market-review" aria-label="確認交易內容" hidden><h3>確認交易內容</h3><p></p><button data-confirm>確認交易</button><button data-cancel-review>返回修改</button></section>
     <section data-pane="browse"><form class="market-search"><input name="q" aria-label="搜尋物品或賣家" placeholder="搜尋物品或賣家"><select name="currency" aria-label="篩選交易幣別"><option value="">全部幣別</option><option value="diamonds">藍鑽</option><option value="gold">金幣</option></select><button>搜尋</button></form><div class="market-offers"></div><footer><button data-prev>上一頁</button><span data-page></span><button data-next>下一頁</button></footer></section>
     <section data-pane="sell" hidden><form class="market-sell"><p data-character></p><label>背包物品<select name="uid" required></select></label><p class="market-hint">只顯示目前角色背包中可交易、未上鎖且未裝備的物品。請先卸下並解鎖要賣的物品。</p><label>出售數量<input name="quantity" type="number" min="1" step="1" value="1" required></label><label>交易幣別<select name="currency"><option value="diamonds">藍鑽</option><option value="gold">金幣</option></select></label><label>整組售價<input name="price" type="number" min="1" max="2000000000" step="1" required placeholder="輸入整組售價"></label><p data-estimate></p><button type="submit">確認上架</button></form></section>
     <section data-pane="mine" hidden><div class="market-proceeds"><span data-proceeds></span><button data-claim>領取金幣</button><button data-refresh>重新整理</button></div><div class="market-mine"></div></section>`;
@@ -15,8 +15,13 @@ if(cloud){
   const money=c=>c==='gold'?'金幣':'藍鑽',number=n=>Number(n||0).toLocaleString('zh-TW');
   function describe(row){return `${row.item.bless?'祝福 ':''}${row.item.anc?'遠古 ':''}${row.item.en?`+${row.item.en} `:''}${row.name} × ${number(row.item.cnt)}`;}
   function active(){if(typeof player==='undefined'||!player?.cls||document.getElementById('game-screen').classList.contains('hidden'))throw new Error('請先進入遊戲角色再交易');return {slot:currentSlot,epoch:player._roleEpoch||player.enSeed};}
-  function message(text,error=false){notice.textContent=text;notice.classList.toggle('error',error);}
-  function confirmTrade(action,body,text){review={action,body};$('.market-review p').textContent=text;$('.market-review').hidden=false;$('[data-confirm]').focus();}
+  function message(text,error=false){notice.textContent=text;notice.classList.toggle('error',error);if(text&&dialog.open)notice.scrollIntoView?.({block:'nearest'});}
+  function confirmTrade(action,body,text){
+    review={action,body};message('');$('.market-review p').textContent=text;
+    for(const pane of dialog.querySelectorAll('[data-pane]'))pane.hidden=true;
+    $('.market-review').hidden=false;$('[data-confirm]').textContent=action==='list'?'確認上架':action==='cancel'?'確認下架':'確認購買';
+    $('[data-confirm]').focus();$('.market-review').scrollIntoView?.({block:'nearest'});
+  }
   function setBusy(value){busy=value;dialog.setAttribute('aria-busy',String(value));for(const el of dialog.querySelectorAll('button,input,select'))el.disabled=value||el.dataset.inactive==='true';}
   function choose(value){review=null;$('.market-review').hidden=true;tab=value;for(const el of dialog.querySelectorAll('[data-pane]'))el.hidden=el.dataset.pane!==value;for(const el of dialog.querySelectorAll('[data-tab]'))el.setAttribute('aria-pressed',String(el.dataset.tab===value));}
   async function refresh(){
@@ -60,11 +65,24 @@ if(cloud){
         pending={action,body:{...body,...character,lease:cloud.lease,revision:cloud.revision,requestId:crypto.randomUUID()}};
         cloud.marketPending=true;
       }
-      const result=await cloud.request('/api/market/'+pending.action,pending.body);
+      message('交易處理中…');
+      let result;
+      for(let attempt=0;attempt<3;attempt++)try{
+        result=await cloud.request('/api/market/'+pending.action,pending.body);break;
+      }catch(e){
+        if(e.status===409&&e.data?.code==='market_revision_conflict'&&e.data.snapshot&&attempt<2){
+          cloud.reconcile(e.data);pending.body.revision=cloud.revision;continue;
+        }
+        throw e;
+      }
       cloud.reconcile(result);cloud.diamonds=result.wallet.diamonds;
-      resume();await refresh();message(result.message);
+      const completed=pending.action;resume();choose(completed==='list'||completed==='cancel'?'mine':tab);
+      if(completed==='list'){sell.elements.quantity.value='1';sell.elements.price.value='';}
+      message(result.message);
+      try{await refresh();}catch{message(result.message+'；清單更新失敗，請按重新整理。');}
     }catch(e){
       if(pending&&e.status&&e.status<500){if(e.data?.snapshot)cloud.reconcile(e.data);resume();}
+      if(!pending)choose(tab);
       message(pending?'連線中斷，正在保留交易識別碼。請按「確認交易結果 / 重試」，不會重複扣款。':e.message,true);
     }finally{
       setBusy(false);
@@ -78,11 +96,12 @@ if(cloud){
   for(const button of dialog.querySelectorAll('[data-tab]'))button.onclick=()=>{choose(button.dataset.tab);void load();};
   $('[data-retry]').onclick=()=>transact();
   $('[data-confirm]').onclick=()=>{if(review){const {action,body}=review;review=null;$('.market-review').hidden=true;void transact(action,body);}};
-  $('[data-cancel-review]').onclick=()=>{review=null;$('.market-review').hidden=true;};
+  $('[data-cancel-review]').onclick=()=>choose(tab);
   $('[data-refresh]').onclick=()=>load();$('[data-claim]').onclick=()=>transact('claim-gold',{});
   search.onsubmit=e=>{e.preventDefault();page=1;void load();};
   $('[data-prev]').onclick=()=>{if(page>1){page--;void load();}};$('[data-next]').onclick=()=>{if(page*30<(data?.total||0)){page++;void load();}};
-  sell.oninput=estimate;sell.onsubmit=e=>{e.preventDefault();if(!sell.reportValidity())return;const b={uid:sell.elements.uid.value,quantity:Number(sell.elements.quantity.value),currency:sell.elements.currency.value,price:Number(sell.elements.price.value)};confirmTrade('list',b,`上架 ${b.quantity} 件，整組 ${number(b.price)} ${money(b.currency)}，成交後實收 ${number(b.price-Math.ceil(b.price/5))}？`);};
+  sell.querySelector('[type=submit]').textContent='下一步：確認上架';
+  sell.oninput=estimate;sell.onsubmit=e=>{e.preventDefault();if(!sell.reportValidity())return;const b={uid:sell.elements.uid.value,quantity:Number(sell.elements.quantity.value),currency:sell.elements.currency.value,price:Number(sell.elements.price.value)};const item=sell.elements.uid.selectedOptions[0].textContent;confirmTrade('list',b,`物品：${item}。出售 ${b.quantity} 件，整組 ${number(b.price)} ${money(b.currency)}，成交後實收 ${number(b.price-Math.ceil(b.price/5))} ${money(b.currency)}。`);};
   async function balance(){try{cloud.diamonds=(await cloud.request('/api/shop')).wallet.diamonds;}catch{}}
   void balance();setInterval(balance,30000);
 }

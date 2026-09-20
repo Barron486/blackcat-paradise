@@ -124,6 +124,11 @@ export class AuthoritativeGame {
       // Browsers already receive this character in snapshot.values. CLI clients retain their existing response.
       ...(compact?{petState:r.engine.petState()}:{view:r.engine.view(),status:r.engine.status()}),logs:r.engine.logs.slice(-100),paused:r.paused,battle:cursor===false?undefined:r.engine.battle?.(cursor)}:null};
   }
+  acceptsCombatRevision(user,body,latest){
+    const r=this.runtimes.get(user.id);
+    return !!r&&Number.isSafeInteger(body.revision)&&body.slot===r.slot&&body.epoch===epoch(r.engine.snapshot())&&
+      r.revision===latest&&body.revision>=r.inputRevision&&body.revision<=latest;
+  }
   handle(user,body){
     requireValue(body&&typeof body==='object'&&!Array.isArray(body),'指令格式不正確');
     const {lease,op='state',slot,requestId,args={}}=body;
@@ -144,8 +149,7 @@ export class AuthoritativeGame {
     if(mutation){
       const latest=this.row(user).revision;
       // Combat checkpoints do not invalidate an intent. Another command or external writer still does.
-      const liveIntent=['action','pause','resume','leave'].includes(op)&&r&&slot===r.slot&&body.epoch===epoch(r.engine.snapshot());
-      const combatOnly=liveIntent&&r.revision===latest&&body.revision>=r.inputRevision&&body.revision<=latest;
+      const combatOnly=['action','pause','resume','leave'].includes(op)&&this.acceptsCombatRevision(user,body,latest);
       if(body.revision!==latest&&!combatOnly)throw new ApiError(409,'雲端角色已有更新，請重試',{snapshot:this.service.bootstrap(user)});
     }
     if(['select','create','delete'].includes(op))requireValue(Number.isInteger(slot)&&slot>=1&&slot<=8,'角色欄位須為 1～8');

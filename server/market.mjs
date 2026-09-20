@@ -20,7 +20,10 @@ export class MarketService {
   character(user,body){
     this.service.checkLease(user,body.lease);
     const snapshot=this.service.bootstrap(user);
-    if(body.revision!==snapshot.revision)throw new ApiError(409,'存檔已更新，請重新整理交易所',{snapshot,effects:this.service.effects(user,Number.isSafeInteger(body.revision)?body.revision:0)});
+    // Background combat keeps writing checkpoints while the confirmation is open.
+    // Accept those revisions only for the same live character, then validate and
+    // escrow from the latest server inventory. Other writers retain their barrier.
+    if(body.revision!==snapshot.revision&&!this.service.authority?.acceptsCombatRevision(user,body,snapshot.revision))throw new ApiError(409,'角色資料已更新，請再試一次',{code:'market_revision_conflict',snapshot,effects:this.service.effects(user,Number.isSafeInteger(body.revision)?body.revision:0)});
     check(Number.isInteger(body.slot)&&body.slot>=1&&body.slot<=8,'請先進入角色');
     const key='lineage_idle_save_'+body.slot,raw=snapshot.values[key];check(raw,'角色不存在',404);
     const doc=this.service.catalog.unwrap(raw);check((doc.p._roleEpoch||doc.p.enSeed)===body.epoch,'角色已變更，請重新開啟交易所',409);
