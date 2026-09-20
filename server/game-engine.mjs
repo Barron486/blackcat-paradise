@@ -108,7 +108,7 @@ export class HeadlessGame {
   }
 
   adopt(doc) {
-    this.run('player=__args.p;mapState=__args.ms;if(__args._serverState)Object.assign(state,__args._serverState);state.ticks=__args.ticks||0;state.ff=false;state.ffSmall=false;state.inTick=false;state.running=true;_roleBindRuntime();gmApplyTeleport();calcStats();',plain(doc));
+    this.run('player=__args.p;mapState=__args.ms;if(__args._serverState)Object.assign(state,__args._serverState);state.ticks=__args.ticks||0;state.ff=false;state.ffSmall=false;state.inTick=false;state.running=true;_roleBindRuntime();pvpServerRestore(__args._serverPvp);gmApplyTeleport();calcStats();',plain(doc));
     this.captureBattle();
   }
 
@@ -122,7 +122,7 @@ export class HeadlessGame {
   step(ticks = 1) {
     if(!Number.isInteger(ticks) || ticks < 0 || ticks > 36000) throw new Error('tick 數量須為 0–36000');
     if(!this.run('!!player.cls')) throw new Error('尚未載入角色');
-    this.run('for(let i=0;i<__args;i++){if(player.dead || player._gmDead) break; state.inTick=true; try { tick(); } finally {state.inTick=false;settleDeadMobs();window.__captureBattle();} }',ticks);
+    this.run('for(let i=0;i<__args;i++){if(player.dead || player._gmDead) break; state.inTick=true; try { tick(); } finally {state.inTick=false;settleDeadMobs();pvpServerTick();window.__captureBattle();} }pvpServerTick();',ticks);
     return this.status();
   }
 
@@ -132,7 +132,7 @@ export class HeadlessGame {
     return result;
   }
 
-  snapshot() { return JSON.parse(this.run('normalizeFacingRefsForSave();JSON.stringify({v:SAVE_VERSION,p:player,ms:mapState,ticks:state.ticks,_serverState:{...state,ff:false,ffSmall:false,inTick:false}})')); }
+  snapshot() { return JSON.parse(this.run('normalizeFacingRefsForSave();JSON.stringify({v:SAVE_VERSION,p:player,ms:mapState,ticks:state.ticks,_serverState:{...state,ff:false,ffSmall:false,inTick:false},_serverPvp:pvpServerSnapshot()})')); }
 
   values() {
     const store = this.window.localStorage;
@@ -175,10 +175,13 @@ export class HeadlessGame {
 
   action(name,args = {}) {
     if(!this.run('!!player.cls')) throw new Error('尚未載入角色');
-    if(this.run('player.dead') && !['revive','revive-in-place'].includes(name)) throw new Error('角色已死亡');
+    if(this.run('player.dead') && !['revive','revive-in-place','arena-result'].includes(name)) throw new Error('角色已死亡');
     switch(name) {
       case 'travel': case 'map':
-        this.run(`if(!Object.values(MAP_CATEGORIES).flat().some(m=>m.v===__args.mapId)) throw new Error('未知地圖');setMapSelectors(__args.mapId);changeMap(false);if(mapState.current!==__args.mapId) throw new Error('目前無法前往此地圖');`,args); break;
+        this.run(`{const choices=MAP_REGIONS.flatMap(r=>regionMapList(r.key));if(player.siege?.active)choices.push(...getSiegeAreas());
+          const choice=choices.find(m=>m.v===__args.mapId);if(!choice)throw new Error('未知地圖');
+          if(mapOptDisabled(choice))throw new Error('尚未滿足進入條件，無法前往該地點');
+          setMapSelectors(__args.mapId);changeMap(false);if(mapState.current!==__args.mapId)throw new Error('目前無法前往此地圖');}`,args); break;
       case 'return-town': this.run('returnToTown();'); break;
       case 'revive':
         this.run(`if(!player.dead) throw new Error('角色仍活著');if(player._gmDead) throw new Error('GM 死亡必須由 GM 復活');revive();`); break;

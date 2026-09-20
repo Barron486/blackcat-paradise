@@ -57,6 +57,8 @@ function gmBuildWorldCatalog() {
     for (const [category,rows] of Object.entries(MAP_CATEGORIES)) for(const m of rows) maps.set(m.v,{id:m.v,name:m.t,category});
     for(const [id,t] of Object.entries(DB.towns)) if(!maps.has(id)) maps.set(id,{id,name:t.n||id,category:'village'});
     for(const id of Object.keys(DB.maps)) if(!maps.has(id)) maps.set(id,{id,name:extraNames[id]||(/^pride_f\d+$/.test(id)?'傲慢之塔 '+id.slice(7)+' 樓':id),category:mapCategoryOf(id)});
+    // Some instance maps (e.g. the rift) are created at runtime, not in DB.maps.
+    for(const [id,name]of Object.entries(extraNames))if(!maps.has(id))maps.set(id,{id,name,category:mapCategoryOf(id)});
     const monsters=new Map(Object.entries(DB.mobs).map(([id,m])=>[m.n,{id,name:m.n,level:m.lv,boss:!!m.boss}]));
     const rows=new Map();
     const add=(source,mob,item,rate,condition='',group='')=>{

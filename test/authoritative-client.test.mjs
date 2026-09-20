@@ -7,7 +7,7 @@ import {AuthoritativeGame} from '../server/authoritative-game.mjs';
 import {loadCatalog} from '../server/catalog.mjs';
 import {HeadlessGame} from '../cli/engine.mjs';
 import {BattleTimeline} from '../online/battle-timeline.js';
-import {npcIntents} from '../shared/game-intents.js';
+import {npcIntents,townEntrances,journeyDefaults} from '../shared/game-intents.js';
 import {JSDOM} from 'jsdom';
 
 const source=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
@@ -53,7 +53,7 @@ async function fixture(t,character={classId:'mage',name:'伺服器角色',alloca
     }
     throw new Error('Unexpected route '+url);
   };
-  w.startWorldChat=()=>({refresh:()=>{}});w.startLootTicker=()=>{};w.npcIntents=npcIntents;
+  w.startWorldChat=()=>({refresh:()=>{}});w.startLootTicker=()=>{};w.npcIntents=npcIntents;w.townEntrances=townEntrances;w.journeyDefaults=journeyDefaults;
   w.BattleTimeline=BattleTimeline;
   w.eval(source('online/battle-playback.js').replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,''));
   w.eval(source('online/battle-feed.js').replace(/^export /gm,''));
@@ -277,4 +277,56 @@ test('server rejects forged squad values, unknown skills, nonmembers and replace
   }
   await w.CloudStore.flush();assert.equal(f.saved().allies.find(a=>a._slot==='2')._potHpPct,original._potHpPct);
   assert.equal(w.CloudStore.squadEditing('2'),false);
+});
+
+const clickNpcButton=(w,method)=>{
+  const button=[...w.document.querySelectorAll('#interaction-content button[onclick]')].find(el=>el.getAttribute('onclick').startsWith(method+'('));
+  assert.ok(button,'visible menu contains '+method);assert.equal(button.disabled,false);w.eval(button.getAttribute('onclick'));
+};
+
+test('tower notice ignores the last NPC and enters through the real button with synchronized floor and mode',async t=>{
+  const {w,engine,authority,user,requests}=await fixture(t);
+  await w.CloudStore.action('travel',{mapId:'town_pride'});w.interactNPC('npc_bamut','town_pride');
+  w.openTownFloatWindow('傲慢之塔','排名挑戰',w.renderPrideEntrance);clickNpcButton(w,'startPrideClimb');
+  await w.CloudStore.flush();assert.equal(engine.status().map,'pride_f2');
+  assert.equal(requests.filter(r=>r.body?.args?.name==='npc-command').at(-1).body.args.params.npcId,'_pride_entrance');
+  assert.equal(engine.run('state.prideClimb'),true);assert.equal(engine.run('state.prideFloor'),2);
+  assert.match(w.document.getElementById('pride-floor-indicator')?.textContent||w.document.getElementById('adventure-controls').textContent,/2/);
+  const r=authority.runtimes.get(user.id);r.engine.run("mapState.mobs[0]={...DB.mobs.pride_stairs,uid:'stairs',curHp:0,st:newMobStatus()};killMob(0);settleDeadMobs();");authority.commit(user,r);
+  await w.CloudStore.flush();assert.equal(engine.status().map,'pride_f3');assert.equal(engine.run('state.prideFloor'),3);
+  authority.drop(user.id);await w.CloudStore.flush();assert.equal(engine.status().map,'pride_f3');
+  w.returnToTown();await w.CloudStore.flush();assert.equal(engine.run('state.prideClimb'),false);
+});
+
+test('rift notice, return button and reward menu stay in sync without local mutation or duplicated fees',async t=>{
+  const {w,engine,authority,user,lose}=await fixture(t);await w.CloudStore.action('travel',{mapId:'town_rift'});
+  const r=authority.runtimes.get(user.id);r.engine.run("player.inv.push({id:'mat_crack_core',uid:'browser-cores',cnt:2,en:0});");authority.commit(user,r);await w.CloudStore.flush();
+  w.openTownFloatWindow('時空裂痕','進入',w.renderRiftEntrance);lose();clickNpcButton(w,'enterRift');await w.CloudStore.flush();
+  assert.equal(engine.status().map,'rift_battle');assert.equal(engine.run('state.riftRun'),true);
+  assert.equal(engine.status().inventory.find(i=>i.uid==='browser-cores').cnt,1);
+  w.riftEvacuate();await w.CloudStore.flush();assert.equal(engine.status().map,'town_rift');assert.equal(engine.run('state.riftRun'),false);
+  w.openTownFloatWindow('時空裂痕','進入',w.renderRiftEntrance);assert.match(w.document.getElementById('interaction-content').textContent,/可領取/);
+  clickNpcButton(w,'claimRiftReward');await w.CloudStore.flush();assert.match(w.document.getElementById('interaction-content').textContent,/領取獎勵（無）/);
+});
+
+test('Antharas NPC button and stage display remain authoritative after polling and reconnect',async t=>{
+  const {w,engine,authority,user}=await fixture(t);await w.CloudStore.action('travel',{mapId:'town_witon'});
+  w.interactNPC('npc_doruga_bell','town_witon');clickNpcButton(w,'antharasEnter');await w.CloudStore.flush();
+  assert.equal(engine.status().map,'antharas_nest_1');assert.equal(engine.run('state.antharas'),1);
+  assert.equal(w.document.getElementById('map-category').classList.contains('hidden'),true);
+  assert.equal(w.document.getElementById('btn-teleport').classList.contains('hidden'),true);
+  authority.drop(user.id);await w.CloudStore.flush();assert.equal(engine.status().map,'antharas_nest_1');assert.equal(engine.run('state.antharas'),1);
+  w.returnToTown();await w.CloudStore.flush();assert.equal(engine.run('state.antharas'),0);
+  assert.equal(w.document.getElementById('map-category').classList.contains('hidden'),false);
+});
+
+test('arena challenge and result buttons use server combat and retain the return flow after death',async t=>{
+  const {w,engine,authority,user}=await fixture(t,undefined,[{classId:'knight',name:'競技對手',allocation:{str:2,con:6}}]);
+  await w.CloudStore.action('travel',{mapId:'town_gludin'});w.interactNPC('npc_arena','town_gludin');
+  clickNpcButton(w,'pvpChallengeSlot');await w.CloudStore.flush();
+  assert.equal(engine.status().map,'arena_pvp');assert.equal(engine.run('pvpArenaActive()'),true);
+  const r=authority.runtimes.get(user.id);r.engine.run('killPlayer();');r.engine.step(0);authority.commit(user,r);
+  await w.CloudStore.flush();assert.equal(engine.run('pvpArenaActive()'),false);assert.equal(engine.status().dead,true);
+  assert.ok(w.document.getElementById('pvp-result-modal'));w.pvpResultReturn();await w.CloudStore.flush();
+  assert.equal(engine.status().map,'town_gludin');assert.equal(engine.status().dead,false);assert.equal(w.document.getElementById('pvp-result-modal'),null);
 });

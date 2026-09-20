@@ -359,8 +359,9 @@
         return best;
     }
 
-    // ---------- 決鬥狀態（runtime·不入存檔）----------
+    // ---------- 決鬥狀態（線上版另由伺服器保存）----------
     let _duel = null;   // {name, uid, power, startedAt}
+    let _duelResult = null;
 
     function pvpArenaActive() { return !!_duel; }
     function pvpArenaTravelLocked() {
@@ -492,6 +493,7 @@
         mob.st = (typeof newMobStatus === 'function') ? newMobStatus() : {};
         if (mob.hard && typeof initHardSkin === 'function') { try { initHardSkin(mob); } catch (e) {} }
         mapState.mobs[0] = mob;
+        _duelResult = null;
         _duel = { name: card.n, uid: mob.uid, power: mob._pvpPower || 0, startedAt: Date.now() };
         _pvpSyncTravelButtons();
         _pvpBenchAllies();   // ⚔️ 純 1v1：傭兵到場邊（不解散·決鬥結束自動歸隊）
@@ -540,6 +542,7 @@
                 : '<span class="text-rose-400 font-bold">💀 決鬥落敗：</span>敗給 ' + _pvpEsc(foeName) + '。（' + a.wins + ' 勝 ' + a.losses + ' 敗）');
         } catch (e) {}
         _duel = null;
+        _duelResult = {win:!!win,foeName:String(foeName||'')};
         _pvpSyncTravelButtons();
         try { saveGame(); } catch (e) {}
         _pvpRenderPanel();
@@ -594,6 +597,7 @@
     }
 
     function pvpResultContinue() {
+        _duelResult = null;
         let m = document.getElementById('pvp-result-modal'); if (m) m.remove();
         if (!_duel) _pvpClearFoe();   // 🧹 v3.7.67 安全網：本場已結束卻仍有對手殘留在場上（例如中途重整過）→ 清掉再整備，免得復活後又被打
         _pvpRestoreInArena();
@@ -604,6 +608,7 @@
     }
 
     function pvpResultReturn() {
+        _duelResult = null;
         let m = document.getElementById('pvp-result-modal'); if (m) m.remove();
         _pvpReturnHome();
     }
@@ -632,6 +637,7 @@
 
     // 玩家離開競技場／死亡 → 中止決鬥（不計勝負，除非是被對手打死）
     function pvpArenaAbort(reason) {
+        _duelResult = null;
         _pvpUnbenchAllies();   // ⚔️ 中止也要讓傭兵歸隊（放在早退之前：_duel 已清空但傭兵還在場邊的殘留情況也要救）
         if (!_duel) return;
         _duel = null;
@@ -730,7 +736,7 @@
     }
 
     // ---------- 掛勾：玩家死亡＝敗（輪詢·避免侵入 js/04 死亡流程）----------
-    setInterval(function () {
+    function pvpCheckDuel() {
         if (!_duel) return;
         if (typeof player === 'undefined' || !player || !player.cls) { _duel = null; return; }
         if (player.dead) { _pvpRecord(false, _duel.name); return; }
@@ -738,7 +744,8 @@
         // 對手被其他途徑清場（換圖/瞬移）→ 視為中止
         let alive = (mapState.mobs || []).some(function (m) { return m && m.uid === _duel.uid && !m._dead; });
         if (!alive) pvpArenaAbort('對手已離場');
-    }, 1000);
+    }
+    setInterval(function () { if (!window.CloudStore) pvpCheckDuel(); }, 1000);
 
     // ---------- 面板 UI（純 JS 生成·不動 HTML）----------
     function _pvpEsc(s) {
@@ -967,4 +974,19 @@
     window.pvpDownloadMyCard = pvpDownloadMyCard;
     window.pvpChallengeSlot = pvpChallengeSlot;
     window.pvpChallengePasted = pvpChallengePasted;
+    // Online checkpoints retain the duel and benched party across VM/browser reloads.
+    // Only the authoritative server writes these fields; browser calls are presentation.
+    window.pvpServerSnapshot = function () { return {duel:_duel,bench:_duelBench,owner:_duelBenchOwner,result:_duelResult}; };
+    window.pvpServerTick = pvpCheckDuel;
+    window.pvpServerRestore = function (saved) {
+        _duel=saved && saved.duel || null;_duelBench=saved && saved.bench || null;
+        _duelBenchOwner=saved && saved.owner || '';_duelResult=saved && saved.result || null;
+        _pvpSyncTravelButtons();
+    };
+    window.pvpServerRender = function () {
+        if (_duel) _pvpHidePanels();
+        else if (_duelResult) {
+            if (!document.getElementById('pvp-result-modal')) _pvpShowResult(_duelResult.win,_duelResult.foeName);
+        } else document.getElementById('pvp-result-modal')?.remove();
+    };
 })();

@@ -737,6 +737,7 @@ function enterPrideFloor(n) {
 }
 // 從入口按鈕開始攀登（ranked=排名模式）：自 2F 起
 function startPrideClimb(ranked) {
+    if(!gmMapAllowed('pride_f2',true))return false;
     if (typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked('pride_f2')) return;
     if (player.statuses && (player.statuses.stone > 0 || player.statuses.paralyze > 0 || player.statuses.freeze > 0 || player.statuses.stun > 0 || player.statuses.sleep > 0)) {
         logSys('你目前無法行動（石化／麻痺／冰凍／暈眩），無法進入傲慢之塔。'); return;

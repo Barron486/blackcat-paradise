@@ -1,6 +1,6 @@
 import {startLootTicker} from './loot-ticker.js';
 import {startWorldChat} from './world-chat.js?v=presence-20260919';
-import {npcIntents} from '/shared/game-intents.js';
+import {npcIntents,townEntrances,journeyDefaults} from '/shared/game-intents.js';
 import {startBattlePlayback} from './battle-playback.js';
 import {startBattleFeed} from './battle-feed.js';
 
@@ -35,7 +35,9 @@ function start(){
     if(initial){currentSlot=active.slot;const travel=window.changeMap;try{window.changeMap=()=>{};load();}finally{window.changeMap=travel;}initCombatLogLock();initSysLogLock();applyCombatFilter();_initTabGuard();}
     const draft=!initial&&_asBackup?{autoSellRules:player.autoSellRules,autoSellOn:player.autoSellOn,autoSellGlobal:player.autoSellGlobal}:null;
     player=view.p;mapState=view.ms;state.ticks=view.ticks;state.running=!player.dead;
-    state.oblivion=(view._serverState||docAt(active.slot)?._serverState)?.oblivion||null;
+    const journey=view._serverState||docAt(active.slot)?._serverState||{};
+    for(const [key,fallback]of Object.entries(journeyDefaults))state[key]=journey[key]??fallback;
+    pvpServerRestore(view._serverPvp||docAt(active.slot)?._serverPvp);
     if(draft)Object.assign(player,draft);
     calcStats(); // Restore derived helpers (e.g. MP costs), which are not JSON values.
     _roleBindRuntime();
@@ -51,7 +53,7 @@ function start(){
     document.getElementById('btn-revive-inplace')?.classList.toggle('hidden',!player.dead||!!player._gmDead);
     if(initial||oldMap!==mapState.current)battle.clear();
     const playing=battle.receive(packet,{reset:initial});
-    updateUI();if(!playing)renderMobs();renderTabs();
+    updateUI();if(!playing)renderMobs();renderTabs();pvpServerRender();
   }
   function adopt(result){
     const snapshot=result.snapshot||result;
@@ -122,6 +124,15 @@ function start(){
   window.changeMap=()=>fire('travel',{mapId:document.getElementById('map-select').value});
   window.setTarget=index=>{const uid=battle.target(index)||mapState.mobs[index]?.uid;if(uid)fire('target',{uid:String(uid)});};
   window.returnToTown=()=>fire('return-town');window.playerTeleport=()=>fire('teleport');
+  window.departToLastBattle=()=>fire('journey',{operation:'depart'});
+  window.returnToPledgeBase=()=>fire('journey',{operation:'home'});
+  window.riftEvacuate=()=>fire('journey',{operation:'rift-exit'});
+  const arenaField=id=>document.querySelector('#pvp-arena-modal #'+id)||document.querySelector('#interaction-content #'+id);
+  window.pvpChallengeSlot=()=>fire('arena',{slot:Number(arenaField('pvp-slot-sel')?.value)});
+  window.pvpChallengePasted=()=>fire('arena',{card:arenaField('pvp-foe-card')?.value||''});
+  window.pvpArenaSurrender=()=>fire('return-town');
+  window.pvpResultContinue=()=>{void action('arena-result',{operation:'continue'}).then(()=>openPvpArena()).catch(()=>{});};
+  window.pvpResultReturn=()=>fire('arena-result',{operation:'return'});
   window.revive=()=>fire('revive');window.reviveInPlace=()=>fire('revive-in-place');
   window.equipItem=item=>fire('equip',{uid:item.uid});window.unequipItem=slot=>fire('unequip',{slot});
   window.useItem=uid=>fire('use',{uid});window.sellItem=(uid,qty)=>fire('sell',{uid,qty});
@@ -141,9 +152,22 @@ function start(){
     }).catch(()=>{});
   };
   const originalInteract=window.interactNPC;window.interactNPC=(id,town)=>{npcId=id;return originalInteract(id,town);};
+  const originalFloat=window.openTownFloatWindow;
+  window.openTownFloatWindow=(name,title,renderer)=>{
+    npcId=Object.keys(townEntrances).find(id=>window[townEntrances[id].render]===renderer)||null;
+    return originalFloat(name,title,renderer);
+  };
+  const originalSiegeMenu=window.openSiegeSelect;
+  window.openSiegeSelect=(...args)=>{npcId='_clan_siege';return originalSiegeMenu(...args);};
   for(const method of npcIntents)window[method]=(...params)=>{
+    const sourceNpc=npcId,sourceMap=mapState.current;
     const fields={};for(const el of document.querySelectorAll('#interaction-content input[id],#interaction-content select[id]'))if(!el.disabled&&!el.readOnly&&['number','checkbox','select-one'].includes(el.type))fields[el.id]=el.type==='checkbox'?el.checked:el.value;
-    void action('npc-command',{npcId,method,params,fields}).then(()=>{if(DB.towns[mapState.current])originalInteract(npcId,mapState.current);}).catch(()=>{});
+    void action('npc-command',{npcId:sourceNpc,method,params,fields}).then(()=>{
+      if(mapState.current!==sourceMap||npcId!==sourceNpc||document.getElementById('town-interaction-container').classList.contains('hidden'))return;
+      if(Object.hasOwn(townEntrances,sourceNpc)){const panel=document.getElementById('interaction-content');panel.innerHTML='';window[townEntrances[sourceNpc].render](panel);}
+      else if(sourceNpc==='_clan_siege')originalSiegeMenu();
+      else if(DB.towns[mapState.current])originalInteract(sourceNpc,mapState.current);
+    }).catch(()=>{});
   };
   window.buyItem=(itemId,qty=1)=>{
     // Quantity inputs return strings; skillbook buttons omit the single-item quantity.

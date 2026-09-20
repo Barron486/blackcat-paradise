@@ -1,4 +1,4 @@
-import {npcIntents} from '../shared/game-intents.js';
+import {npcIntents,townEntrances} from '../shared/game-intents.js';
 const integer=(v,min=1,max=10000)=>{if(!Number.isSafeInteger(v)||v<min||v>max)throw new Error(`數量須為 ${min}～${max}`);return v;};
 const id=v=>{if(typeof v!=='string'||!v.length||v.length>160||/[<>\x00-\x1f]/.test(v))throw new Error('識別碼不正確');return v;};
 const stat=v=>{if(!['str','dex','con','int','wis','cha'].includes(v))throw new Error('屬性不正確');return v;};
@@ -11,8 +11,14 @@ export function extraAction(game,name,a){
       keys(a,['npcId','method','params','fields']);id(a.npcId);
       if(!npcIntents.includes(a.method)||!Array.isArray(a.params)||a.params.length>4)throw new Error('不支援的 NPC 操作');
       for(const value of a.params)if(!['string','number','boolean'].includes(typeof value)||String(value).length>160)throw new Error('NPC 選項不正確');
-      run(`if(!DB.towns[mapState.current]?.npcs?.some(n=>n.id===__args.npcId))throw new Error('此地沒有這位 NPC');interactNPC(__args.npcId,mapState.current);`);
-      const panel=game.window.document.getElementById('interaction-content');
+      // Clear stale markup before rendering: hidden/unavailable NPCs must not inherit
+      // another menu, and map notices must validate their actual entrance location.
+      const panel=game.window.document.getElementById('interaction-content');panel.innerHTML='';
+      if(Object.hasOwn(townEntrances,a.npcId)){
+        const entrance=townEntrances[a.npcId];
+        run(`if(mapState.current!==__args.town)throw new Error('請先前往對應的入口地圖');window[__args.render](document.getElementById('interaction-content'));`,entrance);
+      }else if(a.npcId==='_clan_siege')run(`if(!clanGetModeInfo(player)||!clanCanSiege(player))throw new Error('目前血盟無法攻城');openSiegeSelect();`);
+      else run(`if(!DB.towns[mapState.current]?.npcs?.some(n=>n.id===__args.npcId))throw new Error('此地沒有這位 NPC');interactNPC(__args.npcId,mapState.current);`);
       // Parse only literal calls emitted by the server's menu. Never evaluate code,
       // callbacks, prices, material recipes, or function names supplied by the client.
       const allowed=[...panel.querySelectorAll('[onclick]:not([disabled])')].some(el=>{
@@ -25,6 +31,7 @@ export function extraAction(game,name,a){
         }catch{return false;}
       });
       if(!allowed)throw new Error('NPC 選項已改變或目前不可用，請重新開啟對話');
+      if(a.method==='startSiege')run(`{const city=__args.params[1];if(!SIEGE_CITY[city]||!gmMapAllowed(SIEGE_CITY[city].outer,false))throw new Error('攻城地圖尚未開放或等級不足');}`);
       if(a.fields&&Object.keys(a.fields).length>100)throw new Error('表單過大');
       for(const [key,value]of Object.entries(a.fields||{})){
         const el=[...panel.querySelectorAll('input[id],select[id]')].find(el=>el.id===key);
@@ -37,6 +44,32 @@ export function extraAction(game,name,a){
       const confirm=game.window.confirm;game.window.confirm=()=>true;
       try{run('window[__args.method](...__args.params);');}finally{game.window.confirm=confirm;}
       break;
+    }
+    case 'journey':{
+      keys(a,['operation']);
+      const methods={depart:'departToLastBattle',home:'returnToPledgeBase','rift-exit':'riftEvacuate'};
+      if(!Object.hasOwn(methods,a.operation))throw new Error('不支援的移動操作');
+      if(a.operation==='rift-exit')run(`if(!state.riftRun||mapState.current!=='rift_battle')throw new Error('目前不在時空裂痕');`);
+      run('window[__args]();',methods[a.operation]);break;
+    }
+    case 'arena':{
+      keys(a,['slot','card']);
+      run(`if(mapState.current!=='arena_pvp'&&!DB.towns[mapState.current]?.npcs?.some(n=>n.id==='npc_arena'))throw new Error('請先前往古魯丁與鬥技場管理者對話');
+        if(pvpArenaActive())throw new Error('目前已有一場決鬥進行中');
+        if(!gmMapAllowed('arena_pvp',false))throw new Error('競技場尚未開放或等級不足');`);
+      if(a.slot!==undefined){
+        integer(a.slot,1,8);if(a.card!==undefined)throw new Error('請選擇一種挑戰方式');
+        run(`{if(__args.slot===currentSlot)throw new Error('無法挑戰自己');const card=pvpCardFromSlot(__args.slot);if(!card)throw new Error('此角色不存在');if(!pvpArenaStart(card))throw new Error('目前無法開始決鬥');}`);
+      }else{
+        if(typeof a.card!=='string'||a.card.length>24000)throw new Error('對戰名片格式不正確');
+        run(`{const decoded=pvpCardDecode(__args.card);if(!decoded?.ok)throw new Error('名片驗證失敗，請重新匯出對戰名片');if(!pvpArenaStart(decoded.card))throw new Error('目前無法開始決鬥');}`);
+      }
+      break;
+    }
+    case 'arena-result':{
+      keys(a,['operation']);if(!['continue','return'].includes(a.operation))throw new Error('不支援的決鬥操作');
+      run(`if(player._gmDead||mapState.current!=='arena_pvp'||pvpArenaActive()||!pvpServerSnapshot().result)throw new Error('目前沒有待結算的決鬥');`);
+      run(a.operation==='continue'?'pvpResultContinue();':'pvpResultReturn();');break;
     }
     case 'batch-use':{
       keys(a,['uid','qty']);id(a.uid);integer(a.qty,1,1000);
