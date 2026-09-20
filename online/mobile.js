@@ -1,4 +1,5 @@
 import './status.js';
+import {startSquadWindow} from './squad-window.js';
 // Phone navigation changes presentation only; the original game keeps running.
 const game = document.getElementById('game-screen');
 const toolbar = document.getElementById('cloud-toolbar');
@@ -26,6 +27,7 @@ if (game && toolbar) {
   window.addEventListener('resize',reserveDockSpace);
   new MutationObserver(placeControls).observe(game,{attributes:true,attributeFilter:['class']});
   phone.addEventListener('change',placeControls);placeControls();
+  startSquadWindow(game);
   const nav = document.createElement('nav');
   nav.id = 'mobile-game-nav';
   nav.setAttribute('aria-label', '遊戲分區');

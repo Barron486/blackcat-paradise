@@ -23,10 +23,13 @@ export function onlineCharacters(service){
 }
 const slots={wpn:'武器',arrow:'箭矢',helm:'頭盔',armor:'盔甲',shin:'脛甲',shield:'盾牌',cloak:'斗篷',tshirt:'內衣',gloves:'手套',boots:'靴子',ring1:'戒指 1',ring2:'戒指 2',ring3:'戒指 3',ring4:'戒指 4',amulet:'項鍊',ear1:'耳環 1',ear2:'耳環 2',belt:'腰帶',pet:'寵物',doll:'魔法娃娃'};
 const number=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
+const stat=value=>typeof value==='number'&&Number.isFinite(value)?value:null;
 export function inspectionReport(service,target){
   const p=target.p,maxHp=Math.max(0,number(p.mhp)),maxMp=Math.max(0,number(p.mmp));
   return {name:target.name,level:number(p.lv,1),hp:Math.max(0,number(p.hp)),maxHp,mp:Math.max(0,number(p.mp)),maxMp,
     alignment:Math.max(-32767,Math.min(32767,Math.round(number(p.alignmentValue)))),map:target.map,inspectedAt:Date.now(),savedAt:target.savedAt,
+    attributes:Object.fromEntries(['str','dex','con','int','wis','cha'].map(key=>[key,stat(p.d?.[key])??stat(p.base?.[key])])),
+    defenses:{ac:stat(p.d?.ac),mr:stat(p.d?.mr)},
     equipment:Object.entries(slots).map(([slot,label])=>{
       const item=p.eq?.[slot],definition=item&&service.catalog.items[item.id];
       if(!definition)return {slot,label,item:null};

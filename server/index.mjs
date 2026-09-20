@@ -177,7 +177,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
       if(route==='/'||route==='/index.html') {
         const boot=service.bootstrap(user);
         const html=readFileSync(new URL('index.html',ROOT),'utf8').replace('</head>',
-          `<script id="cloud-boot" type="application/json">${escapedJson(boot)}</script><script src="/online/bootstrap.js"></script><link rel="stylesheet" href="/online/cloud.css"><link rel="stylesheet" href="/online/mobile.css"><link rel="stylesheet" href="/online/loot-ticker.css"></head>`)
+          `<script id="cloud-boot" type="application/json">${escapedJson(boot)}</script><script src="/online/bootstrap.js"></script><link rel="stylesheet" href="/online/cloud.css"><link rel="stylesheet" href="/online/mobile.css"><link rel="stylesheet" href="/online/squad-window.css"><link rel="stylesheet" href="/online/loot-ticker.css"></head>`)
           .replace('</body>','<script type="module" src="/online/authoritative.js?v=battle-feed-20260919"></script><script type="module" src="/online/mobile.js"></script><script type="module" src="/online/shop.js"></script><script type="module" src="/online/market.js"></script></body>');
         res.writeHead(200,{'Content-Type':MIME['.html'],'Cache-Control':'no-store'});return res.end(req.method==='HEAD'?undefined:browserAssets.html(html));
       }

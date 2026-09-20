@@ -8,6 +8,7 @@ import {createRequire} from 'node:module';
 import {once} from 'node:events';
 import {GameService} from '../server/service.mjs';
 import {CommerceService} from '../server/commerce.mjs';
+import {inspectionReport} from '../server/characters.mjs';
 import {createApp} from '../server/index.mjs';
 import {CloudClient} from '../cli/cloud-client.mjs';
 import {HeadlessGame} from '../cli/engine.mjs';
@@ -37,12 +38,20 @@ test('chat snapshots the selected role ID, never exposes account names, and fall
 });
 test('spy costs exactly 300, reveals only requested game stats and equipment, and repeats the same snapshot without charging again',async t=>{
  const f=await fixture(t);f.credit(600);const request={...f.request(),price:0,accountId:f.target.id};
+ f.doc.p.base={str:12,dex:18,con:13,int:14,wis:15,cha:9};f.doc.p.d={str:22,dex:30,con:15,int:18,wis:21,cha:9,ac:-106,mr:128,PRIVATE:'private stat'};
+ f.service.db.prepare('UPDATE saves SET data=? WHERE account_id=?').run(JSON.stringify({[key]:JSON.stringify(f.doc)}),f.target.id);
  const result=f.shop.buy(f.viewer,request);assert.equal(result.wallet.diamonds,300);assert.equal(result.report.name,'角色甲');assert.equal(result.report.level,37);assert.equal(result.report.hp,160);assert.equal(result.report.maxHp,300);assert.equal(result.report.mp,60);assert.equal(result.report.maxMp,90);assert.equal(result.report.alignment,12345);assert.equal(result.report.map,'新兵修練場');
  assert.equal(result.report.equipment.find(e=>e.slot==='wpn').item.name,'祝福的 +7 測試劍');assert.equal(result.report.equipment.find(e=>e.slot==='shield').item,null);
+ assert.deepEqual(result.report.attributes,{str:22,dex:30,con:15,int:18,wis:21,cha:9});assert.deepEqual(result.report.defenses,{ac:-106,mr:128});
  assert.doesNotMatch(JSON.stringify(result.report),/private_target|PRIVATE|accountId|_roleEpoch|inventory|gold|password|csrf/);
  f.doc.p.hp=20;f.service.sync(f.target,f.lease,1,{[key]:JSON.stringify(f.doc)},{slot:1});const again=f.shop.buy(f.viewer,request);assert.equal(again.replayed,true);assert.equal(again.report.hp,160);assert.equal(again.wallet.diamonds,300);
  const newer=f.shop.buy(f.viewer,{...request,requestId:randomUUID()});assert.equal(newer.report.hp,20);assert.equal(newer.wallet.diamonds,0);assert.equal(f.shop.wallet(f.target.id).diamonds,0);assert.equal(f.shop.history(f.viewer.id).filter(r=>r.kind==='spy').length,2);
  assert.deepEqual([result.wallet.renameCards,result.wallet.passwordCards],[0,0]);
+ assert.deepEqual(again.report.attributes,result.report.attributes,'retry preserves paid attribute snapshot');
+});
+test('inspection falls back to base attributes and represents unavailable stats without fabricating values',()=>{
+ const report=inspectionReport({catalog},{name:'舊角色',p:{base:{str:12,dex:18,con:13,int:14,wis:15},d:{str:NaN,dex:30,con:null,int:Infinity,ac:-20,mr:0}},map:'村莊',savedAt:1});
+ assert.deepEqual(report.attributes,{str:12,dex:30,con:13,int:14,wis:15,cha:null});assert.deepEqual(report.defenses,{ac:-20,mr:0});
 });
 test('offline, own, changed roles, insufficient funds and failed writes never consume diamonds',async t=>{
  const f=await fixture(t),request=f.request();f.credit(299);assert.throws(()=>f.shop.buy(f.viewer,request),/藍鑽不足/);assert.equal(f.shop.wallet(f.viewer.id).diamonds,299);f.credit(301);
