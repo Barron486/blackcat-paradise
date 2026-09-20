@@ -7,6 +7,21 @@ const keys=(a,allowed)=>{if(Object.keys(a).some(k=>!allowed.includes(k)))throw n
 export function extraAction(game,name,a){
   const run=(code,args=a)=>game.run(code,args);
   switch(name){
+    case 'black-market':{
+      keys(a,['operation','index','offer']);
+      if(!['view','buy'].includes(a.operation))throw new Error('不支援的黑市操作');
+      if(a.operation==='buy'){
+        integer(a.index,0,23);id(a.offer);
+        run(`refreshPandoraMarket(false);
+          {const s=player.pandoraMarket2?.slots?.[__args.index];
+          if(!s||s.sold||JSON.stringify([s.id,s.price,s.bless===true,s.setTick])!==__args.offer)throw new Error('商品已售出或輪換，請重新整理黑市');
+          const d=DB.items[s.id];if(!d||!Number.isSafeInteger(s.price)||s.price<=0)throw new Error('商品資料不正確');
+          if(player.gold<s.price)throw new Error('金幣不足');
+          if(d.maxHold&&player.inv.filter(i=>i.id===s.id).reduce((n,i)=>n+(i.cnt||1),0)>=d.maxHold)throw new Error('物品已達持有上限');
+          buyPandoraItem(__args.index);if(!s.sold)throw new Error('黑市購買未完成');}`);
+      }else run('refreshPandoraMarket(false);player.pandoraAnnounce=null;player.pandoraAnnounceBless=false;');
+      break;
+    }
     case 'npc-command':{
       keys(a,['npcId','method','params','fields']);id(a.npcId);
       if(!npcIntents.includes(a.method)||!Array.isArray(a.params)||a.params.length>4)throw new Error('不支援的 NPC 操作');

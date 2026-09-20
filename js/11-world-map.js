@@ -1660,6 +1660,11 @@ function openPandoraShortcut() {
     interactNPC('npc_pandora', 'town_talking');
 }
 
+function openPandoraBlackMarket() {
+    if (window.CloudStore) { window.CloudStore.showBlackMarket?.(); return; }
+    openPandoraShortcut();
+}
+
 function interactNPC(npcId, townId) {
     if(npcId==='npc_pandora'&&window.CloudStore){window.CloudStore.showMarket?.();return;}
     let npc = DB.towns[townId].npcs.find(n => n.id === npcId);
@@ -1792,6 +1797,7 @@ function interactNPC(npcId, townId) {
 }
 
 function closeNpcInteraction() {
+    if (typeof pandoraTipHide === 'function') pandoraTipHide();
     // ⚠️ 勿在此關閉浮動倉庫視窗：本函式在城鎮內「切換 NPC 面板」時也會被呼叫，
     //    那樣會變成點任何一個 NPC 都把倉庫關掉。倉庫的關閉點在 changeMap 的「離開安全區」分支。
     document.getElementById('town-interaction-container').classList.add('hidden');

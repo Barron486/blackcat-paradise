@@ -1657,8 +1657,8 @@ function pandoraRenderMarket(div) {
     let relicBalance = '';
     let relicBoard = '';
     try {
-        if (typeof pandoraRelicBalanceHTML === 'function') relicBalance = pandoraRelicBalanceHTML();
-        if (typeof pandoraRelicBoardHTML === 'function') relicBoard = pandoraRelicBoardHTML();
+        if (!window.CloudStore && typeof pandoraRelicBalanceHTML === 'function') relicBalance = pandoraRelicBalanceHTML();
+        if (!window.CloudStore && typeof pandoraRelicBoardHTML === 'function') relicBoard = pandoraRelicBoardHTML();
     } catch (e) {}
     let cards = m.slots.map((s, i) => {
         let d = s && DB.items[s.id]; if (!d) return '';
@@ -1688,7 +1688,7 @@ function pandoraRenderMarket(div) {
         <h3 class="pandora-market-title text-center font-bold text-purple-400 drop-shadow-md leading-none shrink-0">潘朵拉黑市
             <span class="text-slate-400 font-normal">每 10 分鐘輪換 1 件·單件持續 240 分鐘·約 ${nextMin} 分鐘後輪換｜金幣 <span class="text-yellow-300 font-bold">${(player.gold || 0).toLocaleString()}</span>${relicBalance}</span>
         </h3>
-        <div class="pandora-buy-box shrink-0">
+        ${window.CloudStore ? '' : `<div class="pandora-buy-box shrink-0">
             <div class="pandora-buybar">
                 <span class="pandora-buy-word">收</span>
                 <div class="pandora-buy-name-wrap">
@@ -1706,7 +1706,7 @@ function pandoraRenderMarket(div) {
                 <span>${orderItem ? `<b class="text-amber-200">${_pandoraEsc(buyerName)}</b>：<b class="text-yellow-300">${order.price.toLocaleString()}</b> 金幣收 <b class="${getItemColor({ id: order.id })}">${_pandoraEsc(orderItem.n)}</b>，意者自行上架` : '目前沒有收購單；可指定魔法書、怪物卡片與耳環以外的穿著裝備，未指定仍依原黑市池上架。'}</span>
                 ${orderItem ? '<button class="pandora-buy-cancel" onclick="pandoraCancelBuyOrder()">取消收購</button>' : ''}
             </div>
-        </div>
+        </div>`}
         <div class="pandora-market-grid">${cards}</div>
         ${relicBoard}
         <p id="pandora-msg" class="font-bold text-center shrink-0 empty:hidden">${_pandoraNoticeHTML(m)}</p>
