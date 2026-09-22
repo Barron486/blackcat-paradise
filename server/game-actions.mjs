@@ -7,6 +7,46 @@ const keys=(a,allowed)=>{if(Object.keys(a).some(k=>!allowed.includes(k)))throw n
 export function extraAction(game,name,a){
   const run=(code,args=a)=>game.run(code,args);
   switch(name){
+    case 'clan':{
+      if(!['create','donate-gold','toggle-buff','rename'].includes(a.operation))throw new Error('不支援的血盟操作');
+      if(['create','rename'].includes(a.operation)){
+        keys(a,['operation','name']);
+        if(typeof a.name!=='string')throw new Error('血盟名稱不正確');
+        const name=a.name.trim();
+        if(!name||name.length>20||/[\x00-\x1f\x7f]/.test(name))throw new Error('血盟名稱需為 1 至 20 個字');
+        run(`{
+          const inputId=__args.operation==='create'?'clan-name-input':'clan-rename-input';
+          const old=document.getElementById(inputId);if(old)old.remove();
+          const input=document.createElement('input');input.id=inputId;input.value=__args.name;document.body.append(input);
+          const originalSave=window.saveGame;window.saveGame=()=>true;
+          try{
+            const beforeGold=player.gold;
+            if(__args.operation==='create')clanCreateFromInput();else clanRenameFromInput();
+            const info=clanGetModeInfo(player);
+            if(!info||info.name!==__args.name)throw new Error(__args.operation==='create'?'創立血盟未完成':'血盟改名未完成');
+            if(__args.operation==='create'&&player.gold!==beforeGold-CLAN_CREATE_COST)throw new Error('創立血盟扣款不正確');
+          }finally{window.saveGame=originalSave;input.remove();}
+        }`,{operation:a.operation,name});
+      }else if(a.operation==='donate-gold'){
+        keys(a,['operation','amount']);
+        if(!Number.isSafeInteger(a.amount)||a.amount<10000||a.amount%10000!==0)throw new Error('金幣捐獻需為 10,000 的整數倍');
+        run(`{
+          const old=document.getElementById('clan-gold-donate');if(old)old.remove();
+          const input=document.createElement('input');input.id='clan-gold-donate';input.value=String(__args.amount);document.body.append(input);
+          const originalSave=window.saveGame;window.saveGame=()=>true;
+          try{
+            const beforeGold=player.gold,before=_clanReadState(),id=clanRoleId(player);clanDonateGold();const after=_clanReadState();
+            if(player.gold!==beforeGold-__args.amount||!after||after.xp!==(before?.xp||0)+__args.amount/10000||
+              after.members[id]?.contribution!==(before?.members[id]?.contribution||0)+__args.amount/10000)throw new Error('血盟捐獻未完成');
+          }finally{window.saveGame=originalSave;input.remove();}
+        }`,{amount:a.amount});
+      }else{
+        keys(a,['operation','on']);
+        if(typeof a.on!=='boolean')throw new Error('血盟 Buff 設定不正確');
+        run(`{clanToggleBuff(__args.on);const st=_clanReadState(),member=st?.members[clanRoleId(player)];if(!member||member.buffOn!==__args.on)throw new Error('血盟 Buff 設定未完成');}`,{on:a.on});
+      }
+      break;
+    }
     case 'summon-choice':{
       keys(a,['name']);if(a.name!=='')id(a.name);
       run(`if(!hasSummonCtrlRing(player))throw new Error('需要裝備召喚控制戒指');

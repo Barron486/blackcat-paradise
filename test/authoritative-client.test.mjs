@@ -98,6 +98,25 @@ test('candle draft, soul orb choice and GM gold remain authoritative across brow
   await w.CloudStore.flush();assert.equal(engine.run('player.gold'),before+5000);await w.CloudStore.flush();assert.equal(engine.run('player.gold'),before+5000);
 });
 
+test('online clan creation is server owned, retry safe and survives later polling',async t=>{
+  const {w,engine,authority,user,requests,lose}=await fixture(t,{classId:'royal',name:'三十等王族',allocation:{str:7,con:1}});
+  const r=authority.runtimes.get(user.id);r.engine.run('player.lv=30;player.gold=100000;calcStats();');authority.commit(user,r);await w.CloudStore.flush();
+  w.renderClanTab();const input=w.document.getElementById('clan-name-input');assert.ok(input);input.value='三十等測試盟';
+  lose();w.clanCreateFromInput();w.clanCreateFromInput();await w.CloudStore.flush();
+  const creates=requests.filter(request=>request.body?.args?.name==='clan'&&request.body.args.params.operation==='create');
+  assert.equal(creates.length,2);assert.equal(creates[0].body.requestId,creates[1].body.requestId);
+  assert.equal(engine.run('player.gold'),70000);assert.equal(engine.run('clanGetModeInfo(player)?.name'),'三十等測試盟');
+  w.renderClanTab();w.document.getElementById('clan-gold-donate').value='50000';w.clanDonateGold();await w.CloudStore.flush();
+  assert.equal(engine.run('player.gold'),20000);assert.equal(engine.run('_clanReadState().members[clanRoleId(player)].contribution'),5);
+  w.clanToggleBuff(true);await w.CloudStore.flush();assert.equal(engine.run('_clanReadState().members[clanRoleId(player)].buffOn'),true);
+  w.renderClanTab();w.document.getElementById('clan-rename-input').value='改名後測試盟';w.clanRenameFromInput();await w.CloudStore.flush();
+  assert.equal(engine.run('clanGetModeInfo(player)?.name'),'改名後測試盟');
+  assert.equal(r.engine.run('player.gold'),20000);assert.equal(r.engine.run('clanGetModeInfo(player)?.name'),'改名後測試盟');
+  assert.ok(authority.service.bootstrap(user).values.fb5_clan_state_v1);
+  assert.deepEqual(requests.filter(request=>request.body?.args?.name==='clan').map(request=>request.body.args.params.operation),['create','create','donate-gold','toggle-buff','rename']);
+  await w.CloudStore.flush();assert.equal(engine.run('clanGetModeInfo(player)?.name'),'改名後測試盟');assert.equal(engine.run('player.gold'),20000);
+});
+
 test('doll merchant buttons and summon selection reach the server without local-only changes',async t=>{
   const {w,engine,authority,user,lose,requests}=await fixture(t),r=authority.runtimes.get(user.id);
   const town=r.engine.run("Object.entries(DB.towns).find(([id,t])=>t.npcs.some(n=>n.id==='npc_doll_merchant'))[0]");

@@ -217,6 +217,33 @@ function start(){
     }).finally(()=>{summonBusy=false;});
   };
   window.adjBonusStat=stat=>fire('bonus',{stat});
+  let clanMutationBusy=false;
+  const clanAction=params=>{
+    if(clanMutationBusy)return;
+    clanMutationBusy=true;
+    void action('clan',params).catch(()=>{}).finally(()=>{clanMutationBusy=false;});
+  };
+  window.clanCreateFromInput=()=>{
+    if(clanMutationBusy)return;
+    const name=String(document.getElementById('clan-name-input')?.value||'').trim();
+    if(!player||player.cls!=='royal'){alert('只有王族可以創立血盟。');return;}
+    if(!name||name.length>20){alert('血盟名稱需為 1 至 20 個字。');return;}
+    if((player.gold||0)<CLAN_CREATE_COST){alert('創立血盟需要 30,000 金幣。');return;}
+    clanAction({operation:'create',name});
+  };
+  window.clanDonateGold=()=>{
+    const amount=Number(document.getElementById('clan-gold-donate')?.value);
+    if(!Number.isSafeInteger(amount)||amount<10000||amount%10000!==0){alert('金幣捐獻需為 10,000 的整數倍。');return;}
+    if((player.gold||0)<amount){alert('金幣不足。');return;}
+    clanAction({operation:'donate-gold',amount});
+  };
+  window.clanToggleBuff=on=>clanAction({operation:'toggle-buff',on:!!on});
+  window.clanRenameFromInput=()=>{
+    const name=String(document.getElementById('clan-rename-input')?.value||'').trim();
+    if(!player||player.cls!=='royal'){alert('只有王族盟主可以更改血盟名稱。');return;}
+    if(!name||name.length>20){alert('血盟名稱需為 1 至 20 個字。');return;}
+    clanAction({operation:'rename',name});
+  };
   window.chooseElfElement=element=>{
     if(!Object.hasOwn(ELF_ELE,element)||player.elfEle===element)return;
     if(player.elfEle&&!confirm(`確定花費 ${ELF_SWITCH_COST.toLocaleString()} 金幣將屬性轉換為「${ELF_ELE[element].name}」？`))return;
