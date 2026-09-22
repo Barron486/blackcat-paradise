@@ -62,6 +62,13 @@ export class CommerceService {
       return {ok:true,username:account.username,wallet:this.entry(account.id,user.id,'gm_grant',body.amount,0,0,body.reason.trim())};
     });
   }
+  // Called inside the authoritative game transaction, so the wallet, clan state and request ID commit together.
+  donateClan(user,amount){
+    check(Number.isSafeInteger(amount)&&amount>=1&&amount<=MAX_BALANCE,'藍鑽捐獻數量須為 1～2,000,000,000 的整數');
+    check(this.wallet(user.id).diamonds>=amount,'藍鑽不足',409);
+    this.db.prepare('UPDATE wallets SET diamonds=diamonds-? WHERE account_id=?').run(amount,user.id);
+    return this.entry(user.id,user.id,'clan_donation',-amount,0,0,`血盟捐獻 ${amount} 藍鑽`);
+  }
   buy(user,body){
     const product=Object.hasOwn(products,body.productId)?products[body.productId]:null;
     check(product,'找不到商品');

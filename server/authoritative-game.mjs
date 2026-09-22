@@ -147,6 +147,8 @@ export class AuthoritativeGame {
     requireValue(body.client===undefined||body.client==='browser','不支援的回應格式');
     requireValue(args&&typeof args==='object'&&!Array.isArray(args)&&JSON.stringify(args).length<32000,'操作內容過大');
     const compact=body.client==='browser',cursor=op==='state'?(args.presentation??false):(compact?false:undefined);
+    const clanDiamondDonation=op==='action'&&args.name==='clan'&&args.params?.operation==='donate-diamonds';
+    const respond=()=>{const result=this.response(user,r,cursor,compact);if(clanDiamondDonation)result.wallet=this.service.commerce.wallet(user.id);return result;};
     const mutation=op!=='state';
     if(mutation){requireValue(typeof requestId==='string'&&/^[\w-]{20,80}$/.test(requestId),'缺少指令識別碼');requireValue(Number.isSafeInteger(body.revision)&&body.revision>=0,'版本不正確');}
     let r=this.runtimes.get(user.id);
@@ -155,7 +157,7 @@ export class AuthoritativeGame {
     if(r)r.lease=lease;
     const payloadHash=mutation?digest({op,slot:slot??null,epoch:body.epoch??null,args}):null;
     const prior=mutation&&this.db.prepare('SELECT payload_hash FROM game_requests WHERE account_id=? AND request_id=?').get(user.id,requestId);
-    if(prior){requireValue(prior.payload_hash===payloadHash,'同一識別碼不能重用於不同指令',409);if(r)this.reconcile(user,r);return {...this.response(user,r,cursor,compact),replayed:true};}
+    if(prior){requireValue(prior.payload_hash===payloadHash,'同一識別碼不能重用於不同指令',409);if(r)this.reconcile(user,r);return {...respond(),replayed:true};}
     if(mutation){
       const latest=this.row(user).revision;
       // Combat checkpoints do not invalidate an intent. Another command or external writer still does.
@@ -170,7 +172,7 @@ export class AuthoritativeGame {
     // Advance valid elapsed combat independently of whether the following action succeeds.
     if(r){this.service.transaction(()=>this.advance(user,r));r.lastSeen=this.clock();}
     // CLI controllers need settled state only; browsers explicitly request the animation stream.
-    if(op==='state')return this.response(user,r,cursor,compact);
+    if(op==='state')return respond();
     try{return this.service.transaction(()=>{
       if(op==='create'||op==='select'){
         const row=this.row(user),raw=row.values[slotKey(slot)];
@@ -203,12 +205,14 @@ export class AuthoritativeGame {
       }else if(op==='action'){
         requireValue(typeof args.name==='string'&&args.params&&typeof args.params==='object'&&!Array.isArray(args.params),'操作格式不正確');
         r.engine.setWorldSettings(this.service.world?.state());
-        r.engine.action(args.name,args.params);this.commit(user,r);
+        r.engine.action(args.name,args.params);
+        if(clanDiamondDonation){requireValue(this.service.commerce,'藍鑽服務暫時無法使用',503);this.service.commerce.donateClan(user,args.params.amount);}
+        this.commit(user,r);
       }
       this.db.prepare('INSERT INTO game_requests VALUES(?,?,?,?)').run(user.id,requestId,payloadHash,Date.now());
       if(r)r.inputRevision=r.revision;
       // Retain request IDs for the account lifetime: delayed retries cannot spend twice.
-      return this.response(user,r,cursor,compact);
+      return respond();
     });}catch(error){
       // Roll back both SQLite and the in-memory simulation. An invalid click must
       // not leave half-spent items, nor disconnect a valid paused character.

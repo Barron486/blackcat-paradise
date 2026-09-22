@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {GameService} from '../server/service.mjs';
+import {CommerceService} from '../server/commerce.mjs';
 import {AuthoritativeGame} from '../server/authoritative-game.mjs';
 import {loadCatalog} from '../server/catalog.mjs';
 import {HeadlessGame} from '../cli/engine.mjs';
@@ -115,6 +116,37 @@ test('online clan creation is server owned, retry safe and survives later pollin
   assert.ok(authority.service.bootstrap(user).values.fb5_clan_state_v1);
   assert.deepEqual(requests.filter(request=>request.body?.args?.name==='clan').map(request=>request.body.args.params.operation),['create','create','donate-gold','toggle-buff','rename']);
   await w.CloudStore.flush();assert.equal(engine.run('clanGetModeInfo(player)?.name'),'改名後測試盟');assert.equal(engine.run('player.gold'),20000);
+});
+
+test('online clan diamond donation debits the account wallet once and persists contribution',async t=>{
+  const {w,engine,authority,service,user,requests,lose}=await fixture(t,{classId:'royal',name:'藍鑽盟主',allocation:{str:7,con:1}});
+  const commerce=new CommerceService(service),runtime=authority.runtimes.get(user.id);
+  runtime.engine.run('player.lv=30;player.gold=100000;calcStats();');authority.commit(user,runtime);await w.CloudStore.flush();
+  w.renderClanTab();w.document.getElementById('clan-name-input').value='藍鑽測試盟';w.clanCreateFromInput();await w.CloudStore.flush();
+  commerce.wallet(user.id);service.db.prepare('UPDATE wallets SET diamonds=12 WHERE account_id=?').run(user.id);
+  w.CloudStore.diamonds=12;w.renderClanTab();
+  w.document.getElementById('clan-diamond-donate').value='3';lose();w.clanDonateDiamonds();w.clanDonateDiamonds();await w.CloudStore.flush();
+  const donations=requests.filter(request=>request.body?.args?.name==='clan'&&request.body.args.params.operation==='donate-diamonds');
+  assert.equal(donations.length,2);assert.equal(donations[0].body.requestId,donations[1].body.requestId);
+  assert.equal(commerce.wallet(user.id).diamonds,9);assert.equal(w.CloudStore.diamonds,9);
+  assert.equal(service.db.prepare("SELECT COUNT(*) AS n FROM wallet_ledger WHERE account_id=? AND kind='clan_donation'").get(user.id).n,1);
+  assert.equal(engine.run('_clanReadState().xp'),300);
+  assert.equal(engine.run('_clanReadState().members[clanRoleId(player)].contribution'),300);
+  assert.match(w.document.querySelector('#tab-clan button[onclick="clanDonateDiamonds()"]')?.textContent||'',/持有 9/);
+  await assert.rejects(w.CloudStore.action('clan',{operation:'donate-diamonds',amount:10}),error=>error.status===409);
+  assert.equal(commerce.wallet(user.id).diamonds,9);assert.equal(engine.run('_clanReadState().xp'),300);
+  await w.CloudStore.flush();authority.drop(user.id);w.returnToCharacterSelect();await w.CloudStore.flush();w.loadGame();await w.CloudStore.flush();
+  assert.equal(authority.runtimes.get(user.id).engine.run('_clanReadState().xp'),300);
+  assert.equal(engine.run('_clanReadState().xp'),300);assert.equal(commerce.wallet(user.id).diamonds,9);
+});
+
+test('clan diamond donation rejects missing clan and invalid amounts without debiting wallet',async t=>{
+  const {w,service,user}=await fixture(t),commerce=new CommerceService(service);
+  commerce.wallet(user.id);service.db.prepare('UPDATE wallets SET diamonds=20 WHERE account_id=?').run(user.id);
+  for(const amount of [0,1.5,2_000_000_001])await assert.rejects(w.CloudStore.action('clan',{operation:'donate-diamonds',amount}),error=>error.status===400);
+  await assert.rejects(w.CloudStore.action('clan',{operation:'donate-diamonds',amount:1}),error=>error.status===400);
+  assert.equal(commerce.wallet(user.id).diamonds,20);
+  assert.equal(service.db.prepare("SELECT COUNT(*) AS n FROM wallet_ledger WHERE account_id=? AND kind='clan_donation'").get(user.id).n,0);
 });
 
 test('doll merchant buttons and summon selection reach the server without local-only changes',async t=>{

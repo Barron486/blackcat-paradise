@@ -8,7 +8,7 @@ export function extraAction(game,name,a){
   const run=(code,args=a)=>game.run(code,args);
   switch(name){
     case 'clan':{
-      if(!['create','donate-gold','toggle-buff','rename'].includes(a.operation))throw new Error('不支援的血盟操作');
+      if(!['create','donate-gold','donate-diamonds','toggle-buff','rename'].includes(a.operation))throw new Error('不支援的血盟操作');
       if(['create','rename'].includes(a.operation)){
         keys(a,['operation','name']);
         if(typeof a.name!=='string')throw new Error('血盟名稱不正確');
@@ -40,6 +40,18 @@ export function extraAction(game,name,a){
               after.members[id]?.contribution!==(before?.members[id]?.contribution||0)+__args.amount/10000)throw new Error('血盟捐獻未完成');
           }finally{window.saveGame=originalSave;input.remove();}
         }`,{amount:a.amount});
+      }else if(a.operation==='donate-diamonds'){
+        keys(a,['operation','amount']);integer(a.amount,1,2_000_000_000);
+        run(`{
+          const points=__args.amount*100,before=_clanReadState(),mode=clanModeKey(player),role=clanRoleId(player);
+          if(!before?.modes[mode])throw new Error('你尚未加入血盟');
+          const oldMember=before.members[role],oldContribution=oldMember?.mode===mode?oldMember.contribution:0;
+          if(before.xp>1_000_000_000_000-points||oldContribution>1_000_000_000_000-points)throw new Error('血盟經驗或貢獻已達上限');
+          const result=_clanAdjustContribution(points),after=_clanReadState();
+          if(!result.ok||after?.xp!==before.xp+points||after.members[role]?.contribution!==oldContribution+points)
+            throw new Error(result.error||'血盟捐獻未完成');
+          logSys('捐獻 '+__args.amount.toLocaleString()+' 顆藍鑽，獲得 '+points.toLocaleString()+' 貢獻與血盟經驗。');
+        }`);
       }else{
         keys(a,['operation','on']);
         if(typeof a.on!=='boolean')throw new Error('血盟 Buff 設定不正確');

@@ -221,7 +221,13 @@ function start(){
   const clanAction=params=>{
     if(clanMutationBusy)return;
     clanMutationBusy=true;
-    void action('clan',params).catch(()=>{}).finally(()=>{clanMutationBusy=false;});
+    void action('clan',params).then(result=>{
+      if(params.operation==='donate-diamonds'&&result.wallet){
+        cloud.diamonds=result.wallet.diamonds;
+        const button=document.querySelector('#tab-clan button[onclick="clanDonateDiamonds()"]');
+        if(button)button.textContent=`捐藍鑽（持有 ${cloud.diamonds.toLocaleString()}）`;
+      }
+    }).catch(()=>{}).finally(()=>{clanMutationBusy=false;});
   };
   window.clanCreateFromInput=()=>{
     if(clanMutationBusy)return;
@@ -236,6 +242,11 @@ function start(){
     if(!Number.isSafeInteger(amount)||amount<10000||amount%10000!==0){alert('金幣捐獻需為 10,000 的整數倍。');return;}
     if((player.gold||0)<amount){alert('金幣不足。');return;}
     clanAction({operation:'donate-gold',amount});
+  };
+  window.clanDonateDiamonds=()=>{
+    const amount=Number(document.getElementById('clan-diamond-donate')?.value);
+    if(!Number.isSafeInteger(amount)||amount<1||amount>2_000_000_000){alert('藍鑽捐獻需為 1～2,000,000,000 的整數。');return;}
+    clanAction({operation:'donate-diamonds',amount});
   };
   window.clanToggleBuff=on=>clanAction({operation:'toggle-buff',on:!!on});
   window.clanRenameFromInput=()=>{
