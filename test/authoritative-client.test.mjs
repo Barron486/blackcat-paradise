@@ -289,6 +289,31 @@ async function squadFixture(t){
   return f;
 }
 
+test('online dismiss-all button removes every mercenary on the server and stays empty after reload',async t=>{
+  const f=await squadFixture(t),{w,engine,authority,user,requests,lose}=f;
+  const panel=w.document.getElementById('interaction-content');
+  w.renderAllyNPC(panel);
+  const button=panel.querySelector('button[onclick="dismissAllAllies()"]');
+  assert.ok(button,'real mercenary guild button is available');
+  w.confirm=()=>false;engine.run(button.getAttribute('onclick'));await w.CloudStore.flush();
+  assert.equal(f.saved().allies.length,2,'cancel keeps the server party intact');
+  assert.equal(requests.filter(r=>r.body?.args?.params?.operation==='dismiss-all').length,0);
+  w.confirm=()=>true;lose();
+  const activeButton=panel.querySelector('button[onclick="dismissAllAllies()"]');
+  assert.ok(activeButton);engine.run(activeButton.getAttribute('onclick'));engine.run(activeButton.getAttribute('onclick'));
+  assert.equal(engine.run('player.allies.length'),2,'browser does not clear the party before the server responds');
+  await w.CloudStore.flush();
+  const dismissals=requests.filter(r=>r.body?.args?.name==='mercenary'&&r.body.args.params.operation==='dismiss-all');
+  assert.equal(dismissals.length,2,'lost response retries one command without a second click');
+  assert.equal(dismissals[0].body.requestId,dismissals[1].body.requestId);
+  assert.equal(f.saved().allies.length,0);assert.equal(engine.run('player.allies.length'),0);
+  await w.CloudStore.flush();assert.equal(engine.run('player.allies.length'),0);
+  w.returnToCharacterSelect();await w.CloudStore.flush();authority.drop(user.id);w.loadGame();await w.CloudStore.flush();
+  assert.equal(f.saved().allies.length,0);assert.equal(engine.run('player.allies.length'),0);
+  await w.CloudStore.action('mercenary',{operation:'toggle',slot:2});
+  assert.equal(f.saved().allies.length,1,'dismissed characters can be recruited again');
+});
+
 test('squad potion input immediately persists per teammate across polls, reconnect and rehire',async t=>{
   const f=await squadFixture(t),{w,authority,user,lose,requests}=f;
   const originalOther=f.saved().allies.find(a=>a._slot==='3'),identity=f.saved().allies.find(a=>a._slot==='2').enSeed;

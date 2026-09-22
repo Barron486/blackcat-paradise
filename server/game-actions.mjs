@@ -240,6 +240,13 @@ export function extraAction(game,name,a){
       run(`{const p=_petFind(__args.uid);if(!p)throw new Error('找不到這隻寵物');if(_petOwnedByOther(p))throw new Error('這隻寵物由其他角色帶領');}`+calls[a.operation]+`;if(!petRosterSave())throw new Error('寵物設定保存失敗');`);break;
     }
     case 'mercenary':{
+      if(a.operation==='dismiss-all'){
+        keys(a,['operation']);
+        run(`if(!DB.towns[mapState.current])throw new Error('請回村管理傭兵');`);
+        const confirm=game.window.confirm;game.window.confirm=()=>true;
+        try{run(`dismissAllAllies();if((player.allies||[]).length)throw new Error('全員解散未完成');`);}finally{game.window.confirm=confirm;}
+        break;
+      }
       keys(a,['operation','slot','method']);integer(a.slot,1,8);
       if(!['toggle','dismiss','refresh','revive'].includes(a.operation))throw new Error('不支援的傭兵操作');
       run(`if(__args.slot===currentSlot)throw new Error('無法招募自己');if(__args.operation!=='revive'&&!DB.towns[mapState.current])throw new Error('請回村管理傭兵');`);

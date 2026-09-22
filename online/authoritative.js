@@ -317,6 +317,13 @@ function start(){
     });
   };
   for(const [fn,operation]of [['toggleAlly','toggle'],['dismissAlly','dismiss'],['refreshAllyOnce','refresh']])window[fn]=slot=>fire('mercenary',{operation,slot:Number(slot)});
+  let dismissAllPending=false;
+  window.dismissAllAllies=()=>{
+    const count=player.allies?.length||0;
+    if(!count||dismissAllPending||!confirm(`確定要解除全部 ${count} 名協力傭兵嗎？`))return;
+    dismissAllPending=true;
+    void action('mercenary',{operation:'dismiss-all'}).catch(()=>{}).finally(()=>{dismissAllPending=false;});
+  };
   window.reviveMercenary=(slot,method)=>fire('mercenary',{operation:'revive',slot:Number(slot),method});
   const openAllyEquipment=window.openAllyEquipmentManager,closeAllyEquipment=window.closeAllyEquipmentManager;
   window.openAllyEquipmentManager=slot=>{managedAlly={slot:Number(slot),identity:_findAlly(slot)?.enSeed};return openAllyEquipment(slot);};
