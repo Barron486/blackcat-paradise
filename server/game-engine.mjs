@@ -90,6 +90,7 @@ export class HeadlessGame {
     if(Object.values(given).reduce((a,b)=>a+b,0) !== base.pts) throw new Error(`必須分配全部 ${base.pts} 點創角點數`);
     const raw = `${['female','f'].includes(gender) ? 'f' : 'm'}_${({illusion:'illusionist',dragon:'Dknight'})[classId]||classId}`;
     this.run('document.getElementById("create-classic-toggle").checked=__args.classicMode===true;selectClass(__args.raw); document.getElementById("creation-name").value = __args.name; for(const [key,count] of Object.entries(__args.allocation)) for(let i=0;i<count;i++) adjStat(key,1); startGame();', {raw,allocation:given,name:roleName,classicMode});
+    this.run('auditReset();');
     this.save();
     this.captureBattle();
     return this.status();
@@ -102,6 +103,7 @@ export class HeadlessGame {
     this.run('currentSlot = __args;{const travel=changeMap;try{changeMap=function(){};loadGame();}finally{changeMap=travel;}}',this.slot);
     // Loading a server save must never revive, heal, or reroll a live encounter.
     this.adopt(doc);
+    this.run('auditReset();');
     this.run('syncMapSelectors();if(DB.towns[mapState.current]&&!player.dead)mercExpClaimPending();');
     // The original loader revives ordinary deaths in town; GM death must remain enforced.
     this.run('gmApplyTeleport(); if(player._gmDead){ player.dead=true; player.hp=0; }');
@@ -110,7 +112,9 @@ export class HeadlessGame {
   }
 
   adopt(doc) {
+    const previousMap=this.run('mapState.current');
     this.run('player=__args.p;mapState=__args.ms;if(__args._serverState)Object.assign(state,__args._serverState);state.ticks=__args.ticks||0;state.ff=false;state.ffSmall=false;state.inTick=false;state.running=true;_roleBindRuntime();pvpServerRestore(__args._serverPvp);gmApplyTeleport();calcStats();',plain(doc));
+    if(this.run('mapState.current')!==previousMap)this.run('auditReset();');
     this.captureBattle();
   }
 
@@ -125,6 +129,8 @@ export class HeadlessGame {
     // Persistent vitals/settings are already in the roster bucket; send only live effects here.
     return plain(this.run('petsOutList().map(p=>({uid:p.uid,_statuses:p._statuses||{},_hardenDr:p._hardenDr||0,_hardenUntil:p._hardenUntil||0,_reviveGuardUntil:p._reviveGuardUntil||0}))'));
   }
+
+  audit() { return plain(this.run('auditSnapshot()')); }
 
   step(ticks = 1, endTime = Date.now(), {status=true} = {}) {
     if(!Number.isInteger(ticks) || ticks < 0 || ticks > 36000) throw new Error('tick 數量須為 0–36000');
@@ -211,6 +217,7 @@ export class HeadlessGame {
           if(DB.skills[__args.skillId]?.type==='manual') { const before=player.manualCd[__args.skillId]||0;manualCast(__args.skillId);if((player.manualCd[__args.skillId]||0)<=before) throw new Error('目前無法施放此技能'); }
           else if(!castSkill(__args.skillId)) throw new Error('目前無法施放此技能');`,args); break;
       case 'settings': this.updateSettings(args.values || args); break;
+      case 'audit-reset': this.run('auditReset();'); break;
       case 'shop': {
         if(!Number.isInteger(args.qty) || args.qty < 1 || args.qty > 10000) throw new Error('購買數量不合法');
         const offered = this.shopInventory(args.npcId).find(item=>item.id===args.itemId);

@@ -1,4 +1,4 @@
-let _audit = { start: Date.now(), gold0: 0, exp: 0, kills: 0, scrollWpn: 0, scrollArm: 0, watch: [], watchCnt: {} };
+let _audit = { start: Date.now(), gold0: 0, exp: 0, kills: 0, scrollWpn: 0, scrollArm: 0, drops: {}, watch: [], watchCnt: {} };
 let _auditView = 'stats';   // 'stats' = 本圖效率統計；'drops' = 本圖掉落物品
 const AUDIT_WATCH_KEY = 'lineage_idle_audit_watch';
 function saveAuditWatch() { try { localStorage.setItem(AUDIT_WATCH_KEY, JSON.stringify(_audit.watch)); } catch(e) {} }
@@ -74,11 +74,12 @@ function _trollDefeatEnding() {
 function auditReset() {
     _audit.start = Date.now();
     _audit.gold0 = (typeof player !== 'undefined' && player) ? (player.gold || 0) : 0;
-    _audit.exp = 0; _audit.kills = 0; _audit.scrollWpn = 0; _audit.scrollArm = 0;
+    _audit.exp = 0; _audit.kills = 0; _audit.scrollWpn = 0; _audit.scrollArm = 0; _audit.drops = {};
     _audit.watch.forEach(t => _audit.watchCnt[t] = 0);
     if (typeof _dpsReset === 'function') _dpsReset();   // 🎯 DPS 統計同步歸零（換地圖/重置）
     renderAuditTab();
 }
+function auditRequestReset() { auditReset(); }
 function auditTrackKill(mob) {
     if (!mob || typeof getExpGainMult !== 'function') return;
     // 🪆 必須乘上魔法娃娃 expBonus%（與經驗條實際入帳的 :318-319 同口徑），否則統計頁的「累積經驗／經驗每10分」會系統性低報最多 10%。
@@ -91,12 +92,75 @@ function auditTrackKill(mob) {
 }
 function auditTrackGain(res) {
     if (!res || !res.id || typeof DB === 'undefined' || !DB.items[res.id]) return;
+    // 本圖效率只計算怪物實際掉落；購買、製作、兌換與 GM 發放不應混入狩獵成果。
+    if (typeof _lootMobInfo === 'undefined' || !_lootMobInfo) return;
     let nm = DB.items[res.id].n || '';
     let amt = Number(res.cnt) || 1;
+    if (!_audit.drops) _audit.drops = {};
+    _audit.drops[res.id] = (_audit.drops[res.id] || 0) + amt;
     if (nm.includes('武器施法的卷軸')) _audit.scrollWpn += amt;   // 一般＋祝福的對武器施法卷軸
     else if (nm.includes('盔甲施法的卷軸')) _audit.scrollArm += amt;   // 一般＋祝福的對盔甲施法卷軸
     let lo = nm.toLowerCase();
     _audit.watch.forEach(t => { if (lo.includes(t.toLowerCase())) _audit.watchCnt[t] = (_audit.watchCnt[t] || 0) + amt; });
+}
+function auditSnapshot() {
+    let drops = {};
+    Object.entries(_audit.drops || {}).forEach(([id, cnt]) => {
+        cnt = Math.max(0, Math.floor(Number(cnt) || 0));
+        if (cnt && DB.items[id]) drops[id] = cnt;
+    });
+    let allies = {};
+    Object.entries((_dps && _dps.allies) || {}).forEach(([key, rec]) => {
+        if (!rec) return;
+        allies[key] = { name: String(rec.name || '傭兵'), dmg: Math.max(0, Number(rec.dmg) || 0) };
+    });
+    return {
+        map: mapState.current,
+        elapsedMs: Math.max(0, Date.now() - _audit.start),
+        gold0: Number(_audit.gold0) || 0,
+        exp: Math.max(0, Number(_audit.exp) || 0),
+        kills: Math.max(0, Math.floor(Number(_audit.kills) || 0)),
+        scrollWpn: Math.max(0, Math.floor(Number(_audit.scrollWpn) || 0)),
+        scrollArm: Math.max(0, Math.floor(Number(_audit.scrollArm) || 0)),
+        drops,
+        dps: {
+            player: Math.max(0, Number(_dps && _dps.player) || 0),
+            summon: Math.max(0, Number(_dps && _dps.summon) || 0),
+            pet: Math.max(0, Number(_dps && _dps.pet) || 0),
+            allies
+        }
+    };
+}
+function auditAdoptServer(snapshot) {
+    if (!snapshot || snapshot.map !== mapState.current) return;
+    _audit.start = Date.now() - Math.max(0, Number(snapshot.elapsedMs) || 0);
+    _audit.gold0 = Number(snapshot.gold0) || 0;
+    _audit.exp = Math.max(0, Number(snapshot.exp) || 0);
+    _audit.kills = Math.max(0, Math.floor(Number(snapshot.kills) || 0));
+    _audit.scrollWpn = Math.max(0, Math.floor(Number(snapshot.scrollWpn) || 0));
+    _audit.scrollArm = Math.max(0, Math.floor(Number(snapshot.scrollArm) || 0));
+    _audit.drops = {};
+    Object.entries(snapshot.drops || {}).forEach(([id, cnt]) => {
+        cnt = Math.max(0, Math.floor(Number(cnt) || 0));
+        if (cnt && DB.items[id]) _audit.drops[id] = cnt;
+    });
+    _audit.watch.forEach(t => {
+        let needle = t.toLowerCase();
+        _audit.watchCnt[t] = Object.entries(_audit.drops).reduce((sum, [id, cnt]) => {
+            let nm = (DB.items[id] && DB.items[id].n) || '';
+            return sum + (nm.toLowerCase().includes(needle) ? cnt : 0);
+        }, 0);
+    });
+    let src = snapshot.dps || {}, allies = {};
+    Object.entries(src.allies || {}).forEach(([key, rec]) => {
+        if (rec) allies[key] = { name: String(rec.name || '傭兵'), dmg: Math.max(0, Number(rec.dmg) || 0) };
+    });
+    _dps = {
+        player: Math.max(0, Number(src.player) || 0),
+        summon: Math.max(0, Number(src.summon) || 0),
+        pet: Math.max(0, Number(src.pet) || 0),
+        allies
+    };
 }
 function auditAddTarget(name) {
     name = (name || '').trim(); if (!name) return;
@@ -158,7 +222,7 @@ function renderAuditTab() {
             <span class="text-purple-300 font-bold text-base">本圖效率統計</span>
             <div class="flex items-center gap-2">
                 <button onclick="toggleAuditView()" class="btn px-3 py-1 text-xs bg-indigo-900 border-indigo-600 text-indigo-200 font-bold">掉落物</button>
-                <button onclick="auditReset()" class="btn px-3 py-1 text-xs bg-slate-700 border-slate-500 text-slate-200">重置</button>
+                <button onclick="auditRequestReset()" class="btn px-3 py-1 text-xs bg-slate-700 border-slate-500 text-slate-200">重置</button>
             </div>
         </div>
         <div class="text-slate-400 text-xs">已觀測 ${mins.toFixed(2)} 分鐘・擊殺 ${_audit.kills.toLocaleString()}（換地圖會自動重置）</div>
@@ -189,50 +253,21 @@ function renderAuditTab() {
 }
 // 🔧 統計分頁：本圖效率統計 ⇄ 本圖掉落物品 切換
 function toggleAuditView() { _auditView = (_auditView === 'stats') ? 'drops' : 'stats'; try { renderAuditTab(); } catch(e) {} }
-// 彙整某怪物的掉落物 ID（合併一般/黑暗武器/黑暗水晶三表，去重；不顯示機率）
-function _auditMobDrops(mobName) {
-    let ids = [];
-    let push = (tbl) => { if (tbl && tbl[mobName]) tbl[mobName].forEach(e => { let id = Array.isArray(e) ? e[0] : e; if (id && DB.items[id] && ids.indexOf(id) === -1 && !trialDropBlocked(id)) ids.push(id); }); };   // 🔒 非本職試煉兌換道具不顯示
-    if (typeof MOB_DROPS !== 'undefined') push(MOB_DROPS);
-    if (typeof DARK_WEAPON_DROPS !== 'undefined') push(DARK_WEAPON_DROPS);
-    if (typeof DARK_CRYSTAL_DROPS !== 'undefined') push(DARK_CRYSTAL_DROPS);
-    if (typeof DRAGON_DROPS !== 'undefined') push(DRAGON_DROPS);   // 🐉 龍騎士掉落表全職可掉（書板/鎖鏈劍）；妖魔搜索文件等試煉道具由 push 內 trialDropBlocked 對非龍騎士隱藏
-    if (typeof WARRIOR_DROPS !== 'undefined') push(WARRIOR_DROPS);   // ⚔️ 戰士技能印記掉落表（全職可掉）
-    if (typeof MEM_DROPS !== 'undefined') push(MEM_DROPS);   // 🔮 記憶水晶掉落表（全職可掉）
-    return ids;
-}
 function renderAuditDrops(el) {
-    let pool = (typeof DB !== 'undefined' && DB.maps && typeof mapState !== 'undefined') ? (DB.maps[mapState.current] || null) : null;
-    let body;
-    if (!pool || !pool.length) {
-        body = '<div class="text-slate-500 text-sm">目前地圖沒有怪物掉落資料。</div>';
-    } else {
-        // 🔧 依怪物等級由低到高排序（同級維持原出現順序）
-        let sorted = pool.slice().sort((a, b) => ((DB.mobs[a] && DB.mobs[a].lv) || 0) - ((DB.mobs[b] && DB.mobs[b].lv) || 0));
-        body = sorted.map(mid => {
-            let mob = DB.mobs[mid]; if (!mob) return '';
-            let drops = _auditMobDrops(mob.n);
-            // 🦊 v3.5.4 變身鏈頭目（玉藻→九尾→殺生石）：後續階不在出怪池無自己的列→掉落物併入鏈根（玉藻）顯示（實際掉落也確實由打倒最終階獲得）
-            let _seen = { [mid]: 1 }, _t = mob.transformTo;
-            while (_t && DB.mobs[_t] && !_seen[_t]) { _seen[_t] = 1; _auditMobDrops(DB.mobs[_t].n).forEach(id => { if (drops.indexOf(id) === -1) drops.push(id); }); _t = DB.mobs[_t].transformTo; }
-            let dropHtml = (typeof gmMonsterDropHtml==='function') ? gmMonsterDropHtml(mob.n) : drops.length
-                ? drops.map(id => `<span class="${getItemColor({ id })}">${DB.items[id].n}</span>`).join('、')
-                : '<span class="text-slate-500">（無掉落物）</span>';
-            let _nameCls = mob.boss ? 'text-orange-400' : getMobColor(mob.lv);   // 🔧 BOSS：橘金色標註（不加呼吸光暈）
-            return `<div class="bg-slate-800/60 rounded p-2">
-                <div class="font-bold ${_nameCls} mb-1">${mob.boss ? '👑 ' : ''}${mob.n} <span class="text-slate-500 text-xs">Lv.${mob.lv}</span></div>
-                <div class="text-xs leading-relaxed">${dropHtml}</div>
-            </div>`;
-        }).join('');
-    }
+    let rows = Object.entries(_audit.drops || {})
+        .filter(([id, cnt]) => DB.items[id] && cnt > 0)
+        .sort((a, b) => b[1] - a[1] || DB.items[a[0]].n.localeCompare(DB.items[b[0]].n, 'zh-Hant'));
+    let total = rows.reduce((sum, row) => sum + row[1], 0);
+    let body = rows.length ? rows.map(([id, cnt]) => `<div class="flex items-center justify-between gap-3 bg-slate-800/60 rounded px-3 py-2">
+            <span class="${getItemColor({ id })} font-bold">${DB.items[id].n}</span>
+            <span class="text-emerald-300 font-bold">${cnt.toLocaleString()} 個</span>
+        </div>`).join('') : '<div class="text-slate-500 text-sm bg-slate-800/40 rounded p-4 text-center">本次觀測尚未取得怪物掉落物。</div>';
     el.innerHTML = `<div class="flex flex-col gap-3 text-sm">
         <div class="flex items-center justify-between">
-            <span class="text-purple-300 font-bold text-base">本圖掉落物品</span>
+            <span class="text-purple-300 font-bold text-base">本圖實際掉落統計</span>
             <button onclick="toggleAuditView()" class="btn px-3 py-1 text-xs bg-indigo-900 border-indigo-600 text-indigo-200 font-bold">統計表</button>
         </div>
-        <div class="text-slate-400 text-xs">${gmWorld.showDropRates?'機率為單次基礎掉率 × 世界倍率；隊伍、裝備及任務條件另計。互斥掉落池超過 100% 時按權重分配。':'目前地圖出沒的怪物與其掉落物品。'}</div>
-        <div class="loot-color-key"><span class="loot-name-legend">● 傳說裝備</span><span class="loot-name-relic">● 遺物裝備</span><span class="loot-name-rare">● 極低掉率裝備</span></div>
-        <div class="text-slate-400 text-xs">僅裝備標色；傳說／遺物優先，其餘依該怪物設定基礎掉率 ≤ 0.01% 標為紫色。</div>
+        <div class="text-slate-400 text-xs">觀測期間怪物實際掉落共 ${total.toLocaleString()} 個、${rows.length.toLocaleString()} 種；購買、製作、兌換與 GM 發放不列入。</div>
         ${body}
     </div>`;
 }

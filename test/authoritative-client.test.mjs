@@ -78,6 +78,34 @@ test('periodic browser polling installs and renders one snapshot only once',asyn
   assert.equal(squads,1,'one state response should refresh the adopted companion roster once');
 });
 
+test('map efficiency adopts server experience, scroll drops, DPS and every actual dropped item',async t=>{
+  const {w,engine,authority,user,requests}=await fixture(t);
+  const runtime=authority.runtimes.get(user.id);
+  runtime.engine.run(`auditReset();
+    _audit.exp=4321;_audit.kills=7;
+    _lootMobInfo=null;auditTrackGain({id:'scroll_weapon',cnt:9});
+    _lootMobInfo={n:'測試怪物',lv:1,boss:false};auditTrackGain({id:'scroll_weapon',cnt:2});auditTrackGain({id:'potion_heal',cnt:5});_lootMobInfo=null;
+    _dps.player=1200;_dps.summon=300;_dps.pet=100;_dps.allies['2']={name:'測試傭兵',dmg:400};`);
+  await w.CloudStore.flush();
+  const stats=JSON.parse(engine.run('JSON.stringify({audit:_audit,dps:_dps})'));
+  assert.equal(stats.audit.exp,4321);assert.equal(stats.audit.kills,7);
+  assert.equal(stats.audit.scrollWpn,2,'non-monster item gains stay out of map drop statistics');
+  assert.deepEqual(stats.audit.drops,{scroll_weapon:2,potion_heal:5});
+  assert.equal(stats.dps.player,1200);assert.equal(stats.dps.summon,300);assert.equal(stats.dps.pet,100);
+  assert.equal(stats.dps.allies['2'].dmg,400);
+
+  w.document.getElementById('tab-audit').classList.remove('hidden');
+  engine.run("_auditView='drops';renderAuditTab();");
+  assert.match(w.document.getElementById('tab-audit').textContent,/本圖實際掉落統計/);
+  assert.match(w.document.getElementById('tab-audit').textContent,/對武器施法的卷軸\s*2 個/);
+  assert.match(w.document.getElementById('tab-audit').textContent,/紅色藥水\s*5 個/);
+
+  w.auditRequestReset();await w.CloudStore.flush();
+  const reset=runtime.engine.audit();
+  assert.equal(reset.exp,0);assert.equal(reset.scrollWpn,0);assert.deepEqual(reset.drops,{});
+  assert.ok(requests.some(({body})=>body?.op==='action'&&body.args.name==='audit-reset'));
+});
+
 test('item dialogs open on the browser and retry controlled transformation and box opening only once',async t=>{
   const {w,engine,authority,user,requests,lose}=await fixture(t);authority.clock=()=>0;
   const r=authority.runtimes.get(user.id);r.anchor=0;

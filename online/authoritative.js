@@ -29,7 +29,7 @@ function start(){
   for(const name of ['tick','gameLoop','startGameTimers','settleBackgroundMs','queueCatchupMs','_resumeIncrementalBackground'])window[name]=()=>{};
   window.saveGame=()=>true;
   cloud.serverNow=()=>Date.now()+offset;
-  function render(view,initial=false,packet=null,values={},petState){
+  function render(view,initial=false,packet=null,values={},petState,audit){
     if(!view)return;
     if(initial){_respec=null;for(const id of ['poly-modal','osiris-box-modal','soul-orb-modal'])document.getElementById(id)?.classList.add('hidden');document.getElementById('summon-select-overlay')?.remove();}
     const oldMap=typeof mapState==='undefined'?null:mapState.current;
@@ -37,6 +37,7 @@ function start(){
     const draft=!initial&&_asBackup?{autoSellRules:player.autoSellRules,autoSellOn:player.autoSellOn,autoSellGlobal:player.autoSellGlobal}:null;
     player=view.p;mapState=view.ms;state.ticks=view.ticks;state.running=!player.dead;
     petAdoptServerRoster(values,petState);
+    if(typeof window.auditAdoptServer==='function')window.auditAdoptServer(audit);
     const journey=view._serverState||docAt(active.slot)?._serverState||{};
     for(const [key,fallback]of Object.entries(journeyDefaults))state[key]=journey[key]??fallback;
     pvpServerRestore(view._serverPvp||docAt(active.slot)?._serverPvp);
@@ -72,7 +73,7 @@ function start(){
       const initial=!active||active.epoch!==result.game.epoch||document.getElementById('game-screen').classList.contains('hidden');
       active={slot:result.game.slot,epoch:result.game.epoch};
       if(logEpoch!==active.epoch){lastLog=0;logEpoch=active.epoch;}
-      render(result.game.view||docAt(active.slot),initial,result.game.battle,snapshot.values,result.game.petState);
+      render(result.game.view||docAt(active.slot),initial,result.game.battle,snapshot.values,result.game.petState,result.game.audit);
       feed.open(active);
       if((result.game.logs?.at(-1)?.id||0)<lastLog)lastLog=0;
       for(const entry of result.game.logs||[])if(entry.id>lastLog){
@@ -105,6 +106,7 @@ function start(){
   const action=(name,params={})=>{const target=active&&{...active};return command(()=>request('action',{name,params},target));};
   cloud.action=action;
   const fire=(name,params)=>{void action(name,params).catch(()=>{});};
+  window.auditRequestReset=()=>fire('audit-reset');
   async function poll(){
     if(!cloud.ready||stopped||cloud.marketPending||cloud.shopPending)return;
     const controller=new AbortController();pollController=controller;
