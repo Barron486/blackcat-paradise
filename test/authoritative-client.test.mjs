@@ -78,7 +78,7 @@ test('periodic browser polling installs and renders one snapshot only once',asyn
   assert.equal(squads,1,'one state response should refresh the adopted companion roster once');
 });
 
-test('map efficiency adopts server experience, scroll drops, DPS and every actual dropped item',async t=>{
+test('map efficiency adopts server experience, scroll drops and DPS while retaining the map loot catalog',async t=>{
   const {w,engine,authority,user,requests}=await fixture(t);
   const runtime=authority.runtimes.get(user.id);
   runtime.engine.run(`auditReset();
@@ -95,10 +95,9 @@ test('map efficiency adopts server experience, scroll drops, DPS and every actua
   assert.equal(stats.dps.allies['2'].dmg,400);
 
   w.document.getElementById('tab-audit').classList.remove('hidden');
-  engine.run("_auditView='drops';renderAuditTab();");
-  assert.match(w.document.getElementById('tab-audit').textContent,/本圖實際掉落統計/);
-  assert.match(w.document.getElementById('tab-audit').textContent,/對武器施法的卷軸\s*2 個/);
-  assert.match(w.document.getElementById('tab-audit').textContent,/紅色藥水\s*5 個/);
+  engine.run("mapState.current='training';_auditView='drops';renderAuditTab();");
+  assert.match(w.document.getElementById('tab-audit').textContent,/本圖掉落物品/);
+  assert.doesNotMatch(w.document.getElementById('tab-audit').textContent,/觀測期間怪物實際掉落/);
 
   w.auditRequestReset();await w.CloudStore.flush();
   const reset=runtime.engine.audit();

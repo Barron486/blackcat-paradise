@@ -253,21 +253,50 @@ function renderAuditTab() {
 }
 // 🔧 統計分頁：本圖效率統計 ⇄ 本圖掉落物品 切換
 function toggleAuditView() { _auditView = (_auditView === 'stats') ? 'drops' : 'stats'; try { renderAuditTab(); } catch(e) {} }
+// 彙整某怪物的掉落物 ID（合併一般/黑暗武器/黑暗水晶三表，去重；不顯示機率）
+function _auditMobDrops(mobName) {
+    let ids = [];
+    let push = (tbl) => { if (tbl && tbl[mobName]) tbl[mobName].forEach(e => { let id = Array.isArray(e) ? e[0] : e; if (id && DB.items[id] && ids.indexOf(id) === -1 && !trialDropBlocked(id)) ids.push(id); }); };   // 🔒 非本職試煉兌換道具不顯示
+    if (typeof MOB_DROPS !== 'undefined') push(MOB_DROPS);
+    if (typeof DARK_WEAPON_DROPS !== 'undefined') push(DARK_WEAPON_DROPS);
+    if (typeof DARK_CRYSTAL_DROPS !== 'undefined') push(DARK_CRYSTAL_DROPS);
+    if (typeof DRAGON_DROPS !== 'undefined') push(DRAGON_DROPS);   // 🐉 龍騎士掉落表全職可掉（書板/鎖鏈劍）；妖魔搜索文件等試煉道具由 push 內 trialDropBlocked 對非龍騎士隱藏
+    if (typeof WARRIOR_DROPS !== 'undefined') push(WARRIOR_DROPS);   // ⚔️ 戰士技能印記掉落表（全職可掉）
+    if (typeof MEM_DROPS !== 'undefined') push(MEM_DROPS);   // 🔮 記憶水晶掉落表（全職可掉）
+    return ids;
+}
 function renderAuditDrops(el) {
-    let rows = Object.entries(_audit.drops || {})
-        .filter(([id, cnt]) => DB.items[id] && cnt > 0)
-        .sort((a, b) => b[1] - a[1] || DB.items[a[0]].n.localeCompare(DB.items[b[0]].n, 'zh-Hant'));
-    let total = rows.reduce((sum, row) => sum + row[1], 0);
-    let body = rows.length ? rows.map(([id, cnt]) => `<div class="flex items-center justify-between gap-3 bg-slate-800/60 rounded px-3 py-2">
-            <span class="${getItemColor({ id })} font-bold">${DB.items[id].n}</span>
-            <span class="text-emerald-300 font-bold">${cnt.toLocaleString()} 個</span>
-        </div>`).join('') : '<div class="text-slate-500 text-sm bg-slate-800/40 rounded p-4 text-center">本次觀測尚未取得怪物掉落物。</div>';
+    let pool = (typeof DB !== 'undefined' && DB.maps && typeof mapState !== 'undefined') ? (DB.maps[mapState.current] || null) : null;
+    let body;
+    if (!pool || !pool.length) {
+        body = '<div class="text-slate-500 text-sm">目前地圖沒有怪物掉落資料。</div>';
+    } else {
+        // 🔧 依怪物等級由低到高排序（同級維持原出現順序）
+        let sorted = pool.slice().sort((a, b) => ((DB.mobs[a] && DB.mobs[a].lv) || 0) - ((DB.mobs[b] && DB.mobs[b].lv) || 0));
+        body = sorted.map(mid => {
+            let mob = DB.mobs[mid]; if (!mob) return '';
+            let drops = _auditMobDrops(mob.n);
+            // 🦊 v3.5.4 變身鏈頭目（玉藻→九尾→殺生石）：後續階不在出怪池無自己的列→掉落物併入鏈根（玉藻）顯示（實際掉落也確實由打倒最終階獲得）
+            let _seen = { [mid]: 1 }, _t = mob.transformTo;
+            while (_t && DB.mobs[_t] && !_seen[_t]) { _seen[_t] = 1; _auditMobDrops(DB.mobs[_t].n).forEach(id => { if (drops.indexOf(id) === -1) drops.push(id); }); _t = DB.mobs[_t].transformTo; }
+            let dropHtml = (typeof gmMonsterDropHtml==='function') ? gmMonsterDropHtml(mob.n) : drops.length
+                ? drops.map(id => `<span class="${getItemColor({ id })}">${DB.items[id].n}</span>`).join('、')
+                : '<span class="text-slate-500">（無掉落物）</span>';
+            let _nameCls = mob.boss ? 'text-orange-400' : getMobColor(mob.lv);   // 🔧 BOSS：橘金色標註（不加呼吸光暈）
+            return `<div class="bg-slate-800/60 rounded p-2">
+                <div class="font-bold ${_nameCls} mb-1">${mob.boss ? '👑 ' : ''}${mob.n} <span class="text-slate-500 text-xs">Lv.${mob.lv}</span></div>
+                <div class="text-xs leading-relaxed">${dropHtml}</div>
+            </div>`;
+        }).join('');
+    }
     el.innerHTML = `<div class="flex flex-col gap-3 text-sm">
         <div class="flex items-center justify-between">
-            <span class="text-purple-300 font-bold text-base">本圖實際掉落統計</span>
+            <span class="text-purple-300 font-bold text-base">本圖掉落物品</span>
             <button onclick="toggleAuditView()" class="btn px-3 py-1 text-xs bg-indigo-900 border-indigo-600 text-indigo-200 font-bold">統計表</button>
         </div>
-        <div class="text-slate-400 text-xs">觀測期間怪物實際掉落共 ${total.toLocaleString()} 個、${rows.length.toLocaleString()} 種；購買、製作、兌換與 GM 發放不列入。</div>
+        <div class="text-slate-400 text-xs">${gmWorld.showDropRates?'機率為單次基礎掉率 × 世界倍率；隊伍、裝備及任務條件另計。互斥掉落池超過 100% 時按權重分配。':'目前地圖出沒的怪物與其掉落物品。'}</div>
+        <div class="loot-color-key"><span class="loot-name-legend">● 傳說裝備</span><span class="loot-name-relic">● 遺物裝備</span><span class="loot-name-rare">● 極低掉率裝備</span></div>
+        <div class="text-slate-400 text-xs">僅裝備標色；傳說／遺物優先，其餘依該怪物設定基礎掉率 ≤ 0.01% 標為紫色。</div>
         ${body}
     </div>`;
 }
