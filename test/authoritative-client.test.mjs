@@ -64,6 +64,20 @@ async function fixture(t,character={classId:'mage',name:'伺服器角色',alloca
   w.loadGame();await w.CloudStore.flush();
   return {w,engine,service,user,authority,requests,lose:()=>{loseNext=true;}};
 }
+
+test('periodic browser polling installs and renders one snapshot only once',async t=>{
+  const {w}=await fixture(t);
+  let resets=0,updates=0,squads=0;
+  const reset=w.CloudStore.reset.bind(w.CloudStore),update=w.updateUI,squad=w.renderSquadPanel;
+  w.CloudStore.reset=snapshot=>{resets++;return reset(snapshot);};
+  w.updateUI=(...args)=>{updates++;return update(...args);};
+  w.renderSquadPanel=(...args)=>{squads++;return squad(...args);};
+  await w.CloudStore.flush();
+  assert.equal(resets,1,'one state response should install its snapshot once');
+  assert.equal(updates,1,'one state response should perform one full UI refresh');
+  assert.equal(squads,1,'one state response should refresh the adopted companion roster once');
+});
+
 test('item dialogs open on the browser and retry controlled transformation and box opening only once',async t=>{
   const {w,engine,authority,user,requests,lose}=await fixture(t);authority.clock=()=>0;
   const r=authority.runtimes.get(user.id);r.anchor=0;

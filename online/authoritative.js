@@ -41,7 +41,12 @@ function start(){
     for(const [key,fallback]of Object.entries(journeyDefaults))state[key]=journey[key]??fallback;
     pvpServerRestore(view._serverPvp||docAt(active.slot)?._serverPvp);
     if(draft)Object.assign(player,draft);
-    calcStats(); // Restore derived helpers (e.g. MP costs), which are not JSON values.
+    // Restore derived helpers (e.g. MP costs), which are not JSON values.  Do the
+    // data-only recompute here: calcStats() also calls updateUI(), and this render
+    // pass owns the single UI refresh below.
+    recomputeStats();
+    applyElfBorder();
+    applyDollCursor();
     _roleBindRuntime();
     if(initial||oldMap!==mapState.current){
       syncMapSelectors();applyAreaBackground();
@@ -55,6 +60,8 @@ function start(){
     document.getElementById('btn-revive-inplace')?.classList.toggle('hidden',!player.dead||!!player._gmDead);
     if(initial||oldMap!==mapState.current)battle.clear();
     const playing=battle.receive(packet,{reset:initial});
+    // Companion adoption has its own live roster inputs, so retain one explicit
+    // squad refresh after the general UI pass.
     updateUI();if(!playing)renderMobs();renderTabs();renderSquadPanel();pvpServerRender();
   }
   function adopt(result){
@@ -74,8 +81,9 @@ function start(){
         lastLog=entry.id;
       }
     }else if(active){const doc=docAt(active.slot);if(roleEpoch(doc)===active.epoch)render(doc,false,null,snapshot.values);}
-    // Upstream rendering may write presentation caches; none are submitted to the server.
-    cloud.reset(snapshot);status.textContent='伺服器已結算 · '+new Date(snapshot.serverTime).toLocaleTimeString('zh-TW');status.classList.remove('cloud-error');
+    // Upstream rendering may mutate its decoded presentation object. The cloud
+    // snapshot remains the server-owned string data installed at the start.
+    status.textContent='伺服器已結算 · '+new Date(snapshot.serverTime).toLocaleTimeString('zh-TW');status.classList.remove('cloud-error');
   }
   cloud.reconcile=adopt;cloud.adoptNames=adopt;
   async function request(op,args={},target=active,signal){
