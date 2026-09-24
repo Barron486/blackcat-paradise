@@ -58,7 +58,7 @@ export class HeadlessGame {
   }
 
   create({classId,name,allocation = {},gender = 'male'} = {}) {
-    if(!['royal','mage','elf','knight'].includes(classId)) throw new Error('不支援的職業');
+    if(!['royal','mage','elf','knight','dark','illusion','dragon','warrior'].includes(classId)) throw new Error('不支援的職業');
     if(!['male','female','m','f'].includes(gender)) throw new Error('不支援的性別');
     const roleName = String(name || '').trim();
     if(!roleName || roleName.length > 12 || /[\x00-\x1f\x7f<>&"']/.test(roleName)) throw new Error('角色名稱需為 1–12 個有效字元');

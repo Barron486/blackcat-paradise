@@ -1493,6 +1493,7 @@ function executeAutoSafeEnhance(targetUid, isEq, scrollId, goal) {
 
     if (!target) return;
     target.en = Number(target.en) || 0;   // 🔧 舊存檔 en 可能為 undefined：統一正規化為有效數字
+    let startEn = target.en;
 
     let d = DB.items[target.id];
     let safe = d.safe || 0;
@@ -1555,6 +1556,7 @@ function executeAutoSafeEnhance(targetUid, isEq, scrollId, goal) {
         let prefix = hadRisk ? `<span class="text-green-300 font-bold">強化成功！</span>` : '';
         logSys(`${prefix}消耗了 ${used} 張 ${scrollName}，<span class="text-yellow-400 font-bold">+${target.en} ${d.n} 發出銀色的光芒。</span>`);
     }
+    if (!destroyed && d.type === 'wpn' && target.en > Math.max(9, startEn) && typeof announceWeaponMilestone === 'function') announceWeaponMilestone(target, 'enhance');
 
     calcStats();
     renderTabs();
@@ -1704,7 +1706,9 @@ function runQuickEnhance(type) {
             usedTotal += r.used;
             if (r.destroyed) { destroyed++; continue; }   // 爆裝：不保留
             if (r.en >= goal) reached++; else partial++;  // 抵達 or 卷軸不足停在中途
-            survivors.push({ ...entry, cnt: 1, uid: uid(), en: r.en, lock: false });
+            let survivor = { ...entry, cnt: 1, uid: uid(), en: r.en, lock: false };
+            if (d.type === 'wpn' && r.en > Math.max(9, Number(entry.en) || 0) && typeof announceWeaponMilestone === 'function') announceWeaponMilestone(survivor, 'enhance');
+            survivors.push(survivor);
         }
     });
 
@@ -2657,6 +2661,38 @@ function _squadSkillField(a, kind, label, setting, method, value) {
 function _squadPercentField(a, label, setting, method, value, condition, hint) {
     return `<label class="squad-setting-field"><span>${label}</span><span class="squad-percent-control"><span>${condition}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-ally-slot="${a._slot}" data-ally-setting="${setting}" aria-label="${a._allyName} ${label}" value="${value}" oninput="${method}('${a._slot}',this.value)"><span>%</span></span><small>${hint}</small></label>`;
 }
+// 傭兵變身選單必須以「傭兵自身」的等級、武器與變形控制戒指判定，不能讀隊長的 player。
+function _allyHasPolyRing(a) {
+    let eq = (a && a.eq) || {}, inv = (a && a.inv) || [];
+    return ['ring1','ring2','ring3','ring4'].some(k => eq[k] && eq[k].id === 'acc_117')
+        || inv.some(i => i && i.id === 'acc_117' && (i.cnt || 0) > 0)
+        || Object.values(eq).some(i => i && i.id === 'relic_raccoon_leaf');
+}
+function _allyPolyMatchesWeapon(a, form) {
+    if (form && (form.keepClassAppearance || form.classMorph)) return true;
+    let w = a && a.eq && a.eq.wpn ? DB.items[a.eq.wpn.id] : null;
+    let ranged = !!(w && (w.ranged || w.isBow));
+    return !!(form && RANGED_POLY_FORMS.has(form.n)) === ranged;
+}
+function _allyPolyOptions(a) {
+    let current = a._mercPolyChoice || ((a._mercPolyAuto && a.poly && a.poly.n) ? a.poly.n : '');
+    let list = [];
+    for (const tier of POLY_TIERS) for (const form of tier.forms) {
+        if ((a.lv || 1) >= form.lv && _allyPolyMatchesWeapon(a, form)) list.push({ form, color:tier.color });
+    }
+    if (_allyHasPolyRing(a)) for (const form of CONTROL_ONLY_POLY_FORMS) {
+        if ((a.lv || 1) >= form.lv && _allyPolyMatchesWeapon(a, form)) list.push({ form, color:form.c || 'text-yellow-400' });
+    }
+    list.sort((x, y) => (y.form.lv - x.form.lv) || ((x.form.atk || 0) - (y.form.atk || 0)) || x.form.n.localeCompare(y.form.n, 'zh-Hant'));
+    let opts = '<option value=""' + (!current ? ' selected' : '') + '>不變身</option>';
+    opts += list.map(({form}) => `<option value="${form.n}"${current === form.n ? ' selected' : ''}>Lv.${form.lv} ${form.n}</option>`).join('');
+    return opts;
+}
+function _squadPolyField(a) {
+    let active = a._mercPolyAuto && a.poly && a.poly.n && (a.buffs && a.buffs.poly > 0);
+    let note = active ? `目前：${a.poly.n}（自動續用）` : '選定後會自動購買變形卷軸維持；不變身則停止續用。';
+    return `<section class="squad-config-section"><h4>變身</h4><label class="squad-setting-field"><span>傭兵變身</span><select data-ally-slot="${a._slot}" data-ally-setting="poly" aria-label="${a._allyName} 傭兵變身" onchange="setAllyPoly('${a._slot}',this.value)">${_allyPolyOptions(a)}</select><small>${note}</small></label></section>`;
+}
 function renderAllySettings(a) {
     return `<section class="squad-config-card" data-ally-card="${a._slot}">
         <header class="squad-config-heading"><strong>${a._allyName}</strong><span>Lv.${a.lv||1}</span></header>
@@ -2673,6 +2709,7 @@ function renderAllySettings(a) {
             ${_squadPercentField(a,'治癒血量門檻','heal-hp','setAllyHealHp',a._healHpPct??70,'HP 低於','隊伍血量低於門檻時施放')}
         </section>
         <section class="squad-config-section">${_squadSkillField(a,'convert','轉換技能','convert','setAllyConvertSkill',a._convertSkill)}</section>
+        ${_squadPolyField(a)}
         ${_allyAutoBuffChips(a)}
     </section>`;
 }
@@ -2681,7 +2718,7 @@ function syncSquadSettings() {
     for (const el of document.querySelectorAll('#squad-tab-skill [data-ally-setting]')) {
         const a = _findAlly(el.dataset.allySlot);
         if (!a || el === document.activeElement || window.CloudStore?.squadEditing?.(el.dataset.allySlot)) continue;
-        const fields = {attack:a._atkSkill||'',heal:a._healSkill||'',convert:a._convertSkill||'',potion:allyPotHpPct(a),'hp-skill':a._hpSkillPct??a._hpSafePct??0,'cast-mp':a._castMpPct??0,'heal-hp':a._healHpPct??70};
+        const fields = {attack:a._atkSkill||'',heal:a._healSkill||'',convert:a._convertSkill||'',poly:a._mercPolyChoice||((a._mercPolyAuto&&a.poly&&a.poly.n)?a.poly.n:''),potion:allyPotHpPct(a),'hp-skill':a._hpSkillPct??a._hpSafePct??0,'cast-mp':a._castMpPct??0,'heal-hp':a._healHpPct??70};
         if (el.type === 'checkbox') el.checked = _mercAutoOn(a,el.dataset.skillId);
         else if (el.value !== String(fields[el.dataset.allySetting])) el.value = String(fields[el.dataset.allySetting]);
     }
@@ -2823,6 +2860,32 @@ function setAllyHealHp(slot, val) { let a = _findAlly(slot); if (a) { a._healHpP
 function setAllyPotHp(slot, val) { let a = _findAlly(slot); if (a) { a._potHpPct = Math.max(0, Math.min(100, parseInt(val) || 0)); saveGame(); } }   // 🍶 v2.6.4 喝藥水門檻（獨立·低於此%→喝隊長藥水；0=關閉）
 function setAllyHpSkill(slot, val) { let a = _findAlly(slot); if (a) { a._hpSkillPct = Math.max(0, Math.min(100, parseInt(val) || 0)); saveGame(); } }   // 🛡️ v2.6.4 停耗HP技門檻（獨立·低於此%→暫停龍騎HP技/轉換技/立方和諧；0=關閉）
 function setAllyCastMp(slot, val) { let a = _findAlly(slot); if (a) { a._castMpPct = Math.max(0, Math.min(100, parseInt(val) || 0)); saveGame(); } }   // 🆕 v2.6.27 施法MP門檻（MP% 高於此才施放攻擊技·0=不限·allyActWithSkillGate 讀 allyCastMpPct）
+// 指定／解除個別傭兵變身。費用與原有自動維持規則一致：從隊長金幣購買變形卷軸，不消耗背包道具。
+function setAllyPoly(slot, name) {
+    let a = _findAlly(slot); if (!a) return;
+    if (!name) {
+        a._mercPolyChoice = ''; a._mercPolyAuto = false; a.poly = null;
+        if (a.buffs) a.buffs.poly = 0;
+        try { _allyLevelRecompute(a); } catch (e) {}
+        try { saveGame(); renderSquadPanel(); } catch (e) {}
+        return;
+    }
+    let found = (typeof findPolyForm === 'function') ? findPolyForm(name) : null;
+    if (!found || (a.lv || 1) < found.form.lv || (found.form.controlOnly && !_allyHasPolyRing(a)) || !_allyPolyMatchesWeapon(a, found.form)) {
+        logSys('<span class="text-red-300">此傭兵目前無法使用該變身。</span>');
+        try { renderSquadPanel(); } catch (e) {}
+        return;
+    }
+    a._mercPolyChoice = name;
+    a.poly = makePolyState(found.form, found.color);
+    a._mercPolyAuto = true;
+    if (!a.buffs) a.buffs = {};
+    a.buffs.poly = 0; // 由既有購買邏輯立即扣金；金幣不足時保留選擇、下次金幣足夠會自動生效。
+    let applied = (typeof allyMaintainPoly === 'function') && allyMaintainPoly(a);
+    try { _allyLevelRecompute(a); } catch (e) {}
+    if (applied) logSys(`<span class="text-emerald-300">協力·${a._allyName} 已設定變身為 ${name}。</span>`);
+    try { saveGame(); _squadSigSkill = ''; renderSquadPanel(); } catch (e) {}
+}
 // 🆕 v3.0.97 逐兵「自動維持」開關（覆寫 _mercAutoOn·存 ally._autoBuff·隨存檔）。關閉 self-buff→立即結束該 buff 並重算（比照玩家取消打勾立即結束）；召喚/HoT/淨化/立方 屬即時或全隊·僅停止再施放不強制解除。
 function setAllyAutoBuff(slot, sid, on) {
     let a = _findAlly(slot); if (!a || !sid) return;

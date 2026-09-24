@@ -11,7 +11,7 @@ import {paths,loadProfile,saveProfile,listProfiles,writeJsonAtomic} from './prof
 
 const ENTRY=fileURLToPath(import.meta.url),ROOT=fileURLToPath(new URL('../',import.meta.url));
 const DEFAULT_SERVER='https://game.barron-ai.com';
-const CLASS_NAMES={royal:'王族',mage:'法師',elf:'妖精',knight:'騎士'};
+const CLASS_NAMES={royal:'王族',mage:'法師',elf:'妖精',knight:'騎士',dark:'黑妖',illusion:'幻術士',dragon:'龍騎士',warrior:'戰士'};
 function readJson(file){try{return JSON.parse(readFileSync(file,'utf8'));}catch{return null;}}
 function alive(pid){if(!Number.isInteger(pid)||pid<1)return false;try{process.kill(pid,0);return true;}catch(e){return e.code==='EPERM';}}
 function seconds(value,label){const n=Number(value);if(!Number.isFinite(n)||n<=0)throw new Error(`${label} 必須為大於 0 的秒數`);return n;}
@@ -99,16 +99,22 @@ const HELP=`黑貓天堂 CLI — 使用原版戰鬥與雲端存檔
   npm run cli -- setting set-hp-pot 70 --profile knight
   npm run cli -- credentials --profile knight
 
-職業：royal 王族、mage 法師、elf 妖精、knight 騎士。
+職業：royal 王族、mage 法師、elf 妖精、knight 騎士、dark 黑妖、illusion 幻術士、dragon 龍騎士、warrior 戰士。
 create 自動產生帳號與密碼；可用 --username、--server 覆寫。
 start 預設持續遊玩；--manual 暫停自動戰鬥；--takeover 明確接管同帳號。
 先 pause 再手動操作可避免自動策略切換地圖。target 設定自動練功地圖。
-credentials 會顯示私密登入資訊，請勿分享輸出。詳細說明見 cli/README.md。
+  accounts status|start|stop [--map zone_04] [--json]
+  diamonds --profile mage [--json]
+  rename --profile mage --slot 1 --new-name 新名稱
+  shop-buy --profile mage --product rename_card
+  clan list|create <名稱>|join <血盟 id> --profile mage
+
+  credentials 會顯示私密登入資訊，請勿分享輸出。詳細說明見 cli/README.md。
 `;
 
 export async function main(argv=process.argv.slice(2)){
   const {values:flags,positionals:args}=parseArgs({args:argv,allowPositionals:true,options:{
-    profile:{type:'string'},class:{type:'string'},username:{type:'string'},name:{type:'string'},server:{type:'string'},duration:{type:'string'},map:{type:'string'},interval:{type:'string'},all:{type:'boolean'},json:{type:'boolean'},manual:{type:'boolean'},takeover:{type:'boolean'},help:{type:'boolean'},
+    profile:{type:'string'},class:{type:'string'},username:{type:'string'},name:{type:'string'},'new-name':{type:'string'},slot:{type:'string'},server:{type:'string'},duration:{type:'string'},map:{type:'string'},interval:{type:'string'},all:{type:'boolean'},json:{type:'boolean'},manual:{type:'boolean'},takeover:{type:'boolean'},help:{type:'boolean'},
   }});
   const [command='help',...rest]=args;
   if(flags.duration)seconds(flags.duration,'duration');
@@ -116,7 +122,7 @@ export async function main(argv=process.argv.slice(2)){
   if(command==='create'){
     const name=required(flags.profile,'--profile'),classId=required(flags.class,'--class');paths(name);
     if(loadProfile(name))throw new Error('Profile 已存在，未覆寫');
-    if(!CLASS_NAMES[classId])throw new Error('職業須為 royal、mage、elf 或 knight');
+    if(!CLASS_NAMES[classId])throw new Error('職業須為 royal、mage、elf、knight、dark、illusion、dragon 或 warrior');
     const username=flags.username||`agent_${classId}_${randomBytes(3).toString('hex')}`,password=randomBytes(24).toString('base64url');
     const characterName=flags.name||`代理${CLASS_NAMES[classId]}`;
     if(characterName.length>20||/[\x00-\x1f<>]/.test(characterName))throw new Error('角色名稱格式不合法');
@@ -134,12 +140,62 @@ export async function main(argv=process.argv.slice(2)){
     const interval=flags.interval?seconds(flags.interval,'interval'):5,deadline=flags.duration?Date.now()+Number(flags.duration)*1000:Infinity;
     do{printStatuses(selected(),flags.json);await delay(interval*1000);}while(Date.now()<deadline);return;
   }
+  if(command==='accounts'){
+    const mode=rest[0]||'status',profiles=listProfiles().map(p=>p.name);
+    if(mode==='status'){printStatuses(profiles.map(getStatus),flags.json);return;}
+    if(!['start','stop'].includes(mode))throw new Error('accounts 須為 status、start 或 stop');
+    const rows=[];
+    for(const profile of profiles){
+      try{rows.push(mode==='start'?await start(profile,flags):await stop(profile));}
+      catch(error){rows.push({profile,status:'error',error:error.message});}
+    }
+    output(rows);return;
+  }
   if(command==='stop'&&flags.all){output(await Promise.all(listProfiles().map(p=>stop(p.name))));return;}
   const name=required(flags.profile,'--profile');paths(name);
   if(command==='start'){output(await start(name,flags));return;}
   if(command==='worker'){const {runWorker}=await import('./worker.mjs');await runWorker(name,{duration:flags.duration?Number(flags.duration):undefined,map:flags.map,manual:flags.manual,takeover:flags.takeover});return;}
   if(command==='stop'){output(await stop(name));return;}
   if(command==='credentials'){const p=loadProfile(name);if(!p)throw new Error('找不到 profile');output({username:p.username,password:p.password,url:`${p.serverUrl}/login`});return;}
+  if(command==='diamonds'){
+    const p=loadProfile(name);if(!p)throw new Error('找不到 profile');
+    const client=new CloudClient({baseUrl:p.serverUrl,session:p.session||undefined});let ownSession=false;
+    try{let info;try{info=await client.shop();}catch(error){if(error.status!==401)throw error;await client.login(p.username,p.password);ownSession=true;info=await client.shop();}
+      output({profile:name,username:p.username,wallet:info.wallet,characters:info.characters,history:info.history});
+    }finally{if(ownSession&&client.authenticated)await client.logout();}
+    return;
+  }
+  if(command==='clan'){
+    const {clans,createClan,joinClan}=await import('./clans.mjs');
+    if(rest[0]==='list')output({clans:clans()});
+    else if(rest[0]==='create')output(createClan(required(rest[1],'血盟名稱'),required(name,'--profile')));
+    else if(rest[0]==='join')output(joinClan(required(rest[1],'血盟 id'),required(name,'--profile')));
+    else throw new Error('用法：clan list|create <名稱>|join <血盟 id> --profile <角色>');
+    return;
+  }
+  if(command==='shop-buy'){
+    const product=required(rest[0]||flags.product,'商品 id');
+    if(!['rename_card','password_card','full_status'].includes(product))throw new Error('不支援的藍鑽商品');
+    const p=loadProfile(name);const client=new CloudClient({baseUrl:p.serverUrl,session:p.session||undefined});let ownSession=false;
+    try{try{output(await client.shopBuy({productId:product,requestId:randomUUID()}));}
+      catch(error){if(error.status!==401)throw error;await client.login(p.username,p.password);ownSession=true;output(await client.shopBuy({productId:product,requestId:randomUUID()}));}}
+    finally{if(ownSession&&client.authenticated)await client.logout();}
+    return;
+  }
+  if(command==='rename'){
+    const slot=Number(required(flags.slot,'--slot')),newName=required(flags['new-name'],'--new-name');
+    if(!Number.isInteger(slot)||slot<1||slot>8)throw new Error('--slot 須為 1 到 8');
+    if(newName.length>12||/[\x00-\x1f<>]/.test(newName))throw new Error('--new-name 格式不合法（最多 12 字）');
+    const current=getStatus(name);if(current.running)throw new Error('更名前請先 stop 該 profile，避免與遊戲程序同時寫入');
+    const p=loadProfile(name);const client=new CloudClient({baseUrl:p.serverUrl,session:p.session||undefined});let ownSession=false;
+    try{let info;try{info=await client.shop();}catch(error){if(error.status!==401)throw error;await client.login(p.username,p.password);ownSession=true;info=await client.shop();}
+      const character=info.characters.find(c=>c.slot===slot);if(!character)throw new Error(`找不到角色欄位 ${slot}`);
+      if(!info.wallet.renameCards)throw new Error('沒有可用更名卡，請先在商店購買更名卡');
+      const result=await client.shopRename({slot,epoch:character.epoch,name:newName,requestId:randomUUID()});
+      output({profile:name,slot,oldName:character.name,newName:result.name,wallet:result.wallet});
+    }finally{if(ownSession&&client.authenticated)await client.logout();}
+    return;
+  }
   if(command==='cloud'){
     const p=loadProfile(name);if(!p)throw new Error('找不到 profile');
     const client=new CloudClient({baseUrl:p.serverUrl,session:p.session||undefined});let ownSession=false;

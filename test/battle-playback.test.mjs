@@ -12,12 +12,12 @@ test('server batches are played at their original tick spacing and duplicate pac
   let time=0;const drawn=[],timeline=new BattleTimeline({now:()=>time,paint:(f,o)=>drawn.push({seq:f.seq,...o})});
   timeline.ingest(packet([frame(0)]));assert.equal(drawn[0].silent,true);
   time=1000;const batch=packet(Array.from({length:10},(_,i)=>frame(i+1)));
-  timeline.ingest(batch);assert.deepEqual(drawn.map(f=>f.seq),[0,1]);
-  timeline.ingest(batch);assert.equal(drawn.length,2);
-  timeline.ingest(packet([frame(0)]));assert.equal(drawn.length,2,'an old response cannot rewind the display');
-  time=1099;timeline.pump();assert.equal(drawn.length,2);
-  time=1100;timeline.pump();assert.equal(drawn.at(-1).seq,2);
-  for(time=1200;time<=1900;time+=100)timeline.pump();
+  timeline.ingest(batch);assert.deepEqual(drawn.map(f=>f.seq),[0],'initial batch waits for the jitter reserve');
+  timeline.ingest(batch);assert.equal(drawn.length,1);
+  timeline.ingest(packet([frame(0)]));assert.equal(drawn.length,1,'an old response cannot rewind the display');
+  time=1399;timeline.pump();assert.equal(drawn.length,1);
+  time=1400;timeline.pump();assert.equal(drawn.at(-1).seq,1);
+  for(time=1500;time<=2300;time+=100)timeline.pump();
   assert.deepEqual(drawn.map(f=>f.seq),Array.from({length:11},(_,i)=>i));
   assert.deepEqual(timeline.cursor(),{stream:'battle-1',seq:10});
 });
@@ -33,17 +33,48 @@ test('map changes, server restarts and background delays discard obsolete animat
   timeline.ingest(packet([frame(4,{map:'town'})],'battle-2'),{hidden:true});assert.equal(drawn.at(-1).silent,true);assert.equal(timeline.queue.length,0);
 });
 
-test('slow foreground packets retain attacks and damage frames instead of repeatedly muting all effects',()=>{
-  let time=0,resets=0;const drawn=[],timeline=new BattleTimeline({now:()=>time,reset:()=>resets++,paint:(f,o)=>drawn.push({seq:f.seq,...o})});
+for(const {name,batch,arrivals} of [
+  {name:'1s SSE with delivery jitter',batch:10,arrivals:[1000,2300,3000,4250,5000,6250]},
+  {name:'2s polling fallback',batch:20,arrivals:[2000,4200,6000,8200,10000,12200]},
+  {name:'3s slow foreground batches',batch:30,arrivals:[3000,6000,9000,12000]},
+])test(`${name} preserves attack spacing across packet boundaries without burst-then-idle cycles`,()=>{
+  let time=0,resets=0,seq=0;const drawn=[];
+  const timeline=new BattleTimeline({now:()=>time,reset:()=>resets++,paint:(f,o)=>{if(!o.silent)drawn.push({seq:f.seq,time});}});
   timeline.ingest(packet([frame(0)]));const initialResets=resets;
-  for(let round=0;round<3;round++){
-    time=4000+round*5000;
-    const start=round*30+1;
-    timeline.ingest(packet(Array.from({length:30},(_,i)=>frame(start+i,{events:[{type:'player',action:'attack'}]}))));
-    const finish=time+1400;for(;time<=finish;time+=50)timeline.pump();
+  for(time=0;time<=arrivals.at(-1)+batch*100+1000;time+=50){
+    if(arrivals.includes(time)){
+      const next=packet(Array.from({length:batch},()=>frame(++seq,{events:[{type:'player',action:'attack'}]})));
+      timeline.ingest(next);timeline.ingest(next);
+    }
+    timeline.pump();
   }
   assert.equal(resets,initialResets,'network jitter must not reset sprite state');
-  assert.equal(drawn.filter(f=>!f.silent).length,90);assert.equal(timeline.queue.length,0);
+  assert.deepEqual(drawn.map(f=>f.seq),Array.from({length:seq},(_,i)=>i+1),'no dropped or repeated attacks');
+  assert.ok(drawn.slice(1).every((f,i)=>f.time-drawn[i].time===100),'playback never speeds up or starves between packets');
+  assert.equal(timeline.queue.length,0);
+});
+
+test('a real outage buffers again without fabricating attacks, and a blocked main thread does not burst queued frames',()=>{
+  let time=0;const drawn=[],timeline=new BattleTimeline({now:()=>time,paint:(f,o)=>{if(!o.silent)drawn.push({seq:f.seq,time});}});
+  timeline.ingest(packet([frame(0)]));
+  time=1000;timeline.ingest(packet([frame(1),frame(2)]));
+  for(time=1400;time<=1500;time+=100)timeline.pump();
+  time=10000;timeline.pump();assert.equal(drawn.length,2,'no server data means no invented combat');
+  timeline.ingest(packet([frame(3),frame(4),frame(5)]));assert.equal(drawn.length,2);
+  time=10400;timeline.pump();assert.equal(drawn.at(-1).seq,3);
+  time=12000;timeline.pump();assert.equal(drawn.at(-1).seq,4);
+  time=12100;timeline.pump();assert.equal(drawn.at(-1).seq,5);
+  assert.equal(timeline.queue.length,0);
+});
+
+test('only an excessive backlog is trimmed and its retained frames still use original tick spacing',()=>{
+  let time=0;const drawn=[],timeline=new BattleTimeline({now:()=>time,paint:(f,o)=>{if(!o.silent)drawn.push({seq:f.seq,time});}});
+  timeline.ingest(packet([frame(0)]));
+  time=10000;timeline.ingest(packet(Array.from({length:90},(_,i)=>frame(i+1))));
+  assert.equal(timeline.queue.length,30);
+  for(time=10400;time<=13300;time+=100)timeline.pump();
+  assert.deepEqual(drawn.map(f=>f.seq),Array.from({length:30},(_,i)=>i+61));
+  assert.ok(drawn.slice(1).every((f,i)=>f.time-drawn[i].time===100));
 });
 
 test('server records attacks and deaths per tick, bounds retention and keeps presentation out of saves',()=>{
@@ -83,16 +114,17 @@ test('browser preserves animation state, paints fatal damage before removing the
   const mob={uid:'mob-1',n:'哥布林',hp:100,curHp:100};
   playback.receive(packet([frame(0,{mobs:[mob]})]));
   time=1000;playback.receive(packet([frame(1,{mobs:[{...mob,curHp:80}],events:[{type:'player',action:'attack'},{type:'mob',uid:mob.uid,action:'attack'}]}),frame(2,{mobs:[{...mob,curHp:60}]})]));
+  time=1400;pump();
   assert.equal(playback.target(0),'mob-1');assert.deepEqual([...w.events],['attack']);
-  time=1100;pump();
+  time=1500;pump();
   assert.deepEqual([...w.painted.at(-1)],[60]);
   assert.equal(w.visuals.at(-1)[0].y,17);assert.equal(w.visuals.at(-1)[0].spawned,true);assert.equal(w.visuals.at(-1)[0].act.t,123);
   const saved=w.eval('JSON.stringify({player,mapState,state})');
-  time=1200;playback.receive(packet([frame(3,{mobs:[null],events:[{type:'kill',mob:{...mob,curHp:-10}}]})]));
+  time=1600;playback.receive(packet([frame(3,{mobs:[null],events:[{type:'kill',mob:{...mob,curHp:-10}}]})]));
   const kill=w.events.find(e=>e.kill);assert.equal(kill.previous,60);assert.deepEqual([...kill.painted],[60]);assert.equal(kill.hp,-10);
   assert.equal(w.eval('JSON.stringify({player,mapState,state})'),saved);
   assert.equal(w.eval('player.gold'),777);assert.equal(w.eval('state.ticks'),99);
-  time=1300;playback.receive(packet([frame(4,{mobs:[null],events:[{type:'kill',index:0,mob:{...mob,uid:'instant-kill',curHp:-50}}]})]));
+  time=1700;playback.receive(packet([frame(4,{mobs:[null],events:[{type:'kill',index:0,mob:{...mob,uid:'instant-kill',curHp:-50}}]})]));
   const instant=w.events.find(e=>e.kill==='instant-kill');assert.equal(instant.previous,100);assert.deepEqual([...instant.painted],[100]);assert.deepEqual([...w.painted.at(-1)],[null]);
   dom.window.close();
 });

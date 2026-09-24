@@ -7,6 +7,10 @@ export const CLASS_PRESETS = Object.freeze({
   mage: preset('mage', '代理法師', { int: 6, wis: 6, con: 4 }), // Original mage creation grants 16 points.
   elf: preset('elf', '代理妖精', { dex: 6, con: 2 }),
   knight: preset('knight', '代理騎士', { str: 2, con: 6 }),
+  dark: preset('dark', '代理黑妖', { str: 4, dex: 4, con: 3 }),
+  illusion: preset('illusion', '代理幻術士', { int: 4, wis: 3, con: 3 }),
+  dragon: preset('dragon', '代理龍騎士', { str: 3, con: 2, dex: 1 }),
+  warrior: preset('warrior', '代理戰士', { str: 3, con: 2 }),
 });
 
 const MAGIC_MASTERY_SKILLS = new Set(['sk_blizzard', 'sk_tornado', 'sk_quake', 'sk_fire_storm']);

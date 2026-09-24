@@ -15,6 +15,8 @@ const hash = s => createHash('sha256').update(s).digest('hex');
 const token = () => randomBytes(32).toString('base64url');
 const SLOT = /^lineage_idle_save_([1-8])$/;
 const CLASSES = ['royal','knight','mage','elf','dark','illusion','dragon','warrior'];
+const CHAT_RETENTION_MS = 60 * 60 * 1000;
+const taipeiDay = at => new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'}).format(at);
 export class ApiError extends Error {
   constructor(status, message, details = {}) { super(message); this.status = status; this.details = details; }
 }
@@ -43,6 +45,9 @@ export class GameService {
       CREATE TABLE IF NOT EXISTS chat(id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL REFERENCES accounts(id),
         text TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS chat_account_time ON chat(account_id,created_at);
+      CREATE TABLE IF NOT EXISTS chat_daily_backups(day TEXT NOT NULL,chat_id INTEGER NOT NULL,account_id TEXT NOT NULL,
+        character_name TEXT,text TEXT NOT NULL,created_at INTEGER NOT NULL,archived_at INTEGER NOT NULL,PRIMARY KEY(day,chat_id));
+      CREATE INDEX IF NOT EXISTS chat_daily_backups_day ON chat_daily_backups(day,created_at);
       CREATE TABLE IF NOT EXISTS ai_chat_messages(chat_id INTEGER PRIMARY KEY REFERENCES chat(id) ON DELETE CASCADE,
         display_name TEXT NOT NULL,model TEXT NOT NULL,provider TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS role_audit(id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id TEXT NOT NULL,
@@ -52,6 +57,10 @@ export class GameService {
       CREATE TABLE IF NOT EXISTS clan_members(clan_id TEXT NOT NULL REFERENCES clans(id) ON DELETE CASCADE,account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,joined_at INTEGER NOT NULL,PRIMARY KEY(clan_id,account_id),UNIQUE(account_id));
     `);
     if(!this.db.prepare('PRAGMA table_info(chat)').all().some(c=>c.name==='character_name'))this.db.exec('ALTER TABLE chat ADD COLUMN character_name TEXT');
+    this.chatSessions=new Map();
+    this.archiveAndPruneChat();
+    this.chatMaintenance=setInterval(()=>this.archiveAndPruneChat(),5*60*1000);
+    this.chatMaintenance.unref?.();
     this.presence=new PresenceService(this);
     this.saveGuard=new SaveGuard(this);
     // Keep past character identities after deletion so exported characters cannot be cloned or restored as new ones.
@@ -60,7 +69,7 @@ export class GameService {
       try{const p=this.catalog.unwrap(raw).p,epoch=p._roleEpoch||p.enSeed;if(epoch)this.db.prepare('INSERT OR IGNORE INTO character_epochs VALUES(?,?,?)').run(epoch,row.account_id,key);}catch{}
     }
   }
-  close() { this.db.close(); }
+  close() { clearInterval(this.chatMaintenance); this.db.close(); }
   transaction(fn) {
     this.db.exec('BEGIN IMMEDIATE');
     try { const result = fn(); this.db.exec('COMMIT'); return result; }
@@ -372,18 +381,36 @@ export class GameService {
     const last=this.db.prepare('SELECT MAX(created_at) AS at FROM chat WHERE account_id=?').get(user.id).at;
     requireValue(!last||Date.now()-last>=1500,'發言太快，請稍後再試',429);
     this.db.prepare('INSERT INTO chat(account_id,text,created_at,character_name) VALUES(?,?,?,?)').run(user.id,text.trim(),Date.now(),characterName(this,user.id));
-    this.db.prepare('DELETE FROM chat WHERE id<(SELECT COALESCE(MAX(id),0)-1000 FROM chat)').run();
+    this.archiveAndPruneChat();
     return {ok:true};
   }
-  messages() {
+  // 即時聊天室保留一小時；刪除前逐則寫入依台灣日期分組的備份，保留原始發言時間與封存時間。
+  archiveAndPruneChat(now=Date.now()) {
+    const cutoff=now-CHAT_RETENTION_MS;
+    const rows=this.db.prepare('SELECT id,account_id,character_name,text,created_at FROM chat WHERE created_at<? ORDER BY id').all(cutoff);
+    if(!rows.length)return 0;
+    this.transaction(()=>{
+      const archive=this.db.prepare('INSERT OR IGNORE INTO chat_daily_backups(day,chat_id,account_id,character_name,text,created_at,archived_at) VALUES(?,?,?,?,?,?,?)');
+      for(const row of rows)archive.run(taipeiDay(row.created_at),row.id,row.account_id,row.character_name,row.text,row.created_at,now);
+      this.db.prepare('DELETE FROM chat WHERE created_at<?').run(cutoff);
+    });
+    return rows.length;
+  }
+  messages(since=Date.now()-CHAT_RETENTION_MS) {
     const names=new Map();
-    return this.db.prepare('SELECT c.id,c.account_id,c.character_name,a.username,c.text,c.created_at AS at,m.display_name,m.model,m.provider FROM chat c JOIN accounts a ON a.id=c.account_id LEFT JOIN ai_chat_messages m ON m.chat_id=c.id ORDER BY c.id DESC LIMIT 80').all().reverse().map(({account_id,character_name,display_name,...m})=>{
+    return this.db.prepare('SELECT c.id,c.account_id,c.character_name,a.username,c.text,c.created_at AS at,m.display_name,m.model,m.provider FROM chat c JOIN accounts a ON a.id=c.account_id LEFT JOIN ai_chat_messages m ON m.chat_id=c.id WHERE c.created_at>=? ORDER BY c.id DESC LIMIT 80').all(since).reverse().map(({account_id,character_name,display_name,...m})=>{
       if(!names.has(account_id))names.set(account_id,characterName(this,account_id));
       return {...m,displayName:character_name||(display_name&&display_name!==m.username?display_name:names.get(account_id)),ai:!!m.model};
     });
   }
-  publicMessages() {
-    // Keep provenance for moderation and reply scheduling, outside the player-facing API.
-    return this.messages().map(({id,text,at,displayName})=>({id,text,at,displayName}));
+  publicMessages(user) {
+    // 內部審計／既有服務呼叫未傳入工作階段時，維持完整的一小時即時視窗；玩家 API 一律傳入 user。
+    if (!user || !user.id || !user.csrf) return this.messages().map(({id,text,at,displayName})=>({id,text,at,displayName}));
+    // 每個登入工作階段第一次打開聊天室都設為起點，玩家不會看到上線前的歷史對話。
+    const key=user.id+':'+user.csrf, now=Date.now();
+    if(!this.chatSessions.has(key))this.chatSessions.set(key,now);
+    const since=this.chatSessions.get(key);
+    for(const [sessionKey,startedAt] of this.chatSessions)if(now-startedAt>8*86400000)this.chatSessions.delete(sessionKey);
+    return this.messages(since).map(({id,text,at,displayName})=>({id,text,at,displayName}));
   }
 }

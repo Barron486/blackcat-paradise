@@ -686,7 +686,7 @@ function _migrateMercPoly(ally) {
     return true;
 }
 // 傭兵可記憶的「喝水＋技能設定」欄位（跨解散/重新招募沿用；戰力快照仍每次重建，只有這些偏好還原）
-const MERC_PREF_FIELDS = ['_atkSkill', '_healSkill', '_convertSkill', '_healHpPct', '_potHpPct', '_hpSkillPct', '_castMpPct', '_hpSafePct'];
+const MERC_PREF_FIELDS = ['_atkSkill', '_healSkill', '_convertSkill', '_healHpPct', '_potHpPct', '_hpSkillPct', '_castMpPct', '_hpSafePct', '_mercPolyChoice'];
 // 解散/重新招募前呼叫：把該傭兵當前設定存入 player.mercPrefs（鍵＝enSeed·同一角色再次招募即還原）
 function snapshotMercPrefs(ally) {
     try {
@@ -792,6 +792,17 @@ function buildAlly(slotN) {
     ally.mp = ally.mmp;   // 召喚時滿魔
     { let _w = (ally.eq && ally.eq.wpn) ? DB.items[ally.eq.wpn.id] : null; ally._rapidfire = (_w && _w.isBow && _w.rapidfire) ? _w.rapidfire : 0; }   // 妖精弓：記錄連射發動機率
     applyMercPrefs(ally);   // 🤝 v3.4.23 同一角色（enSeed）先前的喝水＋技能設定記憶→套回（首次招募無記憶則沿用來源快照預設）
+    // 玩家從隊伍面板指定過的形態優先於來源存檔當下的變身；重建後仍保留選擇並重新套用完整衍生能力。
+    if (ally._mercPolyChoice) {
+        let _chosen = (typeof findPolyForm === 'function') ? findPolyForm(ally._mercPolyChoice) : null;
+        if (_chosen && (!_chosen.form.controlOnly || (typeof _allyHasPolyRing !== 'function' || _allyHasPolyRing(ally)))
+            && (typeof _allyPolyMatchesWeapon !== 'function' || _allyPolyMatchesWeapon(ally, _chosen.form))) {
+            ally.poly = makePolyState(_chosen.form, _chosen.color);
+            ally.buffs.poly = Math.max(1, Math.floor((DB.items.scroll_poly && DB.items.scroll_poly.dur) || 1800));
+            ally._mercPolyAuto = true;
+            try { _allyLevelRecompute(ally); } catch (e) {}
+        } else ally._mercPolyChoice = '';
+    }
     return ally;
 }
 // 參戰且未倒地的傭兵共享隊長本次性向事件；記錄各自實際套用的差額，於來源角色載入或回村時領取。

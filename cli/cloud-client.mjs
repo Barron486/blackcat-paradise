@@ -60,6 +60,17 @@ export class CloudClient {
   acquireLease(lease, { takeover = false } = {}) { return this.#request('/api/lease', { lease, takeover: takeover === true }); }
   sync({ lease, revision, changes, presence = {} }) { return this.#request('/api/sync', { lease, revision, changes, presence }); }
   world() { return this.#request('/api/world'); }
+  clans() { return this.#request('/api/clans'); }
+  createClan(name) { return this.#request('/api/clans', { name }); }
+  joinClan(clanId) { return this.#request('/api/clans/join', { clanId }); }
+  shop() { return this.#request('/api/shop'); }
+  shopRename(body) { return this.#request('/api/shop/rename', body); }
+  shopBuy(body) { return this.#request('/api/shop/buy', body); }
+  gmPlayers() { return this.#request('/api/gm/players'); }
+  gmDiamonds(accountId) { return this.#request('/api/gm/diamonds?accountId=' + encodeURIComponent(accountId)); }
+  gmGrantDiamonds(body) { return this.#request('/api/gm/diamonds', body); }
+  gmPreview(body) { return this.#request('/api/gm/preview', body); }
+  gmExecute(body) { return this.#request('/api/gm/execute', body); }
   chat(text) { return this.#request('/api/chat', { text }); }
   async logout() {
     const result = await this.#request('/api/auth/logout', {});

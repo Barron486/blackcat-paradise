@@ -236,6 +236,17 @@ const ATTR_AFFIX = {
 };
 const ATTR_ELE_PREFIX = { fire: 'fr', water: 'wa', wind: 'wi', earth: 'ea' };   // 元素 → 代碼字首（碧恩賦予/升階用）
 
+// 高階武器強化與第五階屬性達成時的世界頻道捷報；只由實際成功結算點呼叫。
+function announceWeaponMilestone(item, kind) {
+    if (!item || !DB.items[item.id] || typeof logWorld !== 'function') return;
+    let name = (player && player.name) || '冒險者';
+    let itemName = getItemFullName(item);
+    let message = kind === 'attr5'
+        ? `【屬性突破】${name} 的 ${itemName} 成功晉升至屬性第五階！`
+        : `【武器強化】${name} 成功將 ${itemName} 強化至 +${capEn(item.en, DB.items[item.id])}！`;
+    logWorld(`<span class="text-yellow-300 font-bold">${message}</span>`, 'world-milestone');
+}
+
 // 第5階屬性武器可由同屬性卷軸附加／重抽魔法；同技能升星使觸發率×星數，最高3星，不同技能回到1星。
 const ATTR_MAGIC_SKILLS = {
     fire: [
@@ -1183,6 +1194,7 @@ function doEnhance(targetUid, isEq = true) {
         let prefix = (target.en > (d.safe||0)) ? "持續" : "";
         let _enTxt = '+' + capEn(target.en, d);   // 🔧 顯示 +N（夾擠至強化上限）
         logSys(`<span class="text-yellow-400 font-bold">${_enTxt} ${d.n} ${prefix}發出銀色的光芒。</span>`);
+        if (d.type === 'wpn' && target.en > 9) announceWeaponMilestone(target, 'enhance');
     } else if (destroy) {
         logSys(`<span class="text-red-500 font-bold">${fn} 強烈的發出銀色的光芒就消失了。</span>`);
         if (isEq) {

@@ -20,6 +20,16 @@ npm run cli -- watch --interval 5
 npm run cli -- stop --all
 ```
 
+批次管理所有本機 profile：
+
+```powershell
+npm run cli -- accounts status
+npm run cli -- accounts start --map zone_04
+npm run cli -- accounts stop
+```
+
+`accounts` 會逐一處理 `data/cli/profiles` 內的帳號；單一帳號失敗會列出錯誤並繼續處理其他帳號。
+
 `watch` 只是觀看；按 Ctrl+C 結束觀看，角色仍繼續遊玩。`stop` 會停止角色程序並嘗試完成最後一次雲端存檔。
 
 ## 建立及啟動帳號
@@ -101,6 +111,21 @@ CLI 載入本機 `index.html` 的原版腳本，在 JSDOM 中省略繪圖及音�
 npm run cli -- credentials --profile knight
 ```
 
+查詢帳號共用的藍鑽、卡片與最近交易：
+
+```powershell
+npm run cli -- diamonds --profile knight
+```
+
+使用已購買的更名卡替角色改名。為避免與背景程序衝突，必須先停止該 profile：
+
+```powershell
+npm run cli -- stop --profile knight
+npm run cli -- rename --profile knight --slot 1 --new-name 魯夫
+```
+
+更名與藍鑽發放仍由伺服器驗證；CLI 不會繞過藍鑽餘額、卡片或角色欄位限制。
+
 這個指令會顯示該帳號的密碼。若要在瀏覽器遊玩，先 `stop` 對應角色，再使用帳密登入；網頁若仍提示控制權被占用，可選擇接管。
 
 私密檔案位於 `data/cli/profiles/<profile>.json`，包含密碼和工作階段；`data/cli/runtime/<profile>/checkpoint.json` 保留尚未同步的存檔。`data/` 已排除 Git、Docker 和 Railway 上傳。請保留並妥善保存；不要分享整個資料夾。測試／其他獨立工作區可用 `BLACKCAT_CLI_HOME` 指定存放位置。
@@ -116,6 +141,19 @@ node cli/ai-chat.mjs start
 node cli/ai-chat.mjs status
 node cli/ai-chat.mjs stop
 ```
+
+## GM CLI（本機）
+
+GM 操作使用本機 `data/gm-initial-login.txt` 或環境變數 `BLACKCAT_GM_USER`／`BLACKCAT_GM_PASSWORD`，不會把密碼列印到輸出：
+
+```powershell
+node cli/gm.mjs players
+node cli/gm.mjs diamonds --account-id <帳號 id>
+node cli/gm.mjs grant-diamonds --account-id <帳號 id> --amount 3000 --reason "開服獎勵"
+node cli/gm.mjs execute --action buff_all --scope account --account-id <帳號 id> --duration 3600 --reason "活動增益"
+```
+
+每個 GM 變更都經過伺服器權限、範圍、原因、目標指紋與請求識別碼驗證；CLI 不繞過 GM 稽核或一般遊戲存檔保護。
 
 bridge 僅產生文字，不使用工具或網路搜尋。GM → AI 聊天可指定 Ollama 網址與模型；詳見 [本機模型操作說明](../deploy/CHAT-OLLAMA.md)。
 

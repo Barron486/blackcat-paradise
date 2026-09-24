@@ -1039,6 +1039,7 @@ function doBianAttr(slotKey, ele) {
         if (!same && (item.attrMagic || item.attrMagicStar)) { delete item.attrMagic; delete item.attrMagicStar; }   // 不同屬性成功→原屬性附加魔法與星級一併消失
         let aff = getAttrAffix(item.attr);
         logSys(`<span class="text-yellow-300 font-bold">賦予屬性成功！</span>碧恩將 <span class="c-attr-${attrCanon(item.attr)}">${aff.n}</span> 之力銘刻於武器 → ${getItemFullName(item)}（屬性第${aff.tier}階：額外傷害+${aff.dmg}、額外魔法點數+${aff.mp}）。${!same && oldMagic ? '<span class="text-slate-400"> 原有附加魔法已隨屬性轉換消失。</span>' : ''}`);
+        if (aff.tier >= 5 && typeof announceWeaponMilestone === 'function') announceWeaponMilestone(item, 'attr5');
     } else {
         logSys(`<span class="text-slate-400">碧恩：元素之力潰散了……賦予屬性失敗（僅消耗 1 張 ${cfg.n}，武器安然無恙）。</span>`);
     }

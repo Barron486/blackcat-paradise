@@ -123,7 +123,7 @@ export function createApp({ database = databasePath(), catalog = loadCatalog(ROO
           const query=new URL(req.url,base).searchParams;
           return battleFeed.open({user,session,lease:query.get('lease'),after:query.get('after'),req,res});
         }
-        if(route==='/api/world') return json(res,200,{online:service.onlineSummary(user).list,messages:service.publicMessages(),lootBroadcasts:lootBroadcasts.history(),killBroadcasts:killBroadcasts.history()});
+        if(route==='/api/world') return json(res,200,{online:service.onlineSummary(user).list,messages:service.publicMessages(user),lootBroadcasts:lootBroadcasts.history(),killBroadcasts:killBroadcasts.history()});
         if(route==='/api/online'&&req.method==='GET') return json(res,200,service.onlineSummary(user));
         if(route==='/api/gm/location-clans'&&req.method==='POST') {const b=await readBody(req);return json(res,200,service.presence.assign(user,b));}
         if(route==='/api/clans'&&req.method==='GET') return json(res,200,{clans:service.clans(user)});
