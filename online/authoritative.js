@@ -360,7 +360,7 @@ function start(){
   const squadPending=new Map();cloud.squadEditing=slot=>squadPending.has(String(slot));
   for(const [fn,setting,type]of [
     ['setAllyAtkSkill','attack','skill'],['setAllyHealSkill','heal','skill'],['setAllyConvertSkill','convert','skill'],
-    ['setAllyHealHp','heal-hp','percent'],['setAllyPotHp','potion','percent'],['setAllyHpSkill','hp-skill','percent'],['setAllyCastMp','cast-mp','percent'],['setAllyAutoBuff','auto-buff','toggle'],
+    ['setAllyHealHp','heal-hp','percent'],['setAllyPotHp','potion','percent'],['setAllyHpSkill','hp-skill','percent'],['setAllyCastMp','cast-mp','percent'],['setAllyPoly','poly','poly'],['setAllyAutoBuff','auto-buff','toggle'],
   ])window[fn]=(slot,value,enabled)=>{
     const ally=_findAlly(slot);if(!ally)return;
     if(type==='percent'){

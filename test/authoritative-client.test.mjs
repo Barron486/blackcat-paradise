@@ -418,6 +418,26 @@ test('squad skills, HP/MP thresholds and auto buffs save through the actual cont
   assert.equal(f.saved().mercPrefs[identity]._autoBuff.sk_shield,false);assert.equal(f.saved().mercPrefs[identity]._atkSkill,'');
 });
 
+test('mercenary polymorph selection survives authoritative polls, reconnect and rehire',async t=>{
+  const f=await squadFixture(t),{w,authority,user,lose,requests}=f;
+  const runtime=authority.runtimes.get(user.id);runtime.engine.run('player.gold=100000;');authority.commit(user,runtime);await w.CloudStore.flush();
+  const identity=f.saved().allies.find(a=>a._slot==='2').enSeed,select=f.control(2,'poly');
+  const choice=[...select.options].find(option=>option.value)?.value;assert.ok(choice,'level 40 mercenary has a compatible polymorph');
+  lose();f.edit(2,'poly',choice);await w.CloudStore.flush();
+  let ally=f.saved().allies.find(a=>a._slot==='2');assert.equal(ally._mercPolyChoice,choice);assert.equal(ally.poly.n,choice);assert.equal(ally._mercPolyAuto,true);
+  assert.equal(f.saved().mercPrefs[identity]._mercPolyChoice,choice);
+  const edits=requests.filter(r=>r.body?.args?.name==='mercenary-settings'&&r.body.args.params.setting==='poly');
+  assert.equal(edits.length,2);assert.equal(edits[0].body.requestId,edits[1].body.requestId);
+  await w.CloudStore.flush();assert.equal(f.control(2,'poly').value,choice,'server poll does not switch the selection back');
+  w.returnToCharacterSelect();await w.CloudStore.flush();authority.drop(user.id);w.loadGame();await w.CloudStore.flush();
+  assert.equal(f.control(2,'poly').value,choice,'selection survives reconnect');
+  await w.CloudStore.action('mercenary',{operation:'refresh',slot:2});
+  await w.CloudStore.action('mercenary',{operation:'dismiss',slot:2});await w.CloudStore.action('mercenary',{operation:'toggle',slot:2});
+  ally=f.saved().allies.find(a=>a._slot==='2');assert.equal(ally._mercPolyChoice,choice);assert.equal(ally.poly.n,choice);assert.equal(f.control(2,'poly').value,choice);
+  f.edit(2,'poly','');await w.CloudStore.flush();
+  ally=f.saved().allies.find(a=>a._slot==='2');assert.equal(ally._mercPolyChoice,'');assert.equal(ally._mercPolyAuto,false);assert.equal(ally.poly,null);
+});
+
 test('a slow squad save never overwrites a later numeric edit or replaces the focused input',async t=>{
   const f=await squadFixture(t),{w}=f,original=w.CloudStore.request;
   let release,first=true;
@@ -436,7 +456,7 @@ test('a slow squad save never overwrites a later numeric edit or replaces the fo
 test('server rejects forged squad values, unknown skills, nonmembers and replaced identities',async t=>{
   const f=await squadFixture(t),{w}=f,identity=f.saved().allies.find(a=>a._slot==='2').enSeed;
   const original=f.saved().allies.find(a=>a._slot==='2');
-  for(const overrides of [{value:-1},{value:101},{value:1.5},{value:'80'},{slot:8},{slot:1},{identity:'replaced-role'},{setting:'gold',value:999999},{value:80,gold:999999},{setting:'attack',value:'sk_hell_fire'},{setting:'heal',value:'sk_lightarrow'},{setting:'auto-buff',skillId:'sk_lightarrow',value:true},{setting:'auto-buff',skillId:'sk_shield',value:'true'}]){
+  for(const overrides of [{value:-1},{value:101},{value:1.5},{value:'80'},{slot:8},{slot:1},{identity:'replaced-role'},{setting:'gold',value:999999},{value:80,gold:999999},{setting:'attack',value:'sk_hell_fire'},{setting:'heal',value:'sk_lightarrow'},{setting:'poly',value:'不存在的變身'},{setting:'poly',value:123},{setting:'auto-buff',skillId:'sk_lightarrow',value:true},{setting:'auto-buff',skillId:'sk_shield',value:'true'}]){
     await assert.rejects(w.CloudStore.action('mercenary-settings',{slot:2,identity,setting:'potion',value:80,...overrides}),e=>e.status===400);
   }
   await w.CloudStore.flush();assert.equal(f.saved().allies.find(a=>a._slot==='2')._potHpPct,original._potHpPct);

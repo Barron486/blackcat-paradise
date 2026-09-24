@@ -288,7 +288,7 @@ export function extraAction(game,name,a){
     case 'mercenary-settings':{
       keys(a,['slot','identity','setting','value','skillId']);integer(a.slot,1,8);id(a.identity);
       const rules={attack:['setAllyAtkSkill','atk'],heal:['setAllyHealSkill','heal'],convert:['setAllyConvertSkill','convert'],
-        'heal-hp':['setAllyHealHp'],'potion':['setAllyPotHp'],'hp-skill':['setAllyHpSkill'],'cast-mp':['setAllyCastMp'],'auto-buff':['setAllyAutoBuff']};
+        'heal-hp':['setAllyHealHp'],'potion':['setAllyPotHp'],'hp-skill':['setAllyHpSkill'],'cast-mp':['setAllyCastMp'],poly:['setAllyPoly','poly'],'auto-buff':['setAllyAutoBuff']};
       if(!Object.hasOwn(rules,a.setting))throw new Error('不支援的隊伍設定');
       run(`{const ally=_findAlly(__args.slot);if(!ally)throw new Error('該角色目前不在隊伍中');
         if(ally.enSeed!==__args.identity||_slotCharEnSeed(__args.slot)!==__args.identity)throw new Error('隊員資料已變更，請重新開啟隊伍設定');}`);
@@ -298,7 +298,11 @@ export function extraAction(game,name,a){
         if(!run('allyAutoCastableSkills(_findAlly(__args.slot)).some(skill=>skill.sid===__args.skillId)'))throw new Error('隊員無法自動維持此技能');
       }else{
         if(a.skillId!==undefined)throw new Error('此設定不接受技能識別碼');
-        if(kind){
+        if(kind==='poly'){
+          if(typeof a.value!=='string'||a.value.length>160)throw new Error('變身選項不正確');
+          const allowed=run(`(()=>{const select=document.createElement('select');select.innerHTML=_allyPolyOptions(_findAlly(__args.slot));return [...select.options].some(option=>option.value===__args.value);})()`,a);
+          if(!allowed)throw new Error('隊員目前無法使用此變身');
+        }else if(kind){
           if(typeof a.value!=='string'||a.value.length>160)throw new Error('技能選項不正確');
           const allowed=run(`(()=>{const select=document.createElement('select');select.innerHTML=_allySkillOptions(_findAlly(__args.slot),__args.kind,'');return [...select.options].some(option=>option.value===__args.value);})()`,{...a,kind});
           if(!allowed)throw new Error('隊員尚未學會此類技能或屬性不符');
