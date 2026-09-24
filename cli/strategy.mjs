@@ -26,9 +26,22 @@ function selectableMap(maps, target) {
     || Object.values(maps || {}).some(group => Array.isArray(group) && group.some(entry => entry?.v === target));
 }
 
-// Mirrors skillReqLv for these four classes. Engine useItem remains authoritative.
+// Mirrors skillReqLv for all eight classes. Engine useItem remains authoritative.
 export function skillRequiredLevel(player, skill, skillId) {
   if (!skill) return undefined;
+  if (player.cls === 'dark') {
+    if (skill.reqD !== undefined) return skill.reqD;
+    if (skill.reqM !== undefined && skill.tier === 1) return 12;
+    if (skill.reqM !== undefined && skill.tier === 2) return 24;
+    return undefined;
+  }
+  if (player.cls === 'illusion') return skill.reqI;
+  if (player.cls === 'dragon') return skill.reqDk;
+  if (player.cls === 'warrior') {
+    if (skill.reqW !== undefined) return skill.reqW;
+    if (skill.reqM !== undefined && skill.tier === 1) return 15;
+    return undefined;
+  }
   if (player.cls === 'royal') {
     if (skill.reqRoy !== undefined) return skill.reqRoy;
     if (skill.reqM !== undefined && skill.tier === 1) return 10;

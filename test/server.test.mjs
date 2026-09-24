@@ -104,14 +104,15 @@ test('public presence and chat conceal GM roles while self and admin permissions
   t.after(async()=>{app.server.closeAllConnections();await new Promise(resolve=>app.server.close(resolve));});
   const gm=await app.service.register('keeper',password,{initialGm:true}),player=await app.service.register('visitor',password);
   for(const user of [gm,player])app.service.acquireLease(user,randomUUID());
-  app.service.chat(gm,'早安，一起冒險');
+  app.service.chat(gm,'登入前的舊訊息');
   const gmSession=await app.service.login(gm.username,password),playerSession=await app.service.login(player.username,password);
+  app.service.chat(player,'早安，一起冒險');
   const base=`http://127.0.0.1:${app.server.address().port}`;
   const get=(route,session=playerSession)=>fetch(base+route,{headers:{Cookie:'idle_session='+session.session}});
   const presenceResponse=await get('/api/online');assert.equal(presenceResponse.status,200);
   const presence=await presenceResponse.json();assert.equal(presence.total,2);assert.equal(presence.players,2);assert.ok(presence.list.every(p=>p.name==='角色選擇中'),'unselected accounts do not expose login names');
   const worldResponse=await get('/api/world');assert.equal(worldResponse.status,200);
-  const world=await worldResponse.json();assert.ok(world.online.every(p=>!Object.hasOwn(p,'username')));assert.equal(world.messages[0].displayName,'冒險者');assert.equal(Object.hasOwn(world.messages[0],'username'),false);assert.equal(world.messages[0].text,'早安，一起冒險');
+  const world=await worldResponse.json();assert.ok(world.online.every(p=>!Object.hasOwn(p,'username')));assert.equal(world.messages.length,1);assert.equal(world.messages[0].displayName,'冒險者');assert.equal(Object.hasOwn(world.messages[0],'username'),false);assert.equal(world.messages[0].text,'早安，一起冒險');
   for(const row of [...presence.list,...world.online,...world.messages])for(const key of ['gm','role','isGm','isGM'])assert.equal(Object.hasOwn(row,key),false,`public ${key} must be absent`);
   const self=await(await get('/api/me',gmSession)).json();assert.equal(self.user.role,'gm');
   const boot=await(await get('/api/bootstrap',gmSession)).json();assert.equal(boot.user.role,'gm');

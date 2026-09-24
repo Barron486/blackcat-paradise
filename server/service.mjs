@@ -31,7 +31,7 @@ export class GameService {
       CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY, username TEXT NOT NULL COLLATE NOCASE UNIQUE,
         password_hash TEXT NOT NULL, salt TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('player','gm')), created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
-        csrf TEXT NOT NULL, expires_at INTEGER NOT NULL);
+        csrf TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS sessions_account ON sessions(account_id);
       CREATE TABLE IF NOT EXISTS saves(account_id TEXT PRIMARY KEY REFERENCES accounts(id), data TEXT NOT NULL DEFAULT '{}',
         revision INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL);
@@ -57,7 +57,10 @@ export class GameService {
       CREATE TABLE IF NOT EXISTS clan_members(clan_id TEXT NOT NULL REFERENCES clans(id) ON DELETE CASCADE,account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,joined_at INTEGER NOT NULL,PRIMARY KEY(clan_id,account_id),UNIQUE(account_id));
     `);
     if(!this.db.prepare('PRAGMA table_info(chat)').all().some(c=>c.name==='character_name'))this.db.exec('ALTER TABLE chat ADD COLUMN character_name TEXT');
-    this.chatSessions=new Map();
+    if(!this.db.prepare('PRAGMA table_info(sessions)').all().some(c=>c.name==='created_at')){
+      this.db.exec('ALTER TABLE sessions ADD COLUMN created_at INTEGER');
+      this.db.prepare('UPDATE sessions SET created_at=expires_at-? WHERE created_at IS NULL').run(7*86400000);
+    }
     this.archiveAndPruneChat();
     this.chatMaintenance=setInterval(()=>this.archiveAndPruneChat(),5*60*1000);
     this.chatMaintenance.unref?.();
@@ -96,14 +99,14 @@ export class GameService {
     const account = this.db.prepare('SELECT * FROM accounts WHERE username=? COLLATE NOCASE').get(username);
     const candidate = await scrypt(password, account?.salt || 'invalid-account-timing-pad', 64);
     requireValue(account && timingSafeEqual(candidate, Buffer.from(account.password_hash, 'hex')), '帳號或密碼不正確', 401);
-    const session = token(), csrf = token();
-    this.db.prepare('DELETE FROM sessions WHERE expires_at<?').run(Date.now());
-    this.db.prepare('INSERT INTO sessions VALUES(?,?,?,?)').run(hash(session), account.id, csrf, Date.now() + 7 * 86400000);
+    const session = token(), csrf = token(), now = Date.now();
+    this.db.prepare('DELETE FROM sessions WHERE expires_at<?').run(now);
+    this.db.prepare('INSERT INTO sessions(token_hash,account_id,csrf,expires_at,created_at) VALUES(?,?,?,?,?)').run(hash(session), account.id, csrf, now + 7 * 86400000, now);
     return { session, csrf, user: { id: account.id, username: account.username, role: account.role } };
   }
   authenticate(session) {
     if (!session) throw new ApiError(401, '請先登入');
-    const user = this.db.prepare('SELECT a.id,a.username,a.role,s.csrf FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=? AND s.expires_at>?').get(hash(session), Date.now());
+    const user = this.db.prepare('SELECT a.id,a.username,a.role,s.csrf,s.created_at AS sessionStartedAt FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=? AND s.expires_at>?').get(hash(session), Date.now());
     if (!user) throw new ApiError(401, '登入已過期，請重新登入');
     return user;
   }
@@ -406,11 +409,8 @@ export class GameService {
   publicMessages(user) {
     // 內部審計／既有服務呼叫未傳入工作階段時，維持完整的一小時即時視窗；玩家 API 一律傳入 user。
     if (!user || !user.id || !user.csrf) return this.messages().map(({id,text,at,displayName})=>({id,text,at,displayName}));
-    // 每個登入工作階段第一次打開聊天室都設為起點，玩家不會看到上線前的歷史對話。
-    const key=user.id+':'+user.csrf, now=Date.now();
-    if(!this.chatSessions.has(key))this.chatSessions.set(key,now);
-    const since=this.chatSessions.get(key);
-    for(const [sessionKey,startedAt] of this.chatSessions)if(now-startedAt>8*86400000)this.chatSessions.delete(sessionKey);
+    // 以實際登入時間為起點，即使伺服器重啟或玩家稍後才打開聊天室，也不會漏掉登入後的訊息。
+    const since=Number.isFinite(user.sessionStartedAt)?user.sessionStartedAt:Date.now();
     return this.messages(since).map(({id,text,at,displayName})=>({id,text,at,displayName}));
   }
 }

@@ -32,7 +32,7 @@ test('presets spend the original class allocation, including the mage 16 points'
   }
 });
 
-test('learning requirements agree with upstream for every skill and the four classes', () => {
+test('learning requirements agree with upstream for every skill and all eight classes', () => {
   const source = readFileSync(new URL('../js/01-drops-config.js', import.meta.url), 'utf8');
   const originalFunction = source.match(/function skillReqLv\(sk, skId\) \{[\s\S]*?\n\}/)[0];
   const context = vm.createContext({ MAGIC_MASTERY_SKILLS: ['sk_blizzard', 'sk_tornado', 'sk_quake', 'sk_fire_storm'] });
