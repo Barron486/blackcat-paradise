@@ -1,7 +1,7 @@
 // ===== ✨ 戰鬥特效層 VFX（cosmetic-only：傷害數字／擊殺粒子／受擊震動。不改任何遊戲數值，全程 try/catch，壞掉也不影響遊戲。__vfxOff=true 可關閉） =====
 let _vfxPending = [];
 let _vfxLastKillRect = null;   // 最近一次擊殺的怪物格螢幕位置（供稀有掉落閃光定位）
-let _mobRenderCache = null;    // 🚀 怪物列差異更新快取：{ ml節點, structKey, slots:[每格html字串] }→只重建有變動的格子，免每幀整列 innerHTML 重建
+let _mobRenderCache = null;    // 怪物卡片快取：同 uid/外觀保留節點，僅更新血條、文字與狀態。
 const _VFX_ELE_COLOR = { fire:'#ff7a45', water:'#4fc3f7', wind:'#9ccc65', earth:'#d8a657', magic:'#ce93d8', normal:'#f1f5f9' };
 // ✨ 適合投射動畫的「非屬性」攻擊技能（屬性魔法已自動涵蓋）：技能id→投射外觀(屬性色 or 'axe'=旋轉金屬斧)
 const _VFX_PROJECTILE_SKILLS = { sk_illu_mindbreak:'magic' };   // 戰斧投擲是「下一擊」增益→改在攻擊觸發處射斧，不走 cast 樞紐；🏹 v3.2.14 三重矢移除：改在 js/07 命中迴圈射 3 支箭矢序列幀投射物(playArrowFx·快速連發)·不再播 CSS 風彈；✨ v3.2.15 究極光裂移除（用戶明令無 CSS）：本就被下方 SPELL_FX 閘擋住(有三層動態特效)＝死碼·顯式移除防日後 key 改名時 CSS 光彈偷跑回來；✨ v3.5.87 光箭移除：同究極光裂被 SPELL_FX 閘無條件擋住＝死碼
@@ -418,7 +418,7 @@ function _partyMemberRect(who) {
 }
 // ===== ❄️ 冰凍「狀態」疊加動畫（v2.7.20）：怪物 st.freeze>0 時於身上循環播冰封 state 幀·解凍(freeze歸0/怪陣亡)時播一次 end 碎裂幀 =====
 //   來源 assets/fx/冰凍狀態/state_0..7.png(持續中·全域時鐘循環)＋end_0..3.png(結束碎裂·一次性)。逐怪一個疊層(vfx-layer·每幀重錨定跟隨怪·適用所有怪不限動畫怪)。
-//   由 8fps ticker 呼叫(見檔尾 setInterval)。開關吃 window.__vfxOff。與 SPELL_FX(施法瞬間)不同：這是「狀態持續期間」的疊層。
+//   由顯示迴圈以 8fps 更新。開關吃 window.__vfxOff。與 SPELL_FX(施法瞬間)不同：這是「狀態持續期間」的疊層。
 const FREEZE_FX = { dir: '冰凍狀態', stateN: 8, endN: 4, fps: 8, h: 0.38, ax: 0.5, ay: 0.5 };   // h=冰封高度為怪圖高倍數(v2.7.21 用戶要冰塊縮小·寬度=原1/3→h 1.15→0.38 等比縮)·ax/ay=冰封錨點(置中蓋身)
 let _freezeFx = {};   // uid → { el, mode:'state'|'end', t0 }
 function _freezePosition(el, r) {
@@ -1231,11 +1231,37 @@ if (typeof castSkill === 'function' && !castSkill._vfxWrapped) {
     castSkill._vfxWrapped = true;
 }
 
+// 同一隻怪物的動態圖片由動畫引擎持有，血量/狀態更新不重設 src 或移除圖片。
+function _patchMobSlot(slot, previous, next) {
+    if (!previous || !next || previous.uid !== next.uid || previous.spriteKey !== next.spriteKey || slot.dataset.uid !== next.uid) return false;
+    if (previous.className !== next.className) {
+        const before = new Set(previous.className.split(/\s+/).filter(Boolean));
+        const after = new Set(next.className.split(/\s+/).filter(Boolean));
+        for (const name of before) if (!after.has(name)) slot.classList.remove(name);
+        for (const name of after) if (!before.has(name)) slot.classList.add(name);
+    }
+    if (previous.style !== next.style) slot.style.cssText = next.style;
+    for (const [key, selector] of [['name', '.mob-name'], ['badges', '.mob-badge-row'], ['stats', '.mob-stat-row']]) {
+        if (previous[key] !== next[key]) slot.querySelector(selector).innerHTML = next[key];
+    }
+    if (previous.showHp !== next.showHp) {
+        if (next.showHp) slot.insertAdjacentHTML('beforeend', next.hpBar);
+        else slot.querySelector('.mob-hp-bar')?.remove();
+    } else if (next.showHp && previous.hp !== next.hp) {
+        slot.querySelector('.mob-hp-fill').style.width = next.hp + '%';
+    }
+    if (previous.grace !== next.grace) slot.querySelector('.mob-body').classList.toggle('grace-glow', next.grace);
+    if (previous.crown !== next.crown) {
+        slot.querySelector('.npc-clan-castle-crown')?.remove();
+        if (next.crown) slot.querySelector('.mob-img-inner').insertAdjacentHTML('beforeend', next.crown);
+    }
+    return true;
+}
 function _renderMobsImpl() {
     if(state.ff) return; // 補跑期間不刷新畫面
     _initMobListGuard();
     if(_mobPointerDown) { _mobRebuildPending = true; return; }   // 🚀 按住怪物卡期間延後重繪→點擊切換目標不被中斷
-    let _slotHtmls = [], _rageTransitions = [];   // 🚀 改差異更新：先各格產生 html 字串，最後只重建有變動的格；狂暴只記錄「未啟用→啟用」轉場（🧹 v3.5.87 刪 _forceHit/hitClass 死碼：hitClass 自 v2.7.49 起恆空字串·受擊表現全由 _mobAnimTrigger('hurt') 序列幀負責·justHit 仍驅動 hurt 觸發與傷害數字）
+    let _slotHtmls = [], _slotViews = [], _rageTransitions = [];   // 同 uid 局部更新；狂暴只記錄「未啟用→啟用」轉場。
     let _showMobEleFlag = (typeof _relicShowMobEle === 'function') && _relicShowMobEle();   // 🏺 巨大螞蟻的複眼：狀態直接顯示敵人屬性（一次計算·全格共用）
 
     let _back = backSlotsActive();                                   // 🆕 五格模式：原三格(前排)＋後排兩格
@@ -1285,21 +1311,22 @@ function _renderMobsImpl() {
             // 🩹 狀態列（出血/猛爆毒/鈍擊/硬皮）：狀態開關關閉時清空內容（保留固定高度列避免版面跳動）
             let _statRow = !_showMobStatus ? '' : `${(m.bleeds && m.bleeds.length) ? `<span class="text-[11px] font-bold" style="display:inline-flex;align-items:center;line-height:1;" title="出血層數">🩸×${m.bleeds.length}</span>` : ''}${(m._burstPoison && m._burstPoison.left > 0) ? `<span class="text-[11px] font-bold" style="display:inline-flex;align-items:center;line-height:1;color:#a3e635;" title="猛爆劇毒：每秒100固定傷害（5秒）">💥毒</span>` : ''}${(m._bluntShow && state.ticks < m._bluntShow) ? `<span class="text-[11px] font-bold text-amber-300" style="display:inline-flex;align-items:center;line-height:1;" title="鈍擊：攻擊延遲中">🔨鈍</span>` : ''}${(m.hardSkin > 0) ? `<span class="text-[11px] font-bold text-stone-300" style="display:inline-flex;align-items:center;line-height:1;" title="硬皮值：額外物理減傷（魔法不減），可用鈍器/重擊消磨">🛡${m.hardSkin}</span>` : ''}`;
 
-            let _hpBar = !_showMobHp ? '' : `<div class="mob-hp-bar flex justify-center mb-1" style="height:6px;"><div style="width:50px;height:5px;background:#475569;border-radius:3px;overflow:hidden;"><div style="height:100%;background:#ef4444;width:${Math.max(0, Math.min(100, Math.round((m.curHp / (m.hp || 1)) * 100)))}%;"></div></div></div>`;
+            let _hpPercent = Math.max(0, Math.min(100, Math.round((m.curHp / (m.hp || 1)) * 100)));
+            let _hpBar = !_showMobHp ? '' : `<div class="mob-hp-bar flex justify-center mb-1" style="height:6px;"><div style="width:50px;height:5px;background:#475569;border-radius:3px;overflow:hidden;"><div class="mob-hp-fill" style="height:100%;background:#ef4444;width:${_hpPercent}%;"></div></div></div>`;
             let _isBossUnit = BOSS_BIG_MAPS.includes(mapState.current) || m.boss;   // 🎲 頭目不散佈(維持置中大圖)
             let _scat = '';   // ⚠️v2.6.39 取消「水平隨機位移＋隨機大小」(_mobScatter 死碼已於 v3.5.48 清除)。v3.3.2：16:9 高框上半留白→改為僅「垂直往上」隨機分佈(整格 translateY·怪物連影子一起上移＝站在較高/較遠地面·穩定存 m._yScat 每次生成重擲·不逐幀跳動；頭目/龍窟維持釘底置中)
             let _yLift = (typeof MOB_YLIFT !== 'undefined' && MOB_YLIFT[m.n]) || 0;   // 🐉 v3.3.4 逐怪固定上移(法利昂等 spr 本體在畫布偏下→出現位置太低)：頭目/一般都套·疊在隨機散佈之上
             if (!_isBossUnit && m._yScat == null) m._yScat = Math.floor(Math.random() * 40);   // 0~39px 往上：稍微散佈到框中上，非全部貼底
             let _yTot = (_isBossUnit ? 0 : (m._yScat || 0)) + _yLift;
-            if (_yTot) _scat = ` style="transform:translateY(-${_yTot}px);"`;
+            if (_yTot) _scat = `transform:translateY(-${_yTot}px);`;
             // 🏰 v3.3.8 攻城建築(城門/守護塔)固定站位：脫離站立帶 flex 流→絕對定位於整個 800×450 背景框(#battle-view 已 position:relative)。城門對齊背景城門處、守護塔置中；位置固定不隨隨機散佈。
             let _sfCls = '';
             if (m.siegeEnemy && m.race === '建築' && typeof SIEGE_BUILD_POS !== 'undefined' && SIEGE_BUILD_POS[m.n]) {
                 let _bp = SIEGE_BUILD_POS[m.n];
-                _scat = ` style="left:${_bp.left}%;top:${_bp.top}%;"`;   // 覆蓋散佈：改用固定 left/top(卡片中心錨點·siege-fixed 提供 position:absolute + translate(-50%,-50%))
+                _scat = `left:${_bp.left}%;top:${_bp.top}%;`;   // 覆蓋散佈：改用固定 left/top(卡片中心錨點·siege-fixed 提供 position:absolute + translate(-50%,-50%))
                 _sfCls = ' siege-fixed';
             } else if (m._pvpDuelFoe && typeof PVP_DUEL_FOE_POS !== 'undefined') {
-                _scat = ` style="left:${PVP_DUEL_FOE_POS.left}%;top:${PVP_DUEL_FOE_POS.top}%;"`;   // ⚔️ v3.7.14 決鬥對手：同一套絕對定位(duel-fixed)，覆蓋隨機散佈→每場站位完全一致
+                _scat = `left:${PVP_DUEL_FOE_POS.left}%;top:${PVP_DUEL_FOE_POS.top}%;`;   // ⚔️ v3.7.14 決鬥對手：同一套絕對定位(duel-fixed)，覆蓋隨機散佈→每場站位完全一致
                 _sfCls = ' duel-fixed';
             }
             // 🏰 v3.7.82 用戶指定復原：v3.7.79 曾在此加第三分支 `m.siegeEnemy && m.race!=='建築' → _sfCls=' siege-mob'`（攻城敵人整體縮 0.8×·css 同步移除），現已全數撤掉＝攻城敵人回到與其他怪物相同的原生尺寸渲染。要再縮回去＝本處補回分支＋css 補回 .siege-mob 規則（配方見記憶 siege-building-fixed-position）。
@@ -1325,25 +1352,30 @@ function _renderMobsImpl() {
             let _npcClanNameTag = m._npcClanName
                 ? `<span class="text-[10px] font-bold text-cyan-200 whitespace-nowrap">［${m._npcClanLeader ? '盟主・' : ''}${m._npcClanName}］</span>`
                 : '';
-            _slotHtmls[_k] = `<div class="mob-target ${act}${_rageNow ? ' mob-raging' : ''}${_rowCls}${BOSS_BIG_MAPS.includes(mapState.current) ? ' boss-slot' : (m.boss ? ' boss-zoom' : '')}${_sfCls}" data-uid="${m.uid}"${_scat}>
-                        <div class="flex flex-wrap justify-center items-center gap-1 text-sm mb-1 mob-name">
-                            <span class="${getMobNameClass(m)}" title="${m.n}${m._npcClanName ? '・' + m._npcClanName : ''}"${(typeof pvpNameStyle === 'function') ? pvpNameStyle(m) : ''}>${m.n}</span>${_npcClanNameTag}
-                        </div>
+            let _slotClass = `mob-target ${act}${_rageNow ? ' mob-raging' : ''}${_rowCls}${BOSS_BIG_MAPS.includes(mapState.current) ? ' boss-slot' : (m.boss ? ' boss-zoom' : '')}${_sfCls}`;
+            let _nameHtml = `<span class="${getMobNameClass(m)}" title="${m.n}${m._npcClanName ? '・' + m._npcClanName : ''}"${(typeof pvpNameStyle === 'function') ? pvpNameStyle(m) : ''}>${m.n}</span>${_npcClanNameTag}`;
+            _slotViews[_k] = {
+                uid: String(m.uid), spriteKey: JSON.stringify([m.n, m.img, _innerAnimCls, _shadowLayer, _weaponLayer, _weaponLayer2]),
+                className: _slotClass, style: _scat, name: _nameHtml, badges: _badgeTags, stats: _statRow,
+                hp: _hpPercent, showHp: !!_showMobHp, hpBar: _hpBar, grace: !!m._grace, crown: _npcClanCrown
+            };
+            _slotHtmls[_k] = `<div class="${_slotClass}" data-uid="${m.uid}"${_scat ? ` style="${_scat}"` : ''}>
+                        <div class="flex flex-wrap justify-center items-center gap-1 text-sm mb-1 mob-name">${_nameHtml}</div>
                         ${badges}
                         <div class="flex justify-center mb-1 mob-img-wrap">
-                            <span class="mob-img-inner${_innerAnimCls}">${_shadowLayer}<img src="${_mi.src}" data-fb="${_mi.fb.concat(['https://placehold.co/100x100/1e293b/ffffff?text=?']).join('|')}" alt="${m.n}" onerror="_mobImgErr(this)" class="w-24 h-24 p-1 object-contain pointer-events-none${m._grace ? ' grace-glow' : ''}">${_weaponLayer}${_weaponLayer2}${_npcClanCrown}</span>
+                            <span class="mob-img-inner${_innerAnimCls}">${_shadowLayer}<img src="${_mi.src}" data-fb="${_mi.fb.concat(['https://placehold.co/100x100/1e293b/ffffff?text=?']).join('|')}" alt="${m.n}" onerror="_mobImgErr(this)" class="mob-body w-24 h-24 p-1 object-contain pointer-events-none${m._grace ? ' grace-glow' : ''}">${_weaponLayer}${_weaponLayer2}${_npcClanCrown}</span>
                         </div>
-                        <div class="flex justify-center items-center gap-2 mb-1" style="height:16px;display:flex;align-items:center;justify-content:center;gap:8px;">${_statRow}</div>
+                        <div class="mob-stat-row flex justify-center items-center gap-2 mb-1" style="height:16px;display:flex;align-items:center;justify-content:center;gap:8px;">${_statRow}</div>
                         ${_hpBar}
                      </div>`;
         } else {
+            _slotViews[_k] = null;
             // 👇 修改這裡：純 BOSS 房除了中央（i === 1）以外，其餘兩格渲染為透明隱形區塊
             // 🔧 怪物尚未出現的空格：不顯示「搜尋中...」與虛線框，渲染為透明隱形區塊（保留版位、不擾亂背景）
             _slotHtmls[_k] = `<div class="mob-target${_rowCls} !border-transparent !bg-transparent cursor-default pointer-events-none"></div>`;
         }
     }
-    // 🚀 差異更新提交：結構(格數/地圖/頭目大圖模式)不變時，只重建「字串有變」的格子；
-    //    單體戰鬥下 5 格只重建 1 格（其餘 4 格 DOM/圖片不動）→ 大幅降低 layout/paint 與卡頓。
+    // 地圖/格數改變才重建整列；同 uid/外觀局部更新，即使所有怪物同時扣血也保留圖片。
     let _ml = document.getElementById('mob-list');
     if (_ml) {
         let _structKey = _order.join(',') + '|' + mapState.current + '|' + (BOSS_BIG_MAPS.includes(mapState.current) ? 'B' : '');
@@ -1351,20 +1383,21 @@ function _renderMobsImpl() {
         let _wrote = false;
         if (!_c || _c.ml !== _ml || _c.structKey !== _structKey || _c.slots.length !== _slotHtmls.length || _ml.children.length !== _slotHtmls.length) {
             _ml.innerHTML = _slotHtmls.join('');   // 首次/結構改變/節點被換→整列重建
-            _mobRenderCache = { ml: _ml, structKey: _structKey, slots: _slotHtmls };   // _slotHtmls 是每幀新建的暫存陣列→直接存、免 slice 複製
+            _mobRenderCache = { ml: _ml, structKey: _structKey, slots: _slotHtmls, views: _slotViews, nodes: Array.from(_ml.children) };
             _wrote = true;
         } else {
-            let _changed = [];
-            for (let k = 0; k < _slotHtmls.length; k++) if (_slotHtmls[k] !== _c.slots[k]) _changed.push(k);
-            if (_changed.length) {
-                if (_changed.length * 2 > _slotHtmls.length) {
-                    _ml.innerHTML = _slotHtmls.join('');                              // 多數格變動→單次整列重建(不比現況差)
-                } else {
-                    for (const k of _changed) _ml.children[k].outerHTML = _slotHtmls[k];   // 少數格變動→只換該格
+            for (let k = 0; k < _slotHtmls.length; k++) {
+                const slot = _ml.children[k];
+                if (_slotHtmls[k] !== _c.slots[k] || slot !== _c.nodes[k]) {
+                    if (slot !== _c.nodes[k] || !_patchMobSlot(slot, _c.views[k], _slotViews[k])) {
+                        slot.outerHTML = _slotHtmls[k];   // 換怪、變身或外部替換節點才重建該格。
+                    }
+                    _wrote = true;
                 }
-                _c.slots = _slotHtmls;
-                _wrote = true;
             }
+            _c.slots = _slotHtmls;
+            _c.views = _slotViews;
+            _c.nodes = Array.from(_ml.children);
         }
         // 🖱️ name-show（hover 顯名）不再進 diff 字串、改由 _applyHoverName 單一管理→hover 不再觸發整格重建；
         //    但被重建過的格會丟失 hover class，故只在「有寫入 DOM」時重新套用一次（無重建的幀維持原樣、零成本）。
@@ -1395,8 +1428,8 @@ function _renderMobsImpl() {
 // 原理：待機幀序由「全域時鐘」決定（renderMobs 隨時整格重建也不重置相位）；單次動作 m._animAct={k,t,lock}
 //       存在怪物物件上·跨重建存活·播畢自動清除回待機。ticker 只改 img.src（已預載快取·不進 diff 字串
 //       →不觸發格子重建、不重播受擊動畫）。
-// 效能：8fps interval 掃描場上 ≤5 張卡；分頁背景(document.hidden)自動暫停；探測每怪一次（結果快取）。
-const MOB_ANIM_FPS = 8;            // 全域幀率（動作/秒）
+// 顯示由 requestAnimationFrame 驅動；8fps 僅決定素材的預設播放速度，攻擊/施法可更快。
+const MOB_ANIM_FPS = 8;            // 素材預設播放速度（畫格/秒），不是畫面更新頻率。
 const MOB_ANIM_MAX_FRAMES = 60;    // 每動作幀數探測上限（v2.7.10 30→60：林德拜爾 death 35 幀被 30 截斷·探測逐號載到 404 即止→調高對短動畫零額外成本）
 // 🐉 v3.3.4 逐怪固定「往上」位移（px·整格 .mob-target translateY·連帶名稱/血條/影子/特效命中一起上移不脫節）：某些怪 spr 本體在畫布偏下→貼底渲染時出現位置太低，此表微調。頭目/一般皆套（疊在 v3.2 隨機散佈之上）。新增只加一行。
 const MOB_YLIFT = { '法利昂': 30 };   // 法利昂（水龍·本體在 375×247 畫布偏下）出現位置往上 30px
@@ -2247,7 +2280,7 @@ function _playerMoveStep(bv) {
     st.mx = Math.max(0.05, Math.min(0.95, st.mx));
     st.mb = Math.max(2, Math.min(28, st.mb));
 }
-function _playerMorphApply() {   // 8fps ticker 驅動（🗡️ v3.0.67 形態＝變身優先→職業動態·key 含武器變體→換武器自動重建）
+function _playerMorphApply() {   // rAF 驅動；按經過時間選幀，形態/武器改變才重建。
     let form = _playerBattleForm();
     let bv = document.getElementById('battle-view');
     let inBattle = bv && !bv.classList.contains('hidden') && bv.classList.contains('area-fit');
@@ -2377,7 +2410,7 @@ function _allySpriteTrigger(ally, k, skId) {   // js/06 掛點：allyAttackOnce�
         st.act = k; st.t = Date.now(); st.pendAtk = false;   // 新動作生效→清掉排隊中的攻擊（已被取代）
     } catch (e) {}
 }
-function _allySpritesApply() {   // 8fps ticker 驅動
+function _allySpritesApply() {   // rAF 驅動，畫格仍依各動作原本時長選取。
     let bv = document.getElementById('battle-view');
     let inBattle = bv && !bv.classList.contains('hidden') && bv.classList.contains('area-fit');
     let allies = (typeof player !== 'undefined' && player && player.allies) || [];
@@ -2458,7 +2491,39 @@ function _allySpritesApply() {   // 8fps ticker 驅動
         }
     });
 }
-setInterval(() => { if (!document.hidden && !(typeof catchupActive === 'function' && catchupActive())) { try { _mobAnimApply(); } catch (e) {} try { _updateFreezeFx(); } catch (e) {} try { _updateMobSkillFx(); } catch (e) {} try { _allySpritesApply(); } catch (e) {} try { _playerMorphApply(); } catch (e) {} } }, Math.floor(1000 / MOB_ANIM_FPS));
+// 顯示時鐘與動作時長分離：45ms 的高速攻擊畫格不再受 125ms interval 限制。
+// 持續特效維持原更新頻率；圖片本身只在選到不同畫格時更換 src。
+(function _startBattleAnimationLoop() {
+    let frameId = null, lastFx = -Infinity, suspended = false;
+    function stop() {
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        frameId = null;
+        lastFx = -Infinity;
+    }
+    function start() {
+        if (!suspended && !document.hidden && frameId === null && typeof requestAnimationFrame === 'function') frameId = requestAnimationFrame(draw);
+    }
+    function draw(now) {
+        frameId = null;
+        if (suspended || document.hidden) return;
+        if (!(typeof catchupActive === 'function' && catchupActive())) {
+            try { _mobAnimApply(); } catch (e) {}
+            try { _allySpritesApply(); } catch (e) {}
+            try { _playerMorphApply(); } catch (e) {}
+            if (now - lastFx >= 1000 / MOB_ANIM_FPS) {
+                // 保留不足一格的餘數，避免螢幕刷新率使 8fps 特效逐漸降速。
+                lastFx = Number.isFinite(lastFx) ? now - ((now - lastFx) % (1000 / MOB_ANIM_FPS)) : now;
+                try { _updateFreezeFx(); } catch (e) {}
+                try { _updateMobSkillFx(); } catch (e) {}
+            }
+        }
+        start();
+    }
+    document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); else start(); });
+    window.addEventListener('pagehide', () => { suspended = true; stop(); });
+    window.addEventListener('pageshow', () => { suspended = false; start(); });
+    start();
+})();
 
 // 🌙 v3.6.03 掛網記憶體釋放：切到背景的瞬間清空 #vfx-layer 全部特效元素＋冰凍/怪技能追蹤 dict。
 //    背景分頁的移除管線全數停擺（animationend 不觸發·WAAPI onfinish 暫停·setTimeout 節流至 1/分鐘），
