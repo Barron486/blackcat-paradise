@@ -1126,7 +1126,7 @@ function _enemyPhysicalAttackInner(mob, idx, stunChance = 0, atkDmg = null, atkD
         if (!player.dead && (!player.eq.shield || _isArmguard(player.eq.shield)) && mob.curHp > 0 && player.eq.wpn && getWeaponTags(player.eq.wpn.id).includes('武士刀') && (hasMastery('k_counter') || Math.random() < 0.50)) {
             procIai(mob);
         }
-        if (!player.dead) { _combatSrc = 'mercenary'; allyReactIai(mob); _combatSrc = null; }   // 🔧 傭兵居合：判定主玩家迴避成功
+        if (!player.dead) withCombatSource('mercenary', () => allyReactIai(mob));   // 🔧 傭兵居合：判定主玩家迴避成功
         return;
     }
 
@@ -1360,14 +1360,14 @@ function _enemyPhysicalAttackInner(mob, idx, stunChance = 0, atkDmg = null, atkD
         if (!player.dead && mob.curHp > 0 && player.eq.wpn && (getWeaponTags(player.eq.wpn.id).includes('單手劍') || (player.buffs.sk_counter_barrier > 0 && DB.items[player.eq.wpn.id].w2h)) && !(getWeaponTags(player.eq.wpn.id).includes('武士刀') && !(player.eq.shield && !_isArmguard(player.eq.shield)))) {   // 🔧 反擊屏障：雙手武器亦可反擊；🛡️ 反擊/居合雙標籤武器「無真盾牌(空手或臂甲)」時→改走居合、不發動反擊（唯獨裝真盾牌才反擊）
             if (blocked || hasMastery('k_counter') || Math.random() < 0.50) procCounter(mob);
         }
-        if (!player.dead) { _combatSrc = 'mercenary'; allyReactCounter(mob, blocked); _combatSrc = null; }   // 🔧 傭兵反擊：判定主玩家受擊（玩家格檔則必定反擊）
+        if (!player.dead) withCombatSource('mercenary', () => allyReactCounter(mob, blocked));   // 🔧 傭兵反擊：判定主玩家受擊（玩家格檔則必定反擊）
     } else {
         logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 的攻擊未命中。`, 'miss', 'enemy');   // ⚔️ 敵人攻擊未命中（miss色，但歸入「敵人」來源）
         // 武士刀居合：無「真盾牌」（臂甲可發動）且敵人攻擊未命中時，50% 對攻擊者打一次必定命中的一般攻擊（🏅 反擊精通：100%）
         if (!player.dead && (!player.eq.shield || _isArmguard(player.eq.shield)) && mob.curHp > 0 && player.eq.wpn && getWeaponTags(player.eq.wpn.id).includes('武士刀') && (hasMastery('k_counter') || Math.random() < 0.50)) {
             procIai(mob);
         }
-        _combatSrc = 'mercenary'; allyReactIai(mob); _combatSrc = null;   // 🔧 傭兵居合：判定敵人未命中主玩家
+        withCombatSource('mercenary', () => allyReactIai(mob));   // 🔧 傭兵居合：判定敵人未命中主玩家
     }
 }
 

@@ -589,6 +589,17 @@ test('pet deployment and recall immediately update the team and the storage NPC 
   w.petDeployToggle(uid);await w.CloudStore.flush();assert.equal(w.document.querySelectorAll('[data-pet-uid]').length,1);
 });
 
+test('online PVP toggle is server authoritative and survives polling',async t=>{
+  const {w,engine,authority,user,requests}=await fixture(t);
+  assert.equal(engine.run('player.pvpOn'),false);
+  w.setPvpMode(true);await w.CloudStore.flush();
+  assert.equal(engine.run('player.pvpOn'),true);
+  assert.equal(authority.runtimes.get(user.id).engine.run('player.pvpOn'),true);
+  assert.ok(requests.some(({body})=>body?.op==='action'&&body.args.name==='pvp-mode'&&body.args.params.on===true));
+  await w.CloudStore.flush();assert.equal(engine.run('player.pvpOn'),true);
+  w.renderPvpTab();assert.match(w.document.getElementById('tab-pvp').textContent,/5% 機率遭遇玩家 NPC/);
+});
+
 test('pet evolution is server owned and survives polling and reconnect',async t=>{
   const {w,engine,uid,server,authority,user,service,requests}=await petFixture(t),runtime=authority.runtimes.get(user.id);
   server.run(`{const p=petRoster()[0];p.lv=30;p.exp=123;p.mhp=200;p.mmp=80;p.hp=150;p.mp=60;player.inv.push({id:'item_evo_fruit',uid:'evo-fruit-qa',cnt:2});petMarkDirty();}`);

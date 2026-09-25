@@ -900,7 +900,10 @@ function tick() {
     }
 
     if(!player.dead) { let _auraSnap = _dpsSnap(); try { relicAuraTick(); } catch(e){} let _auraDealt = _dpsDealt(_auraSnap); if(_auraDealt > 0) _dps.player += _auraDealt; }   // 🏺 蠅災的詛咒等 auraDmg：玩家階段週期全體固定魔傷（自帶快照→正確計入玩家 DPS·修 code-review#1）
-    if(!player.dead) { _combatSrc = 'summon'; let _dpsSumSnap = _dpsSnap(); summonTick(player.summon, () => { player.summon = null; }); summonTick(player.charmed, () => { player.charmed = null; }); if (typeof summonV2Tick === 'function') { try { summonV2Tick(); } catch (e) {} }   /* 🧙 v3.2.19 召喚術 v2（多實體·js/23） */ if (typeof castleGuardTick === 'function') { try { castleGuardTick(); } catch (e) {} }   /* 🏰 城堡護衛 v2（可招募協同角色·js/31）：與召喚同階段·輸出計入 summon 桶 */ if(player.cls === 'illusion') { cubeTick(); illuSummonTick(); } { let _sd = _dpsDealt(_dpsSumSnap); if (_sd > 0) _dps.summon += _sd; }   /* 🎯 DPS：召喚（玩家召喚/迷魅/幻術立方/城堡護衛）輸出 */ _combatSrc = 'mercenary'; alliesTick(); _combatSrc = null; }   // ⚔️ 召喚(含迷魅)/傭兵 戰鬥訊息來源情境；🔮 幻術士立方週期效果＋幻術精通幻象
+    if(!player.dead) {
+        withCombatSource('summon', () => { let _dpsSumSnap = _dpsSnap(); summonTick(player.summon, () => { player.summon = null; }); summonTick(player.charmed, () => { player.charmed = null; }); if (typeof summonV2Tick === 'function') { try { summonV2Tick(); } catch (e) {} }   /* 🧙 v3.2.19 召喚術 v2（多實體·js/23） */ if (typeof castleGuardTick === 'function') { try { castleGuardTick(); } catch (e) {} }   /* 🏰 城堡護衛 v2（可招募協同角色·js/31）：與召喚同階段·輸出計入 summon 桶 */ if(player.cls === 'illusion') { cubeTick(); illuSummonTick(); } { let _sd = _dpsDealt(_dpsSumSnap); if (_sd > 0) _dps.summon += _sd; } });   /* 🎯 DPS：召喚（玩家召喚/迷魅/幻術立方/城堡護衛）輸出 */
+        withCombatSource('mercenary', () => alliesTick());
+    }   // ⚔️ 召喚(含迷魅)/傭兵 戰鬥訊息來源情境；🔮 幻術士立方週期效果＋幻術精通幻象
     if(!player.dead) pledgeBlessTick();   // 生命的祝福：場上血盟怪物持續治療
     // HoT 持續回復（體力回復術 / 生命的祝福）
 // 💤 【休眠機制】團隊 HoT（持續回復）：整條鏈路目前不可達——DB.skills 內已無任何技能宣告 hot/autoBuff
@@ -933,7 +936,7 @@ function tick() {
     // 🔧 誘捕倒數已併入 tick() 每秒區塊的統一 buff 遞減點
 
     // 🐾 v3.2.17 夥伴系統 v2：出戰寵物獨立行動（攻速/施法/喝水/復活皆在 petsTick 內·攻擊不再消耗肉）
-    if (typeof petsTick === 'function') { _combatSrc = 'pet'; try { petsTick(); } catch (e) {} _combatSrc = null; }
+    if (typeof petsTick === 'function') withCombatSource('pet', () => { try { petsTick(); } catch (e) {} });
 }
 
 // 體能激發/能量激發：負重狀態下仍可自然恢復 HP、MP（身上任一 loadFreeRegen 增益生效即放行）
@@ -1061,7 +1064,7 @@ const PVP_ALIGN_EVIL = -1000;
 const PVP_ALIGN_JUSTICE = 1000;
 const PVP_REVENGE_COST = 100000;
 const PVP_REVENGE_MAX = 20;
-const PVP_WILD_CHANCE = 0.01;
+const PVP_WILD_CHANCE = 0.05;
 const PVP_KILL_WHISPER_LIFE_MS = 60 * 60 * 1000;
 const PVP_KILL_WHISPER_INTERVAL_MS = 10 * 60 * 1000;
 const PVP_KILL_WHISPER_CHANCE = 0.20;

@@ -136,6 +136,7 @@ function start(){
   window.changeMap=()=>fire('travel',{mapId:document.getElementById('map-select').value});
   window.setTarget=index=>{const uid=battle.target(index)||mapState.mobs[index]?.uid;if(uid)fire('target',{uid:String(uid)});};
   window.returnToTown=()=>fire('return-town');window.playerTeleport=()=>fire('teleport');
+  window.setPvpMode=on=>fire('pvp-mode',{on:!!on});
   window.departToLastBattle=()=>fire('journey',{operation:'depart'});
   window.returnToPledgeBase=()=>fire('journey',{operation:'home'});
   window.riftEvacuate=()=>fire('journey',{operation:'rift-exit'});

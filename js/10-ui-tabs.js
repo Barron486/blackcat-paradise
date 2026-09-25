@@ -2402,7 +2402,7 @@ function renderPvpTab() {
     let pvpBoxCls = pvpOn ? 'bg-red-950/70 border-red-600' : 'bg-slate-900/80 border-slate-700';
     let pvpTextCls = pvpOn ? 'text-red-300' : 'text-slate-100';
     let pvpHintCls = pvpOn ? 'text-red-200' : 'text-slate-400';
-    let pvpHint = '開啟後，野外戰鬥有 1% 機率遭遇玩家 NPC。';
+    let pvpHint = '開啟後，野外戰鬥有 5% 機率遭遇玩家 NPC。';
     if (clanConflict && clanConflict.hasMutual) {
         pvpHint = '雙方互宣：同模式角色強制開啟 PVP，野外遭遇率為 3%，其中 80% 為互宣血盟。';
     } else if (clanConflict && clanConflict.hasPlayerOnly) {

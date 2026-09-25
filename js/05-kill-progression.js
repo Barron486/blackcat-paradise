@@ -428,18 +428,16 @@ function killMob(idx) {
     _tradLootCtx = traditionalActive();   // 🏛️ 傳統模式：本次擊殺掉落的裝備隨機自帶強化值＋抑制施法卷軸（於 _sherineLootCtx 清除處一併關閉）
     _vfxLootCtx = true;   // ✨ VFX：本次擊殺掉落期間→gainItem 對潘朵拉權重=1 物品閃光
     _lootMobInfo = { n: mob.n, lv: mob.lv, boss: !!mob.boss };   // 🐾 本次擊殺掉落來源；頭目裝備由 gainItem 套用 10% 祝福率
-    // 🩹 v3.3.25 擊殺／掉落訊息一律歸「玩家」來源：寵物/召喚/傭兵補刀時 _combatSrc 為 'pet'/'summon'/'mercenary'，
-    //   killMob 的「擊敗了…」與 gainItem 掉落訊息若繼承該來源，會被戰鬥日誌「來源過濾」隱藏 → 玩家把該來源關掉時，
-    //   頭目被寵物/召喚補刀致死看起來就像「無訊息直接消失、又沒掉落」。擊殺是全隊事件，強制以 'player' 記錄（不影響 DPS，
-    //   傷害於呼叫端已結算）。finally 還原原來源，避免污染呼叫端後續（如寵物/召喚 tick 的 _dps 歸屬）。
-    let _svKillSrc = _combatSrc; _combatSrc = 'player';
+    // 擊殺是全隊事件，明確標成 team：即使關閉玩家／傭兵／召喚／夥伴仍保持可見，也不再混入「玩家」來源。
+    // 其餘擊殺流程保留原行動者來源，讓補刀後觸發的升級等訊息仍可正確分類。
+    let _svKillSrc = _combatSrc;
     try {
     if (typeof pvpOnKillMob === 'function') pvpOnKillMob(mob);
     if (typeof necroBookOnKill === 'function') necroBookOnKill(mob);   // 🏺 v3.8.12 死靈之書：全隊1%回復＋骷髏復生（建築由函式內排除）
     if(typeof auditTrackKill === 'function') auditTrackKill(mob);   // 統計：累計經驗/擊殺
     // 🔧 轉場建築（往上層的樓梯 / 遺忘之島傳送門）：擊敗即進入下一層/島，不顯示「擊敗了…」戰鬥訊息（race 建築且 noAutoTeleport，排除攻城塔/城門）
     let _hideKillMsg = (mob.race === '建築' && mob.noAutoTeleport);
-    if(!_hideKillMsg) logCombat(`擊敗了 <span class="${getMobColor(mob.lv)}">${mob.n}</span>！`, 'player-heavy');  // 👈 新增
+    if(!_hideKillMsg) logCombat(`擊敗了 <span class="${getMobColor(mob.lv)}">${mob.n}</span>！`, 'player-heavy', 'team');
     // 🤝 v3.7.62 組隊經驗不再拆分：主玩家、每名未倒地傭兵、每隻未倒地寵物各取得完整經驗；既有組隊加成保留。
     let _expEach = mob.exp * (1 + partyExpBonusPct() / 100) * gmWorld.expMultiplier;
     let _petExpGain = Math.floor(_expEach * (1 + dollFieldVal('expBonus') / 100));   // 🐾 每隻存活寵物各得完整玩家份額；玩家滿等不影響養寵
@@ -459,7 +457,7 @@ function killMob(idx) {
             let _up = 0;
             while ((a.lv || 1) < 100 && a.exp >= getExpReq(a.lv)) { a.exp -= getExpReq(a.lv); a.lv++; if (a.lv >= 50) a.bonus = (a.bonus || 0) + 1; _up++; }   // 比照 checkLvUp 升級曲線
             if ((a.lv || 1) >= 100) a.exp = 0;
-            if (_up > 0) { try { if (typeof _allyLevelRecompute === 'function') _allyLevelRecompute(a); } catch (e) {} logCombat(`<span class="text-yellow-300 font-bold">協力傭兵 ${a._allyName} 升級了！目前 Lv.${a.lv}</span>`, 'mercenary'); try { renderSquadPanel(); } catch (e) {} }
+            if (_up > 0) { try { if (typeof _allyLevelRecompute === 'function') _allyLevelRecompute(a); } catch (e) {} logCombat(`<span class="text-yellow-300 font-bold">協力傭兵 ${a._allyName} 升級了！目前 Lv.${a.lv}</span>`, 'player-special', 'mercenary'); try { renderSquadPanel(); } catch (e) {} }
         });
     }
     let _goldDropRate = mob.boss ? 1 : 0.7;   // 💰 一般怪 70%；頭目 100%

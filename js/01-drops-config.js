@@ -1801,8 +1801,19 @@ let quickEnh = { wpn: { active: false, target: 6, sel: {}, useBless: false }, ar
 let quickJunk = { wpn: { active: false, sel: {}, known: {} }, arm: { active: false, sel: {}, known: {} }, item: { active: false, sel: {}, known: {} } };   // known＝面板開啟時(及之後同步)已納入的物品 uid，避免「面板開啟後才掉落的廢品」於確認時被誤取消標記
 
 // ===== ⚔️ 戰鬥日誌來源過濾（敵人/玩家/傭兵/召喚/夥伴）=====
-// _combatSrc：目前正在記錄的戰鬥訊息來源，由各攻擊派發點設定；為 null 時依顏色 type 推定（'enemy'→敵人，其餘→玩家）。
+// _combatSrc：目前正在記錄的戰鬥訊息來源，由各攻擊派發點設定；巢狀流程必須用 withCombatSource，避免內層把外層來源清掉。
 let _combatSrc = null;
+const COMBAT_LOG_SOURCES = new Set(['enemy', 'player', 'mercenary', 'summon', 'pet', 'team']);
+function combatLogSource(src) {
+    if (src && typeof src === 'object' && src.slot != null) return 'mercenary';   // DPS 的傭兵來源標記 {slot,name}
+    return COMBAT_LOG_SOURCES.has(src) ? src : 'player';
+}
+function withCombatSource(src, action) {
+    let previous = _combatSrc;
+    _combatSrc = combatLogSource(src);
+    try { return action(); }
+    finally { _combatSrc = previous; }
+}
 const COMBAT_FILTER_KEY = 'lineage_idle_combat_filter';
 let _combatFilter = { enemy: true, player: true, mercenary: true, summon: true, pet: true };
 (function(){ try { let s = localStorage.getItem(COMBAT_FILTER_KEY); if (s) { let o = JSON.parse(s); for (let k in _combatFilter) if (typeof o[k] === 'boolean') _combatFilter[k] = o[k]; } } catch(e){} })();
@@ -1837,14 +1848,14 @@ function logCombat(msg, type="player", src=null) {
     else if (type === "player-special") { colorClass = "text-orange-300"; catClass = "log-cat-attack"; } // 我方特殊效果/寵物等非爆擊傷害 (沉穩橘色，較不搶眼)
     else if (type === "player-graze") { colorClass = "text-blue-200/80"; catClass = "log-cat-attack"; } // 我方擦傷 (較亮的淡藍，灰底上仍清楚)
     else if (type === "skill") { colorClass = "text-purple-300"; catClass = "log-cat-skill"; } // 🟣 我方技能傷害 (紫色＋紫左條)
-    else if (type === "enemy") { colorClass = "text-red-400"; catClass = "log-cat-enemy"; } // 敵方攻擊 (紅色＋紅左條)
+    else if (type === "enemy" || type === "enemy-attack") { colorClass = "text-red-400"; catClass = "log-cat-enemy"; } // 敵方攻擊 (紅色＋紅左條)
     else if (type === "dot") { colorClass = "text-green-300"; catClass = "log-cat-dot"; } // 🟢 我方持續傷害/DoT (綠色＋綠左條：火牢/冰雪颶風/立方燃燒/中毒/出血/猛爆劇毒等週期傷害)
     else if (type === "magic") { colorClass = "text-cyan-300"; } // 魔法效果/法系觸發 (青色·非主動施放技能)
     else if (type === "heal") { colorClass = "text-green-300"; } // 恢復效果 (綠色)
     else if (type === "miss" || type === "dodge") { colorClass = "text-slate-200"; } // 未命中/閃避 (淺灰，避免與灰底相近)
     else if (type === "evade") { colorClass = "text-teal-300"; } // ER獨立迴避 (淡青綠色)
 
-    let _src = src || _combatSrc || (type === 'enemy' ? 'enemy' : 'player');   // 來源：明確指定 > 派發點情境(_combatSrc) > 依顏色type推定
+    let _src = combatLogSource(src || _combatSrc || ((type === 'enemy' || type === 'enemy-attack') ? 'enemy' : 'player'));   // 來源：明確指定 > 安全作用域 > 僅敵方型別可推定；miss/magic/heal 必須由呼叫端或作用域決定
     el.insertAdjacentHTML('beforeend', `<div class="log-entry ${colorClass} ${catClass}" data-src="${_src}">${msg}</div>`);   // 🚀 只解析新訊息、不重建整個日誌(原 innerHTML+= 會 O(n) 重建全部子節點，戰鬥洗版時造成卡頓)
     // 🔒 鎖定捲動時保留更多歷史；未鎖定時維持一般上限
     let _max = _combatLogLocked ? COMBAT_LOG_MAX_LOCKED : COMBAT_LOG_MAX;

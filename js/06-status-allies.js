@@ -194,7 +194,7 @@ function processMobStatusTick(m, i) {
         if(state.ticks % (s.poisonTick || 30) === 0) {
             let _pdc = _teamDotCrit(s.poisonDmg);   // 🏺 v3.1.80 永不終止的夢魘：中毒 DoT 可爆擊
             m.curHp -= _pdc.dmg; m.justHit = 'magic'; mobWake(m); _dpsCreditDot(s.poisonSrc, _pdc.dmg);   // 🎯 DPS：中毒 DoT 依施加者歸因（玩家/傭兵/召喚·未標記→玩家）
-            logCombat(`<span class="${getMobColor(m.lv)}">${m.n}</span> 受到中毒傷害 ${_pdc.dmg} 點。${_pdc.crit ? ' <span class="text-yellow-500 font-bold">(爆擊!)</span>' : ''}`, 'dot');   // 🟢 中毒 DoT→綠色持續傷害分類
+            logCombat(`<span class="${getMobColor(m.lv)}">${m.n}</span> 受到中毒傷害 ${_pdc.dmg} 點。${_pdc.crit ? ' <span class="text-yellow-500 font-bold">(爆擊!)</span>' : ''}`, 'dot', combatLogSource(s.poisonSrc));   // 🟢 中毒 DoT→保留原施加者來源
             if(m.curHp <= 0) { killMob(i); return true; }
         }
         if(s.poison <= 0) { s.poisonStacks = 0; s.poisonUnit = 0; s.poisonDmg = 0; s.poisonSrc = undefined; }   // 中毒結束：清空層數與 DPS 歸因來源（不清會跨中毒週期污染下一位施加者的統計）
@@ -213,7 +213,7 @@ function processMobStatusTick(m, i) {
             if(m._bleedMastery) bleedTotal = Math.floor(bleedTotal * (1 + 0.10 * m.bleeds.length));
             let _bdc = _teamDotCrit(bleedTotal);   // 🏺 v3.1.80 永不終止的夢魘：出血 DoT 可爆擊
             m.curHp -= _bdc.dmg; m.justHit = 'magic'; mobWake(m); _dpsCreditDot(m._bleedSrc, _bdc.dmg);   // 🎯 DPS：出血 DoT 依施加者歸因（玩家/傭兵/寵物·未標記→玩家）
-            logCombat(`<span class="${getMobColor(m.lv)}">${m.n}</span> 受到出血傷害 ${_bdc.dmg} 點（${m.bleeds.length} 層）。${_bdc.crit ? ' <span class="text-yellow-500 font-bold">(爆擊!)</span>' : ''}`, 'dot');   // 🟢 出血 DoT→綠色持續傷害分類(原 'player' 藍色一般攻擊)
+            logCombat(`<span class="${getMobColor(m.lv)}">${m.n}</span> 受到出血傷害 ${_bdc.dmg} 點（${m.bleeds.length} 層）。${_bdc.crit ? ' <span class="text-yellow-500 font-bold">(爆擊!)</span>' : ''}`, 'dot', combatLogSource(m._bleedSrc));   // 🟢 出血 DoT→保留原施加者來源
             if(m.curHp <= 0) { killMob(i); return true; }
             if(!state.ff) renderMobs();
         }
@@ -225,7 +225,7 @@ function processMobStatusTick(m, i) {
         if(m._burstPoison.left % 10 === 0) {
             let _udc = _teamDotCrit(m._burstPoison.dmg);   // 🏺 v3.1.80 永不終止的夢魘：猛爆劇毒 DoT 可爆擊
             m.curHp -= _udc.dmg; m.justHit = 'magic'; mobWake(m); _dpsCreditDot(m._burstPoison.src, _udc.dmg);   // 🎯 DPS：猛爆劇毒 DoT 依施加者歸因（未標記→玩家）
-            logCombat(`<span class="${getMobColor(m.lv)}">${m.n}</span> 受到猛爆劇毒傷害 ${_udc.dmg} 點。${_udc.crit ? ' <span class="text-yellow-500 font-bold">(爆擊!)</span>' : ''}`, 'dot');   // 🟢 猛爆劇毒 DoT→綠色持續傷害分類(原 'player' 藍色一般攻擊)
+            logCombat(`<span class="${getMobColor(m.lv)}">${m.n}</span> 受到猛爆劇毒傷害 ${_udc.dmg} 點。${_udc.crit ? ' <span class="text-yellow-500 font-bold">(爆擊!)</span>' : ''}`, 'dot', combatLogSource(m._burstPoison.src));   // 🟢 猛爆劇毒 DoT→保留原施加者來源
             if(m.curHp <= 0) { m._burstPoison = null; killMob(i); return true; }
             if(!state.ff) renderMobs();
         }
@@ -237,7 +237,7 @@ function processMobStatusTick(m, i) {
         if(m._burnDot.left % (m._burnDot.tick || 10) === 0) {
             let _fdc = _teamDotCrit(m._burnDot.dmg);   // 🏺 灼燒 DoT 可爆擊（與中毒/出血一致）
             m.curHp -= _fdc.dmg; m.justHit = 'fire'; mobWake(m); _dpsCreditDot(m._burnDot.src, _fdc.dmg);   // 🎯 DPS：灼燒 DoT 依施加者歸因（未標記→玩家）
-            logCombat(`<span class="${getMobColor(m.lv)}">${m.n}</span> 受到灼燒傷害 ${_fdc.dmg} 點。${_fdc.crit ? ' <span class="text-yellow-500 font-bold">(爆擊!)</span>' : ''}`, 'dot');   // 🟢 灼燒 DoT→綠色持續傷害分類
+            logCombat(`<span class="${getMobColor(m.lv)}">${m.n}</span> 受到灼燒傷害 ${_fdc.dmg} 點。${_fdc.crit ? ' <span class="text-yellow-500 font-bold">(爆擊!)</span>' : ''}`, 'dot', combatLogSource(m._burnDot.src));   // 🟢 灼燒 DoT→保留原施加者來源
             if(m.curHp <= 0) { m._burnDot = null; killMob(i); return true; }
             if(!state.ff) renderMobs();
         }

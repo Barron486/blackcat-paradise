@@ -183,6 +183,11 @@ export function extraAction(game,name,a){
       run(`if(player._gmDead||mapState.current!=='arena_pvp'||pvpArenaActive()||!pvpServerSnapshot().result)throw new Error('目前沒有待結算的決鬥');`);
       run(a.operation==='continue'?'pvpResultContinue();':'pvpResultReturn();');break;
     }
+    case 'pvp-mode':{
+      keys(a,['on']);if(typeof a.on!=='boolean')throw new Error('PVP 設定不正確');
+      run(`{pvpEnsureState();if(!__args.on&&typeof npcClanWarActive==='function'&&npcClanWarActive(player))throw new Error('血盟戰期間無法關閉 PVP');player.pvpOn=__args.on;}`);
+      break;
+    }
     case 'batch-use':{
       keys(a,['uid','qty']);id(a.uid);integer(a.qty,1,1000);
       run(`{const i=player.inv.find(i=>i.uid===__args.uid);if(!i||!DB.items[i.id]?.batchUse)throw new Error('無法批次使用此道具');}`);

@@ -848,7 +848,7 @@ function petsGainExp(playerGain) {
             p.mhp += hg; p.mmp += mg; p.hp += hg; p.mp += mg;
         }
         if (p.lv >= _cap) p.exp = 0;
-        if (up > 0) { logCombat(`<span class="text-yellow-300 font-bold">寵物 ${petDisplayName(p)} 升級了！目前 Lv.${p.lv}</span>`, 'player-special'); petMarkDirty(); try { renderSquadPanel(); } catch (e) {} }
+        if (up > 0) { logCombat(`<span class="text-yellow-300 font-bold">寵物 ${petDisplayName(p)} 升級了！目前 Lv.${p.lv}</span>`, 'player-special', 'pet'); petMarkDirty(); try { renderSquadPanel(); } catch (e) {} }
     });
     petMarkDirty();
 }
@@ -958,7 +958,7 @@ function _petPickTarget(p) {
 }
 function petAttackOnce(p, d, target, forceCrit, addDmg, skName) {
     if (!target || target.curHp <= 0) return;
-    _combatSrc = 'pet';
+    return withCombatSource('pet', () => {
     let _snap = (typeof _dpsSnap === 'function') ? _dpsSnap() : null;
     try {
         let pg = (typeof petGearBonus === 'function') ? petGearBonus(p) : { dmg: 0, hit: 0 };   // 🦴 v3.2.37 讀該寵物自身的武器（p.eq.wpn）
@@ -991,7 +991,7 @@ function petAttackOnce(p, d, target, forceCrit, addDmg, skName) {
         }
     } catch (e) {}
     if (_snap && typeof _dpsDealt === 'function') { let _dd = _dpsDealt(_snap); if (_dd > 0) _dps.pet += _dd; }
-    _combatSrc = null;
+    });
 }
 function petDebuffChance(p, d, target, sk) {
     let effMr = (target.st && target.st.mrhalf > 0) ? Math.floor((target.mr || 0) / 2) : (target.mr || 0);
@@ -1007,7 +1007,7 @@ function petCastSkill(p, d, target) {
     if (usable.length === 1) sk = usable[0];
     else { let tw = usable.reduce((s, x) => s + (x.w || 100 / usable.length), 0); let rr = Math.random() * tw; for (let x of usable) { rr -= (x.w || 100 / usable.length); if (rr < 0) { sk = x; break; } } sk = sk || usable[usable.length - 1]; }
     p.mp -= sk.mp;
-    _combatSrc = 'pet';
+    return withCombatSource('pet', () => {
     let _snap = (sk.kind !== 'extra' && typeof _dpsSnap === 'function') ? _dpsSnap() : null;
     try {
         _petAnimAct(p, 'skill', target.uid);
@@ -1074,8 +1074,8 @@ function petCastSkill(p, d, target) {
         }
     } catch (e) {}
     if (_snap && typeof _dpsDealt === 'function') { let _dd = _dpsDealt(_snap); if (_dd > 0) _dps.pet += _dd; }
-    _combatSrc = null;
     return true;
+    });
 }
 function _petAfterDamage(m) {
     if (m.curHp <= 0) { let idx = mapState.mobs.findIndex(x => x && x.uid === m.uid); if (idx !== -1) killMob(idx); }
@@ -1197,14 +1197,14 @@ function petTryPotion(p) {   // HP<X% 用治癒藥水（邏輯同傭兵 allyTryP
     if (p._statuses && p._statuses.foulWater > 0) h = Math.max(1, Math.floor(h * 0.5));   // 🌊 v3.6.20 汙濁之水：治癒藥水也減半
     p.hp = Math.min(petMhpEff(p), p.hp + h);
     p._potCd = 10;
-    logCombat(`寵物 <span class="text-emerald-300 font-bold">${p.form}</span> 飲用 ${pdef.n}，恢復 ${h} 點 HP。`, 'heal');
+    logCombat(`寵物 <span class="text-emerald-300 font-bold">${p.form}</span> 飲用 ${pdef.n}，恢復 ${h} 點 HP。`, 'heal', 'pet');
     petMarkDirty();
 }
 function _petReviveDone(p, via) {
     p._downed = false; p._reviveCd = 0;
     p.hp = Math.max(1, Math.floor(petMhpEff(p) * 0.5)); p.mp = p.mmp + (((typeof petDerive === 'function' && petDerive(p)) || {}).mmpBonus || 0);   // 🦴 v3.2.42 稽核修：復活 MP 補到含防具精神加成的有效上限（與 petsTick _mmpEff 一致）
     p._animAct = null; p._statuses = newMobStatus();
-    logCombat(`<span class="text-green-300 font-bold">寵物 ${p.form} 復活了！</span>（${via}）`, 'heal');
+    logCombat(`<span class="text-green-300 font-bold">寵物 ${p.form} 復活了！</span>（${via}）`, 'heal', 'pet');
     petDevotionGrant(p);   // 🏺 v3.6.44 珍愛夥伴的執念：復活後 8 秒受傷 −100%＋額外傷害 +8
     petMarkDirty();
     try { renderSquadPanel(); } catch (e) {}
@@ -1213,7 +1213,7 @@ function _petReviveDone(p, via) {
 function petDevotionGrant(p) {
     if (!(player && player.eq && player.eq.amulet && (DB.items[player.eq.amulet.id] || {}).petReviveBuff)) return;
     p._reviveGuardUntil = ((typeof state !== 'undefined' && state.ticks) || 0) + 80;
-    logCombat(`<span class="font-bold text-pink-300">【珍愛夥伴的執念】</span>守護 ${p.form}：8 秒內受到傷害 −100%、額外傷害 +8。`, 'player-special');
+    logCombat(`<span class="font-bold text-pink-300">【珍愛夥伴的執念】</span>守護 ${p.form}：8 秒內受到傷害 −100%、額外傷害 +8。`, 'player-special', 'pet');
 }
 function petDevotionGuardOn(p) { return !!(p && (p._reviveGuardUntil || 0) > (((typeof state !== 'undefined' && state.ticks) || 0))); }
 // 🐾 v3.6.29 回村/回城（js/11 changeMap 村莊分支呼叫·比照傭兵 reviveDownedMercsAtTown）：
@@ -1230,7 +1230,7 @@ function petsReviveAtTown() {
         p._statuses = newMobStatus();
     });
     petMarkDirty();
-    if (n) { try { logCombat(`<span class="text-green-300 font-bold">回到安全區，${n} 隻倒下的寵物已恢復。</span>`, 'heal'); } catch (e) {} }
+    if (n) { try { logCombat(`<span class="text-green-300 font-bold">回到安全區，${n} 隻倒下的寵物已恢復。</span>`, 'heal', 'pet'); } catch (e) {} }
     try { renderSquadPanel(); } catch (e) {}
 }
 function petRevive(uidv, method) {   // 隊伍面板按鈕：rez=返生術（立即·耗玩家MP）/ scroll=復活卷軸（需滿 5 秒·_petDown 設 _reviveCd=50 tick）
