@@ -616,14 +616,17 @@ function mercenaryRoleNotifySafeAreaOnly() {
 }
 function mercenaryRoleBattleBlocked(targetMap, notify) {
     targetMap = String(targetMap || '');
-    if (!targetMap || targetMap.startsWith('town_')) return false;
+    // 決鬥競技場沒有經驗、金幣或掉寶，且進場後會把同行傭兵移到場邊；
+    // 因此受僱角色可在不影響僱主進度的前提下進行純 1v1 決鬥。
+    if (!targetMap || targetMap.startsWith('town_') || targetMap === 'arena_pvp') return false;
     let employer = currentRoleMercenaryEmployer();
     if (!employer) return false;
     if (notify !== false) mercenaryRoleNotifySafeAreaOnly();
     return true;
 }
 function enforceMercenarySafeArea() {
-    if (_mercenarySafeReturnBusy || !player || !player.cls || !mapState || String(mapState.current || '').startsWith('town_')) return false;
+    let currentMap = String(mapState && mapState.current || '');
+    if (_mercenarySafeReturnBusy || !player || !player.cls || !mapState || currentMap.startsWith('town_') || currentMap === 'arena_pvp') return false;
     let employer = currentRoleMercenaryEmployer();
     if (!employer) return false;
     _mercenarySafeReturnBusy = true;

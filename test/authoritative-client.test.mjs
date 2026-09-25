@@ -515,6 +515,21 @@ test('arena challenge and result buttons use server combat and retain the return
   assert.equal(engine.status().map,'town_gludin');assert.equal(engine.status().dead,false);assert.equal(w.document.getElementById('pvp-result-modal'),null);
 });
 
+test('a hired character may use the rewardless arena while ordinary hunting maps remain blocked',async t=>{
+  const {w,engine,authority,user}=await fixture(t,{classId:'royal',name:'僱主',allocation:{str:2,con:6}},[{classId:'elf',name:'受僱角色',allocation:{dex:6,con:2}}]);
+  await w.CloudStore.action('mercenary',{operation:'toggle',slot:2});
+  w.returnToCharacterSelect();await w.CloudStore.flush();
+  engine.run('currentSlot=2;_loadSelectedSlot=2;');w.loadGame();await w.CloudStore.flush();
+  assert.equal(engine.run('player.name'),'受僱角色');assert.equal(engine.run('currentRoleIsMercenary()'),true);
+  await w.CloudStore.action('travel',{mapId:'town_gludin'});w.interactNPC('npc_arena','town_gludin');
+  clickNpcButton(w,'pvpChallengeSlot');await w.CloudStore.flush();
+  assert.equal(engine.status().map,'arena_pvp');assert.equal(engine.run('pvpArenaActive()'),true);
+  const runtime=authority.runtimes.get(user.id);runtime.engine.step(1000);authority.commit(user,runtime);await w.CloudStore.flush();
+  assert.equal(engine.status().map,'arena_pvp','the mercenary safe-area enforcer must not eject an active duelist');
+  await assert.rejects(w.CloudStore.action('travel',{mapId:'training'}));
+  assert.equal(engine.status().map,'arena_pvp','ordinary hunting travel remains unavailable while hired');
+});
+
 test('guild equipment buttons transfer and return items once, update both characters and survive reconnect',async t=>{
   const {w,engine,authority,service,user,lose,requests}=await fixture(t,undefined,[{classId:'knight',name:'換裝隊員',allocation:{str:2,con:6}}]);
   const r=authority.runtimes.get(user.id);r.engine.run("player.inv.push({id:'wpn_2',uid:'guild-mace',cnt:2,en:3});");authority.commit(user,r);
@@ -572,6 +587,36 @@ test('pet deployment and recall immediately update the team and the storage NPC 
   w.petDeployToggle(uid);await w.CloudStore.flush();assert.equal(engine.run('petsOutList().length'),0);
   assert.equal(w.document.getElementById('squad-panel').style.display,'none');assert.equal(storage.querySelector('button[onclick^="petDeployToggle"]').textContent,'出戰');
   w.petDeployToggle(uid);await w.CloudStore.flush();assert.equal(w.document.querySelectorAll('[data-pet-uid]').length,1);
+});
+
+test('pet evolution is server owned and survives polling and reconnect',async t=>{
+  const {w,engine,uid,server,authority,user,service,requests}=await petFixture(t),runtime=authority.runtimes.get(user.id);
+  server.run(`{const p=petRoster()[0];p.lv=30;p.exp=123;p.mhp=200;p.mmp=80;p.hp=150;p.mp=60;player.inv.push({id:'item_evo_fruit',uid:'evo-fruit-qa',cnt:2});petMarkDirty();}`);
+  authority.commit(user,runtime);await w.CloudStore.flush();
+  const target=server.run("petEvoOptions(petRoster()[0]).find(o=>o.fruitId==='item_evo_fruit').target");
+  w.petEvolve(uid);await w.CloudStore.flush();
+  const evolutions=requests.filter(r=>r.body?.args?.name==='pet'&&r.body.args.params.operation==='evolve');
+  assert.equal(evolutions.length,1);assert.equal(evolutions[0].body.args.params.fruitId,'item_evo_fruit');
+  assert.equal(server.run('petRoster()[0].form'),target);assert.equal(engine.run('petRoster()[0].form'),target);
+  assert.deepEqual(JSON.parse(server.run('JSON.stringify((()=>{const p=petRoster()[0];return {lv:p.lv,exp:p.exp,mhp:p.mhp,mmp:p.mmp,hp:p.hp,mp:p.mp};})())')),{lv:1,exp:0,mhp:100,mmp:40,hp:100,mp:40});
+  assert.equal(server.run("player.inv.find(i=>i.id==='item_evo_fruit').cnt"),1);
+  const saved=catalog.unwrap(service.bootstrap(user).values.fb5_pet_roster)[0];assert.equal(saved.form,target);assert.equal(saved.lv,1);
+  assert.match(w.document.getElementById('interaction-content').textContent,new RegExp(target+'.*Lv\\.1','s'));
+  authority.drop(user.id);await w.CloudStore.flush();assert.equal(engine.run('petRoster()[0].form'),target);assert.equal(engine.run('petRoster()[0].lv'),1);
+});
+
+test('pet evolution rejects invalid fruit, missing requirements, remote locations and foreign ownership',async t=>{
+  const {w,uid,authority,user}=await petFixture(t);
+  const mutate=code=>{const runtime=authority.runtimes.get(user.id);runtime.engine.run(code);authority.commit(user,runtime);};
+  await assert.rejects(w.CloudStore.action('pet',{operation:'evolve',uid,fruitId:'forged_fruit'}),/果實不正確/);
+  await assert.rejects(w.CloudStore.action('pet',{operation:'evolve',uid,fruitId:'item_evo_fruit'}),/30 以上/);
+  mutate("{const p=petRoster()[0];p.lv=30;petMarkDirty();}");await w.CloudStore.flush();
+  await assert.rejects(w.CloudStore.action('pet',{operation:'evolve',uid,fruitId:'item_evo_fruit'}),/沒有指定/);
+  mutate("player.inv.push({id:'item_evo_fruit',uid:'blocked-fruit',cnt:1});");await w.CloudStore.flush();
+  await w.CloudStore.action('travel',{mapId:'town_silver_knight'});await assert.rejects(w.CloudStore.action('pet',{operation:'evolve',uid,fruitId:'item_evo_fruit'}),/保管員/);
+  await w.CloudStore.action('travel',{mapId:'town_gludin'});mutate("{const p=petRoster()[0];p.outOwner='char:another-role';p.outSlot='2';p.outV=_petNowStamp();petMarkDirty();}");await w.CloudStore.flush();
+  await assert.rejects(w.CloudStore.action('pet',{operation:'evolve',uid,fruitId:'item_evo_fruit'}),/其他角色/);
+  const current=authority.runtimes.get(user.id).engine;assert.equal(current.run('petRoster()[0].form'),'貓');assert.equal(current.run("player.inv.find(i=>i.id==='item_evo_fruit').cnt"),1);
 });
 
 test('live pet vitals, effects, experience and death replace stale browser state without rebuilding inputs',async t=>{

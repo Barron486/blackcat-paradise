@@ -244,12 +244,15 @@ export function extraAction(game,name,a){
     }
     case 'trial':keys(a,['key','complete']);id(a.key);if(typeof a.complete!=='boolean')throw new Error('任務操作不正確');run(`{const q=Object.hasOwn(TRIAL_Q,__args.key)&&TRIAL_Q[__args.key];if(!q||!DB.towns[mapState.current]?.npcs?.some(n=>n.n===q.npc))throw new Error('請向當地任務 NPC 交付');if(__args.complete)trialQComplete(__args.key);else trialQAccept(__args.key);}`);break;
     case 'pet':{
-      keys(a,['operation','uid','slot','itemUid','method','value']);id(a.uid);
-      const calls={deploy:'petDeployToggle(__args.uid)',lock:'petToggleLock(__args.uid)',equip:'petGearEquip(__args.uid,__args.slot,__args.itemUid)',unequip:'petGearUnequip(__args.uid,__args.slot)',revive:'petRevive(__args.uid,__args.method)',potion:'petSetPotPct(__args.uid,__args.value)'};
+      keys(a,['operation','uid','slot','itemUid','method','value','fruitId']);id(a.uid);
+      const calls={deploy:'petDeployToggle(__args.uid)',lock:'petToggleLock(__args.uid)',equip:'petGearEquip(__args.uid,__args.slot,__args.itemUid)',unequip:'petGearUnequip(__args.uid,__args.slot)',revive:'petRevive(__args.uid,__args.method)',potion:'petSetPotPct(__args.uid,__args.value)',evolve:'petEvolve(__args.uid,__args.fruitId)'};
       if(!Object.hasOwn(calls,a.operation))throw new Error('不支援的寵物操作');
       if(['equip','unequip'].includes(a.operation)&&!['wpn','arm'].includes(a.slot))throw new Error('寵物裝備欄不正確');
       if(a.operation==='equip')id(a.itemUid);if(a.operation==='revive'&&!['rez','scroll'].includes(a.method))throw new Error('復活方式不正確');if(a.operation==='potion')integer(a.value,0,95);
-      run(`{const p=_petFind(__args.uid);if(!p)throw new Error('找不到這隻寵物');if(_petOwnedByOther(p))throw new Error('這隻寵物由其他角色帶領');}`+calls[a.operation]+`;if(!petRosterSave())throw new Error('寵物設定保存失敗');`);break;
+      if(a.operation==='evolve'){
+        id(a.fruitId);if(!['item_evo_fruit','item_victory_fruit'].includes(a.fruitId))throw new Error('進化果實不正確');
+        run(`{if(!DB.towns[mapState.current]?.npcs?.some(n=>n.type==='petstore'))throw new Error('請向寵物保管員進行進化');const p=_petFind(__args.uid);if(!p)throw new Error('找不到這隻寵物');if(_petOwnedByOther(p))throw new Error('這隻寵物由其他角色帶領');if((p.lv||1)<30)throw new Error('寵物等級 30 以上才能進化');const option=petEvoOptions(p).find(o=>o.fruitId===__args.fruitId);if(!option)throw new Error('此寵物無法使用這種果實進化');const fruit=player.inv.find(i=>i.id===__args.fruitId&&(i.cnt||0)>0);if(!fruit)throw new Error('身上沒有指定的進化果實');const from=p.form;fruit.cnt--;if(fruit.cnt<=0)player.inv=player.inv.filter(i=>i.uid!==fruit.uid);p.form=option.target;p.lv=1;p.exp=0;p.mhp=Math.max(1,Math.floor(p.mhp*.5));p.mmp=Math.max(0,Math.floor(p.mmp*.5));p.hp=p.mhp;p.mp=p.mmp;petMarkDirty();logSys('<span class="c-legend font-bold">✨ 進化成功！</span><span class="text-amber-200">'+from+' 進化為 </span><span class="text-amber-300 font-bold">'+p.form+'</span><span class="text-amber-200">（Lv.1·HP/MP 為進化前的 50%）！</span>');}`);
+      }else run(`{const p=_petFind(__args.uid);if(!p)throw new Error('找不到這隻寵物');if(_petOwnedByOther(p))throw new Error('這隻寵物由其他角色帶領');}`+calls[a.operation]+`;if(!petRosterSave())throw new Error('寵物設定保存失敗');`);break;
     }
     case 'mercenary':{
       if(a.operation==='dismiss-all'){

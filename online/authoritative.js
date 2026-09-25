@@ -327,6 +327,14 @@ function start(){
   window.petGearEquip=(uid,slot,itemUid)=>void petAction({operation:'equip',uid,slot,itemUid}).catch(()=>{});
   window.petGearUnequip=(uid,slot)=>void petAction({operation:'unequip',uid,slot}).catch(()=>{});
   window.petRevive=(uid,method)=>void petAction({operation:'revive',uid,method}).catch(()=>{});
+  const localPetEvolve=window.petEvolve;
+  window.petEvolve=(uid,fruitId)=>{
+    const pet=_petFindFresh(uid),available=petEvoOptions(pet).filter(option=>player.inv.some(item=>item.id===option.fruitId&&(item.cnt||0)>0));
+    if(!pet||!available.length){localPetEvolve(uid,fruitId);return;}
+    if(!fruitId&&available.length>1){petEvoChoose(pet,available);return;}
+    fruitId=fruitId||available[0].fruitId;
+    void petAction({operation:'evolve',uid,fruitId}).catch(()=>{});
+  };
   const petPending=new Map();cloud.petEditing=uid=>petPending.has(uid);
   window.petSetPotPct=(uid,value)=>{
     if(typeof value==='string'&&!value.trim())return;
