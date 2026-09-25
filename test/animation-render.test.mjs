@@ -88,6 +88,17 @@ function battle(t){
   return engine;
 }
 
+test('fresh characters show monster health bars by default',t=>{
+  const engine=new HeadlessGame({values:{lineage_idle_mob_hp:'0'}});t.after(()=>engine.close());
+  engine.create({classId:'knight',name:'血條預設',allocation:{str:2,con:6}});
+  engine.run("mapState.current='training';mapState.mobs=[{uid:'hp-default',n:'哥布林',img:'assets/icons/monsters/哥布林.png',lv:1,hp:100,curHp:100,st:{},_yScat:10}];_renderMobsImpl();");
+  assert.equal(engine.run('_showMobHp'),true);
+  assert.ok(engine.window.document.querySelector('.mob-hp-bar'));
+  engine.run('toggleMobHp();');assert.equal(engine.run('_showMobHp'),false);
+  const reloaded=new HeadlessGame({values:engine.values()});t.after(()=>reloaded.close());
+  assert.equal(reloaded.run('_showMobHp'),false,'manual hiding remains saved after the one-time restoration');
+});
+
 test('simultaneous HP, status and target updates preserve every monster and sprite node',t=>{
   const engine=battle(t),w=engine.window,list=w.document.getElementById('mob-list');
   const cards=[...list.children],bodies=cards.map(c=>c.querySelector('.mob-body'));

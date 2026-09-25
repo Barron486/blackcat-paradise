@@ -1830,10 +1830,11 @@ function toggleCombatFilter(k){ if (!(k in _combatFilter)) return; _combatFilter
 let _showMobStatus = true;
 (function(){ try { let s = localStorage.getItem('lineage_idle_mob_status'); if (s !== null) _showMobStatus = (s === '1'); } catch(e){} })();
 function toggleMobStatus(){ _showMobStatus = !_showMobStatus; try { localStorage.setItem('lineage_idle_mob_status', _showMobStatus ? '1' : '0'); } catch(e){} let b = document.getElementById('cf-btn-status'); if (b) b.classList.toggle('cf-off', !_showMobStatus); renderMobs(); let tm = document.getElementById('town-npc-map'); if (tm) { tm.classList.toggle('show-labels', _showMobStatus); if (_showMobStatus && typeof _resolveTownLabelOverlap === 'function') _resolveTownLabelOverlap(); } }   /* 🏷️ v3.2.92 同步切換城鎮 NPC 名牌常駐顯示 */
-// 🩸 怪物血量條顯示開關（按鈕在「狀態」左側·點亮才在怪卡顯示短血條；預設關閉＝沿用無血條的乾淨版面）
-let _showMobHp = false;
-(function(){ try { let s = localStorage.getItem('lineage_idle_mob_hp'); if (s !== null) _showMobHp = (s === '1'); } catch(e){} })();
-function toggleMobHp(){ _showMobHp = !_showMobHp; try { localStorage.setItem('lineage_idle_mob_hp', _showMobHp ? '1' : '0'); } catch(e){} let b = document.getElementById('cf-btn-hp'); if (b) b.classList.toggle('cf-off', !_showMobHp); renderMobs(); }
+// 🩸 怪物血量條顯示開關（按鈕在「狀態」左側；本版以 v2 偏好鍵一次性恢復預設顯示，之後仍會保留玩家手動關閉的選擇）
+const MOB_HP_PREF_KEY = 'lineage_idle_mob_hp_v2';
+let _showMobHp = true;
+(function(){ try { let s = localStorage.getItem(MOB_HP_PREF_KEY); if (s !== null) _showMobHp = (s === '1'); else localStorage.setItem(MOB_HP_PREF_KEY, '1'); } catch(e){} })();
+function toggleMobHp(){ _showMobHp = !_showMobHp; try { localStorage.setItem(MOB_HP_PREF_KEY, _showMobHp ? '1' : '0'); } catch(e){} let b = document.getElementById('cf-btn-hp'); if (b) b.classList.toggle('cf-off', !_showMobHp); renderMobs(); }
 
 function logCombat(msg, type="player", src=null) {
     if(state.ff) return; // 補跑期間不洗版
