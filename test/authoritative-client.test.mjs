@@ -520,6 +520,18 @@ test('Riley aide buttons use authoritative NPC commands and keep shared points s
   assert.deepEqual(methods,['antPointsExchange','antHeirloomOpen']);
 });
 
+test('castle guard buttons use authoritative NPC commands and adopt server-settled gold and roster',async t=>{
+  const {w,engine,authority,user,requests}=await fixture(t,{classId:'royal',name:'護衛瀏覽器測試',allocation:{str:7,con:1}});
+  const r=authority.runtimes.get(user.id);r.engine.run("{player.gold=3030000;const el=document.createElement('input');el.id='clan-name-input';el.value='瀏覽器護衛盟';document.body.append(el);clanCreateFromInput();player.base.cha=60;player.alloc.cha=0;calcStats();_clanScanCache.at=0;clanSetCastle('kent');rememberCastleOwnerCity('kent');}");authority.commit(user,r);
+  await w.CloudStore.flush();w.returnToTown();await w.CloudStore.flush();assert.equal(engine.status().map,'town_kent_castle');
+  w.interactNPC('npc_kent_guard','town_kent_castle');clickNpcButton(w,'hireCastleGuard');await w.CloudStore.flush();
+  assert.equal(engine.status().gold,2000000);assert.equal(engine.run('clanGetModeInfo(player).guards.count'),1);
+  w.interactNPC('npc_kent_guard','town_kent_castle');clickNpcButton(w,'disbandCastleGuards');await w.CloudStore.flush();
+  assert.equal(engine.status().gold,2000000);assert.equal(engine.run('clanGetModeInfo(player).guards'),null);
+  const methods=requests.filter(r=>r.body?.args?.name==='npc-command').slice(-2).map(r=>r.body.args.params.method);
+  assert.deepEqual(methods,['hireCastleGuard','disbandCastleGuards']);
+});
+
 test('arena challenge and result buttons use server combat and retain the return flow after death',async t=>{
   const {w,engine,authority,user}=await fixture(t,undefined,[{classId:'knight',name:'競技對手',allocation:{str:2,con:6}}]);
   await w.CloudStore.action('travel',{mapId:'town_gludin'});w.interactNPC('npc_arena','town_gludin');

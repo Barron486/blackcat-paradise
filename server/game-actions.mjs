@@ -153,8 +153,24 @@ export function extraAction(game,name,a){
         else if(el.type==='number'){integer(Number(value),Math.max(0,Number(el.min)||0),Math.min(10000,Number(el.max)||10000));el.value=String(value);}
         else throw new Error('此操作不接受文字輸入');
       }
+      if(['hireCastleGuard','disbandCastleGuards'].includes(a.method))run(`{
+        const city=__args.params[0],info=clanGetModeInfo(player),guards=info?.guards;
+        if(!CASTLE_GUARD_BOOK[city]||clanGetCastleCity(player)!==city)throw new Error('目前無法管理這座城的護衛');
+        window.__serverGuardBefore={city,gold:player.gold,count:guards?.city===city?(guards.count||0):0};
+      }`);
       const confirm=game.window.confirm;game.window.confirm=()=>true;
       try{run('window[__args.method](...__args.params);');}finally{game.window.confirm=confirm;}
+      if(a.method==='hireCastleGuard')run(`{
+        const before=window.__serverGuardBefore,guards=clanGetModeInfo(player)?.guards;
+        delete window.__serverGuardBefore;
+        if(!before||player.gold!==before.gold-CASTLE_GUARD_COST||guards?.city!==before.city||guards.count!==before.count+1)
+          throw new Error('城堡護衛招募未完成，金幣未扣除');
+      }`);
+      if(a.method==='disbandCastleGuards')run(`{
+        const before=window.__serverGuardBefore,guards=clanGetModeInfo(player)?.guards;
+        delete window.__serverGuardBefore;
+        if(!before||before.count<1||player.gold!==before.gold||guards)throw new Error('城堡護衛遣散未完成');
+      }`);
       break;
     }
     case 'journey':{

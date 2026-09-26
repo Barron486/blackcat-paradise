@@ -5,7 +5,7 @@ export const npcIntents=Object.freeze([
   'doBianAttr','doBianUncurse','toggleSherineWorld','toggleSherineMad',
   'hanAcceptQuest','hanSubmitProof','chooseMastery','startPrideClimb','sanctuaryEnter','startOblivion',
   'enterRift','claimRiftReward','antharasEnter','antharasHelperAssign','antharasHelperRemove',
-  'antPointsExchange','antHeirloomOpen','startSiege',
+  'antPointsExchange','antHeirloomOpen','startSiege','hireCastleGuard','disbandCastleGuards',
   'arkataBuyback','arkataRedeemItem','trial50Accept','trial50TurnIn','trial50Complete',
   'doIoExchange','doLachesisSplit','doYuriaExchange','shimizheEx','doYuriaHatinExchange','doRedExchange',
   'doDemonKingCraft','doLumielCraft','doMysticWandCraft','doSlayerCraft',

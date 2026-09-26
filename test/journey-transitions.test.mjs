@@ -159,6 +159,21 @@ test('GM can independently close each castle against new server-authoritative si
   }
 });
 
+test('castle guard recruitment and dismissal settle gold and the shared roster on the server exactly once',async t=>{
+  const f=await fixture(t,{classId:'royal',name:'護衛結算測試',allocation:{str:7,con:1}});
+  f.edit("{const el=document.createElement('input');el.id='clan-name-input';el.value='護衛結算血盟';document.body.append(el);clanCreateFromInput();player.base.cha=60;player.alloc.cha=0;calcStats();player.gold=3000000;_clanScanCache.at=0;clanSetCastle('kent');rememberCastleOwnerCity('kent');}");
+  f.action('return-town');assert.equal(f.saved().ms.current,'town_kent_castle');const before=f.saved().p.gold;
+  const hire=f.body('action',{name:'npc-command',params:{npcId:'npc_kent_guard',method:'hireCastleGuard',params:['kent'],fields:{}}});
+  f.authority.handle(f.user,hire);assert.equal(f.authority.handle(f.user,hire).replayed,true);
+  assert.equal(f.saved().p.gold,before-1000000);assert.equal(f.authority.runtimes.get(f.user.id).engine.run('clanGetModeInfo(player).guards.count'),1);
+  f.reload();assert.equal(f.saved().p.gold,before-1000000);assert.equal(f.authority.runtimes.get(f.user.id).engine.run('clanGetModeInfo(player).guards.count'),1);
+  assert.throws(()=>f.npc('npc_kent_guard','hireCastleGuard',['heine']),e=>e.status===400);
+  const dismiss=f.body('action',{name:'npc-command',params:{npcId:'npc_kent_guard',method:'disbandCastleGuards',params:['kent'],fields:{}}});
+  f.authority.handle(f.user,dismiss);assert.equal(f.authority.handle(f.user,dismiss).replayed,true);
+  assert.equal(f.saved().p.gold,before-1000000);assert.equal(f.authority.runtimes.get(f.user.id).engine.run('clanGetModeInfo(player).guards'),null);
+  f.reload();assert.equal(f.authority.runtimes.get(f.user.id).engine.run('clanGetModeInfo(player).guards'),null);
+});
+
 test('arena NPC teleports to a server duel, preserves its benched party on reload and settles without farming rewards',async t=>{
   const f=await fixture(t),second=f.authority.handle(f.user,{...f.body('create',{classId:'knight',name:'決鬥對手',allocation:{str:2,con:6}}),slot:2,epoch:undefined});
   f.send('select');f.action('mercenary',{operation:'toggle',slot:2});
