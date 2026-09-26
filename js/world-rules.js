@@ -1,5 +1,5 @@
 // Shared by the browser, headless CLI and the server catalog sandbox.
-var gmWorld = {revision:0,goldMultiplier:1,expMultiplier:1,dropMultiplier:1,showDropRates:false,maps:{},drops:{}};
+var gmWorld = {revision:0,goldMultiplier:1,expMultiplier:1,dropMultiplier:1,showDropRates:false,maps:{},drops:{},siege:{kent:true,windwood:true,heine:true}};
 var gmWorldInitialized = false;
 function gmSetWorld(value) {
     if (!value || (gmWorldInitialized && value.revision <= gmWorld.revision)) return;
@@ -89,6 +89,7 @@ function gmChooseDrop(source, mob, entries, bonus) {
     return entries[entries.length-1][0];
 }
 function gmMapRule(id) { return gmWorld.maps[id] || {}; }
+function gmSiegeAllowed(city) { return gmWorld.siege?.[city] !== false; }
 function gmMapAllowed(id, announce) {
     const rule=gmMapRule(id);
     // Towns remain escape routes; GM teleport has its own explicit bypass.

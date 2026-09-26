@@ -5,7 +5,8 @@ import {MonsterSettings} from './monster-settings.mjs';
 const check=(ok,message,status=400)=>{if(!ok)throw new ApiError(status,message);};
 const broadcastDefaults=()=>({enabled:true,rarities:[...GameLootRarity.types],generation:0,cursor:0,startedAt:0});
 const killDefaults=()=>({enabled:false,monsters:[],generation:0,cursor:0,startedAt:0});
-const defaults=()=>({revision:0,goldMultiplier:1,expMultiplier:1,dropMultiplier:1,showDropRates:false,showPlayerLocations:false,lootBroadcast:broadcastDefaults(),killBroadcast:killDefaults(),announcement:null,monsterStrength:1,monsters:{},maps:{},drops:{}});
+const siegeDefaults=()=>({kent:true,windwood:true,heine:true});
+const defaults=()=>({revision:0,goldMultiplier:1,expMultiplier:1,dropMultiplier:1,showDropRates:false,showPlayerLocations:false,lootBroadcast:broadcastDefaults(),killBroadcast:killDefaults(),announcement:null,monsterStrength:1,monsters:{},maps:{},drops:{},siege:siegeDefaults()});
 export class WorldSettingsService {
   constructor(service){
     this.service=service;this.db=service.db;
@@ -18,7 +19,7 @@ export class WorldSettingsService {
     this.db.prepare('INSERT OR IGNORE INTO world_settings VALUES(1,?)').run(JSON.stringify(defaults()));
     service.world=this;
   }
-  state(){const saved=JSON.parse(this.db.prepare('SELECT data FROM world_settings WHERE id=1').get().data);return {...defaults(),...saved,lootBroadcast:{...broadcastDefaults(),...saved.lootBroadcast},killBroadcast:{...killDefaults(),...saved.killBroadcast}};}
+  state(){const saved=JSON.parse(this.db.prepare('SELECT data FROM world_settings WHERE id=1').get().data);return {...defaults(),...saved,lootBroadcast:{...broadcastDefaults(),...saved.lootBroadcast},killBroadcast:{...killDefaults(),...saved.killBroadcast},siege:{...siegeDefaults(),...saved.siege}};}
   admin(user){this.service.gm(user);return {settings:this.state(),maps:this.catalog.maps,monsterCount:this.catalog.monsters.length,dropCount:this.catalog.drops.length,location:this.location(user,false),history:this.history(),locationClans:this.service.presence.admin(user)};}
   location(user,required=true){
     const lease=this.db.prepare('SELECT slot,expires_at FROM leases WHERE account_id=?').get(user.id);
@@ -56,6 +57,11 @@ export class WorldSettingsService {
       check(typeof body.showDropRates==='boolean','掉落率顯示設定須為勾選值');command.showDropRates=body.showDropRates;
     }else if(body.type==='presence'){
       check(typeof body.showPlayerLocations==='boolean','位置公開設定須為勾選值');command.showPlayerLocations=body.showPlayerLocations;
+    }else if(body.type==='siege'){
+      check(body.castles&&typeof body.castles==='object'&&!Array.isArray(body.castles),'攻城設定不正確');
+      const keys=Object.keys(body.castles);check(keys.length===3&&['kent','windwood','heine'].every(key=>keys.includes(key)),'須提供三座城堡的攻城設定');
+      for(const key of keys)check(['kent','windwood','heine'].includes(key)&&typeof body.castles[key]==='boolean','城堡攻城開關須為勾選值');
+      command.castles=Object.fromEntries(['kent','windwood','heine'].map(key=>[key,body.castles[key]]));
     }else if(body.type==='broadcast'){
       check(typeof body.enabled==='boolean','廣播開關須為勾選值');
       check(Array.isArray(body.rarities)&&body.rarities.every(r=>GameLootRarity.types.includes(r)),'廣播範圍不正確');
@@ -81,6 +87,7 @@ export class WorldSettingsService {
       if(command.type==='announcement-clear')s.announcement=null;
       if(command.type==='global')for(const key of ['goldMultiplier','expMultiplier','dropMultiplier','showDropRates'])s[key]=command[key];
       if(command.type==='presence')s.showPlayerLocations=command.showPlayerLocations;
+      if(command.type==='siege')s.siege={...command.castles};
       if(command.type==='broadcast')s.lootBroadcast={enabled:command.enabled,rarities:command.rarities,generation:s.lootBroadcast.generation+1,cursor:this.service.lootBroadcasts?.latestId()||0,startedAt:Date.now()};
       if(command.type==='map')s.maps[command.mapId]={open:command.open,minLevel:command.minLevel};
       if(command.type==='drop'){if(command.rate===null)delete s.drops[command.key];else s.drops[command.key]=command.rate;}

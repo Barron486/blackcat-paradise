@@ -43,11 +43,18 @@ test('map entry guards preserve towns; drops support zero, 100 and restoring the
  update(world,gm,{type:'drop',key:dropKey,rate:null});assert.equal(world.listDrops(gm,new URLSearchParams()).rows[0].rate,1);
  assert.equal(world.listDrops(gm,new URLSearchParams('modified=1')).total,0);
 });
+test('siege availability defaults open and only GM can atomically configure all three castles',async t=>{
+ const {world,gm,player}=await fixture(t);assert.deepEqual(world.state().siege,{kent:true,windwood:true,heine:true});
+ const command={type:'siege',castles:{kent:true,windwood:false,heine:true}};
+ assert.throws(()=>update(world,player,command),e=>e.status===403);
+ for(const castles of [null,[],{kent:true},{kent:true,windwood:false,heine:'yes'},{kent:true,windwood:false,heine:true,forged:true}])assert.throws(()=>update(world,gm,{type:'siege',castles}));
+ update(world,gm,command);assert.deepEqual(world.state().siege,command.castles);assert.equal(world.history()[0].command.type,'siege');
+});
 test('settings and audit survive closing and reopening the database',async t=>{
  const dir=mkdtempSync(path.join(tmpdir(),'world-test-')),file=path.join(dir,'game.db');
  const service=new GameService(file,catalog),world=new WorldSettingsService(service);const gm=await service.register('persist_gm',password,{initialGm:true});
- update(world,gm,{type:'drop',key:dropKey,rate:75});service.close();
- const reopened=new GameService(file,catalog),restored=new WorldSettingsService(reopened);assert.equal(restored.state().drops[dropKey],75);assert.equal(restored.history().length,1);reopened.close();rmSync(dir,{recursive:true});
+ update(world,gm,{type:'drop',key:dropKey,rate:75});update(world,gm,{type:'siege',castles:{kent:false,windwood:true,heine:false}});service.close();
+ const reopened=new GameService(file,catalog),restored=new WorldSettingsService(reopened);assert.equal(restored.state().drops[dropKey],75);assert.deepEqual(restored.state().siege,{kent:false,windwood:true,heine:false});assert.equal(restored.history().length,2);reopened.close();rmSync(dir,{recursive:true});
 });
 test('teleport uses the active GM save, previews location, includes offline roles and replays safely',async t=>{
  const {service,world,gm,player}=await fixture(t);const gmDoc=doc();gmDoc.ms.current='zone_04';const gmLease=seed(service,gm,gmDoc);const lease=seed(service,player);

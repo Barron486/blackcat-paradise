@@ -144,6 +144,21 @@ test('all open castle assaults, gate transitions and owned castle travel use ser
   }
 });
 
+test('GM can independently close each castle against new server-authoritative siege declarations',async t=>{
+  const f=await fixture(t,{classId:'royal',name:'攻城開關測試',allocation:{str:7,con:1}});
+  f.edit("{const el=document.createElement('input');el.id='clan-name-input';el.value='開關測試血盟';document.body.append(el);clanCreateFromInput();}");
+  const castles=f.authority.runtimes.get(f.user.id).engine.run('SIEGE_CITY');
+  for(const city of ['kent','windwood','heine']){
+    const flags={kent:true,windwood:true,heine:true};flags[city]=false;
+    f.service.world.update(f.user,{type:'siege',castles:flags,revision:f.service.world.state().revision,requestId:randomUUID(),reason:`關閉${city}測試`});
+    assert.throws(()=>f.npc('_clan_siege','startSiege',['',city]),/GM 關閉攻城/);
+    assert.equal(f.saved().p.siege.active,false);assert.notEqual(f.saved().ms.current,castles[city].outer);
+    const openCity=city==='kent'?'windwood':'kent';
+    f.npc('_clan_siege','startSiege',['',openCity]);assert.equal(f.saved().ms.current,castles[openCity].outer);
+    f.edit("endSiege('lose');");
+  }
+});
+
 test('arena NPC teleports to a server duel, preserves its benched party on reload and settles without farming rewards',async t=>{
   const f=await fixture(t),second=f.authority.handle(f.user,{...f.body('create',{classId:'knight',name:'決鬥對手',allocation:{str:2,con:6}}),slot:2,epoch:undefined});
   f.send('select');f.action('mercenary',{operation:'toggle',slot:2});

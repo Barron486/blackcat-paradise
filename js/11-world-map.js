@@ -659,6 +659,7 @@ function openSiegeSelect(faction, targetEl) {
     let choice = (city, label, style) => {
         let defender = typeof npcClanCastleDefender === 'function' ? npcClanCastleDefender(city, player) : null;
         let defenderText = defender ? `<span class="block text-xs font-normal mt-1">守城血盟：${typeof clanEsc === 'function' ? clanEsc(defender.name) : defender.name}</span>` : '';
+        if (typeof gmSiegeAllowed === 'function' && !gmSiegeAllowed(city)) return `<button class="btn flex-1 py-4 text-lg font-bold bg-slate-700 border-slate-500 text-slate-400 opacity-60 cursor-not-allowed" disabled>${label}<span class="block text-xs font-normal mt-1">GM 已關閉攻城</span></button>`;
         return held === city
             ? `<button class="btn flex-1 py-4 text-lg font-bold bg-slate-700 border-slate-500 text-slate-400 opacity-60 cursor-not-allowed" disabled>${label}<span class="block text-xs font-normal mt-1">目前持有</span></button>`
             : `<button class="btn flex-1 py-4 text-lg font-bold ${style}" onclick="startSiege('${faction}','${city}')">${label}${defenderText}</button>`;
@@ -688,6 +689,7 @@ function startSiege(faction, city) {
     if (!clan) { alert('你尚未加入血盟，無法宣布攻城戰。'); return; }
     if (typeof clanCanSiege === 'function' && !clanCanSiege(player)) { alert('此模式沒有創立血盟的王族，無法攻城。'); return; }
     if (s.active) { alert('攻城戰正在進行中！'); return; }
+    if (typeof gmSiegeAllowed === 'function' && !gmSiegeAllowed(city)) { alert(`【${cfg.name}】目前由 GM 關閉攻城。`); return; }
     let held = rememberCastleOwnerCity(clan.castle);
     // ⚔️ v3.6.05 等級限制取消（用戶拍板·原 Lv40 門檻）：與 v3.6.01 的冷卻取消一致，攻城不再有任何前置條件
     if (held === city) { alert(`你的血盟目前已持有${cfg.name}。`); return; }

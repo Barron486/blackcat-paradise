@@ -143,7 +143,7 @@ export function extraAction(game,name,a){
         }catch{return false;}
       });
       if(!allowed)throw new Error('NPC 選項已改變或目前不可用，請重新開啟對話');
-      if(a.method==='startSiege')run(`{const city=__args.params[1];if(!SIEGE_CITY[city]||!gmMapAllowed(SIEGE_CITY[city].outer,false))throw new Error('攻城地圖尚未開放或等級不足');}`);
+      if(a.method==='startSiege')run(`{const city=__args.params[1];if(!SIEGE_CITY[city]||!gmMapAllowed(SIEGE_CITY[city].outer,false))throw new Error('攻城地圖尚未開放或等級不足');if(!gmSiegeAllowed(city))throw new Error('這座城目前由 GM 關閉攻城');}`);
       if(a.fields&&Object.keys(a.fields).length>100)throw new Error('表單過大');
       for(const [key,value]of Object.entries(a.fields||{})){
         const el=[...panel.querySelectorAll('input[id],select[id]')].find(el=>el.id===key);
