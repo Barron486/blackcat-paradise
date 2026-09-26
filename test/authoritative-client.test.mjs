@@ -504,6 +504,22 @@ test('Antharas NPC button and stage display remain authoritative after polling a
   assert.equal(w.document.getElementById('map-category').classList.contains('hidden'),false);
 });
 
+test('Riley aide buttons use authoritative NPC commands and keep shared points synchronized',async t=>{
+  const {w,engine,authority,service,user,requests}=await fixture(t);await w.CloudStore.action('travel',{mapId:'town_witon'});
+  const r=authority.runtimes.get(user.id);r.engine.run("player.inv.push({id:'mat_antharas_scale',uid:'browser-riley-scales',cnt:10,en:0});");authority.commit(user,r);
+  await w.CloudStore.flush();w.interactNPC('npc_riley_aide','town_witon');
+  clickNpcButton(w,'antPointsExchange');await w.CloudStore.flush();
+  assert.ok(!engine.status().inventory.some(i=>i.uid==='browser-riley-scales'));
+  assert.equal(engine.run('antPointsGet()'),10);assert.equal(service.bootstrap(user).values.lineage_idle_antharas_points,'10');
+  assert.match(w.document.getElementById('interaction-content').textContent,/目前積分：10/);
+
+  clickNpcButton(w,'antHeirloomOpen');await w.CloudStore.flush();
+  assert.equal(engine.run('antPointsGet()'),0);assert.equal(engine.run('player.antHeirSeq'),1);
+  assert.equal(service.bootstrap(user).values.lineage_idle_antharas_points,'0');
+  const methods=requests.filter(r=>r.body?.args?.name==='npc-command').slice(-2).map(r=>r.body.args.params.method);
+  assert.deepEqual(methods,['antPointsExchange','antHeirloomOpen']);
+});
+
 test('arena challenge and result buttons use server combat and retain the return flow after death',async t=>{
   const {w,engine,authority,user}=await fixture(t,undefined,[{classId:'knight',name:'競技對手',allocation:{str:2,con:6}}]);
   await w.CloudStore.action('travel',{mapId:'town_gludin'});w.interactNPC('npc_arena','town_gludin');

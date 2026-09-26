@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {JSDOM,VirtualConsole} from '../cli/node_modules/jsdom/lib/api.js';
+import {JSDOM,VirtualConsole} from 'jsdom';
 const source=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 test('rejected saves stop combat and retries, preserve the draft and offer a deliberate cloud reload',async t=>{

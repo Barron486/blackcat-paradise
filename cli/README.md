@@ -94,6 +94,18 @@ npm run cli -- resume --profile knight
 
 `buy` 必須人在該商人的村莊，且該商人確實販售該物品、金幣足夠。施法必須已學會或由遊戲授予，仍受 MP、職業與原版施法限制。一般 `revive` 僅限正常死亡；GM 強制死亡必須由 GM 復活。
 
+萊利的輔佐官支援查詢積分、兌換安塔瑞斯素材與開啟傳家之寶。先暫停自動策略並前往威頓村；兌換會一次交出背包內該種素材，開寶每次消耗 10 分：
+
+```powershell
+npm run cli -- pause --profile knight
+npm run cli -- travel town_witon --profile knight
+npm run cli -- riley status --profile knight
+npm run cli -- riley exchange mat_antharas_scale --profile knight
+npm run cli -- riley open --profile knight
+```
+
+可兌換的素材 id 為 `mat_antharas_scale`、`mat_antharas_bone`、`mat_antharas_claw`、`mat_antharas_blood`、`mat_antharas_flesh`、`mat_antharas_fang`、`mat_antharas_eye`。CLI 只送出 NPC 意圖；所在地、持有數、積分、獎勵與防重送均由伺服器判定。
+
 ## 自動遊玩方式
 
 - 每 100 毫秒執行原版一個 tick，使用原始命中、傷害、掉落、經驗、升級、藥水與技能規則。

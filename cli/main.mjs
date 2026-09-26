@@ -12,6 +12,7 @@ import {paths,loadProfile,saveProfile,listProfiles,writeJsonAtomic} from './prof
 const ENTRY=fileURLToPath(import.meta.url),ROOT=fileURLToPath(new URL('../',import.meta.url));
 const DEFAULT_SERVER='https://game.barron-ai.com';
 const CLASS_NAMES={royal:'王族',mage:'法師',elf:'妖精',knight:'騎士',dark:'黑妖',illusion:'幻術士',dragon:'龍騎士',warrior:'戰士'};
+const RILEY_MATERIALS=new Set(['mat_antharas_scale','mat_antharas_bone','mat_antharas_claw','mat_antharas_blood','mat_antharas_flesh','mat_antharas_fang','mat_antharas_eye']);
 function readJson(file){try{return JSON.parse(readFileSync(file,'utf8'));}catch{return null;}}
 function alive(pid){if(!Number.isInteger(pid)||pid<1)return false;try{process.kill(pid,0);return true;}catch(e){return e.code==='EPERM';}}
 function seconds(value,label){const n=Number(value);if(!Number.isFinite(n)||n<=0)throw new Error(`${label} 必須為大於 0 的秒數`);return n;}
@@ -96,6 +97,7 @@ const HELP=`黑貓天堂 CLI — 使用原版戰鬥與雲端存檔
   npm run cli -- use|equip <物品uid> --profile knight
   npm run cli -- cast <技能id> --profile mage
   npm run cli -- buy <商人id> <物品id> <數量> --profile knight
+  npm run cli -- riley status|exchange <素材id>|open --profile knight
   npm run cli -- setting set-hp-pot 70 --profile knight
   npm run cli -- credentials --profile knight
 
@@ -213,6 +215,19 @@ export async function main(argv=process.argv.slice(2)){
   if(['pause','resume','sync'].includes(command)){output(await sendCommand(name,{type:command}));return;}
   if(command==='inspect'){output(await sendCommand(name,{type:'inspect',view:required(rest[0],'查看項目')}));return;}
   if(command==='target'){output(await sendCommand(name,{type:'target',mapId:required(rest[0],'地圖 id')}));return;}
+  if(command==='riley'){
+    const operation=rest[0]||'status';
+    if(operation==='status'){output(await sendCommand(name,{type:'inspect',view:'riley'}));return;}
+    let method,params=[];
+    if(operation==='exchange'){
+      const itemId=required(rest[1],'安塔瑞斯素材 id');
+      if(!RILEY_MATERIALS.has(itemId))throw new Error('素材須為 mat_antharas_scale、bone、claw、blood、flesh、fang 或 eye');
+      method='antPointsExchange';params=[itemId];
+    }else if(operation==='open')method='antHeirloomOpen';
+    else throw new Error('riley 須為 status、exchange <素材id> 或 open');
+    await sendCommand(name,{type:'action',name:'npc-command',args:{npcId:'npc_riley_aide',method,params,fields:{}}});
+    output({profile:name,operation,...await sendCommand(name,{type:'inspect',view:'riley'})});return;
+  }
   let actionArgs={};let action=command;
   if(command==='travel')actionArgs={mapId:required(rest[0],'地圖 id')};
   else if(['use','equip'].includes(command))actionArgs={uid:required(rest[0],'物品 uid')};

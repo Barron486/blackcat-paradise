@@ -81,6 +81,27 @@ test('Antharas advances through all four areas and records the daily clear only 
   assert.ok(f.saved().p.antharasClearDay);assert.throws(()=>f.npc('npc_doruga_bell','antharasEnter'),e=>e.status===400);
 });
 
+test('Riley aide exchanges materials and opens heirlooms on the server exactly once',async t=>{
+  const f=await fixture(t);f.travel('town_witon');
+  f.edit("player.inv.push({id:'mat_antharas_scale',uid:'riley-scales',cnt:10,en:0});");
+  const exchange=f.body('action',{name:'npc-command',params:{npcId:'npc_riley_aide',method:'antPointsExchange',params:['mat_antharas_scale'],fields:{}}});
+  const exchanged=f.authority.handle(f.user,exchange);
+  assert.equal(exchanged.snapshot.values.lineage_idle_antharas_points,'10');
+  assert.ok(!f.saved().p.inv.some(i=>i.uid==='riley-scales'));
+  assert.equal(f.authority.handle(f.user,exchange).replayed,true);
+  assert.equal(f.service.bootstrap(f.user).values.lineage_idle_antharas_points,'10');
+
+  const before=f.saved(),open=f.body('action',{name:'npc-command',params:{npcId:'npc_riley_aide',method:'antHeirloomOpen',params:[],fields:{}}});
+  const opened=f.authority.handle(f.user,open),after=f.saved();
+  assert.equal(opened.snapshot.values.lineage_idle_antharas_points,'0');assert.equal(after.p.antHeirSeq,1);
+  assert.ok(after.p.gold>before.p.gold||after.p.inv.length>before.p.inv.length);
+  assert.equal(f.authority.handle(f.user,open).replayed,true);
+  assert.equal(f.saved().p.antHeirSeq,1);assert.equal(f.service.bootstrap(f.user).values.lineage_idle_antharas_points,'0');
+
+  f.travel('town_talking');
+  assert.throws(()=>f.npc('npc_riley_aide','antPointsExchange',['mat_antharas_scale']),e=>e.status===400);
+});
+
 test('every hidden hunting map remains reachable by server teleport and cannot be selected directly',async t=>{
   const f=await fixture(t),pairs=Object.entries(f.authority.runtimes.get(f.user.id).engine.run('HIDDEN_AREA_PARENT'));
   f.edit("player.inv.push({id:'scroll_teleport',uid:'hidden-scrolls',cnt:20,en:0});");

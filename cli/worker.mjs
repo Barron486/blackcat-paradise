@@ -10,6 +10,8 @@ import {CLASS_PRESETS,createStrategy} from './strategy.mjs';
 import {GameSync} from './sync.mjs';
 import {collectStatuses} from '../shared/status-view.js';
 
+const RILEY_MATERIALS=Object.freeze({mat_antharas_scale:1,mat_antharas_bone:2,mat_antharas_claw:3,mat_antharas_blood:4,mat_antharas_flesh:5,mat_antharas_fang:6,mat_antharas_eye:7});
+
 export const isProcessAlive = pid => {
   if(!Number.isInteger(pid)||pid<1)return false;
   try{process.kill(pid,0);return true;}catch(error){return error.code==='EPERM';}
@@ -89,7 +91,10 @@ export async function runWorker(profileName, options={}) {
           else if(packet.view==='maps')result=Object.entries(catalog.maps).flatMap(([category,maps])=>maps.map(map=>({id:map.v,name:map.t||map.n,category})));
           else if(packet.view==='effects')result=collectStatuses(doc.p,{skills:catalog.skills,now:sync.now(),ticks:doc.ticks});
           else if(packet.view==='log')result={decisions:history,combat:engine.logs.slice(-80)};
-          else throw new Error('可查看 inventory、skills、maps、effects、log');
+          else if(packet.view==='riley'){
+            const key='lineage_idle_antharas_points'+(doc.p.classicMode?'_classic':''),points=Math.max(0,Number.parseInt(engine.values()[key]||'0',10)||0);
+            result={points,heirlooms:Math.floor(points/10),mode:doc.p.classicMode?'classic':'normal',materials:Object.entries(RILEY_MATERIALS).map(([id,pointsEach])=>({id,name:catalog.items[id]?.n||id,pointsEach,quantity:(doc.p.inv||[]).filter(item=>item.id===id).reduce((sum,item)=>sum+(item.cnt||0),0)}))};
+          }else throw new Error('可查看 inventory、skills、maps、effects、log、riley');
         } else if(packet.type==='sync'){await sync.flush();online=true;checkpoint();result={revision:sync.revision};}
         else if(packet.type==='target') {
           if(!Object.values(engine.catalog().maps).flat().some(map=>map.v===packet.mapId))throw new Error('找不到地圖');

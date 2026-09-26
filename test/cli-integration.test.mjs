@@ -74,6 +74,14 @@ test('CLI creates, starts, controls and cleanly stops a real cloud worker',async
   const maps=await cli('inspect','maps','--profile','tester');assert.ok(maps.some(m=>m.id==='training'));
   await cli('target','training','--profile','tester');
   const inventory=await cli('inspect','inventory','--profile','tester');assert.ok(inventory.some(i=>i.id==='potion_heal'));
+  const rileyEmpty=await cli('riley','status','--profile','tester');assert.equal(rileyEmpty.points,0);assert.equal(rileyEmpty.materials.length,7);
+  const account=service.db.prepare('SELECT id FROM accounts WHERE username=?').get(created.username),runtime=service.authority.runtimes.get(account.id);
+  runtime.engine.run("player.inv.push({id:'mat_antharas_scale',uid:'cli-riley-scales',cnt:10,en:0});");service.authority.commit(runtime.user,runtime);
+  await cli('travel','town_witon','--profile','tester');
+  const rileyReady=await cli('riley','status','--profile','tester');assert.equal(rileyReady.materials.find(item=>item.id==='mat_antharas_scale').quantity,10);
+  const exchanged=await cli('riley','exchange','mat_antharas_scale','--profile','tester');assert.equal(exchanged.points,10);assert.equal(exchanged.materials.find(item=>item.id==='mat_antharas_scale').quantity,0);
+  const opened=await cli('riley','open','--profile','tester');assert.equal(opened.points,0);assert.equal(opened.operation,'open');
+  assert.equal(service.catalog.unwrap(service.bootstrap(account).values.lineage_idle_save_1).p.antHeirSeq,1);
   await assert.rejects(cli('revive','--profile','tester'),/仍活著/);
   await cli('setting','set-hp-pot','70','--profile','tester');
   await cli('sync','--profile','tester');
